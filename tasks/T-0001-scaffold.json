@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0001",
   "goal": "建立 Python 项目骨架，使 scripts/verify.sh 的五个步骤在空实现上全部通过。",
-  "baseline_commit": "16885d68065cec607b8640c10964f4eac2039ade",
+  "baseline_commit": "029e6b2bb0b3ab73da2c9a3663b769367d673b34",
   "write_scope": [
     "pyproject.toml",
     "uv.lock",
@@ -14,20 +14,22 @@
   "depends_on": [],
   "interface_contracts": [],
   "deliverables": [
-    "pyproject.toml：项目名 multi-agent，包名 multi_agent，src 布局，requires-python 为 >=3.12，没有运行时依赖，开发依赖为 ruff、mypy、pytest，构建后端用 uv 的默认值",
-    "pyproject.toml 里的工具配置：mypy 开启 strict；pytest 的 testpaths 为 tests；ruff 用默认规则集，只把 .agents 和 .claude 加进 extend-exclude（它们是受保护配置，不在本任务的写入范围内）",
+    "pyproject.toml：项目名 multi-agent，包名 multi_agent，src 布局，requires-python 为 >=3.12，没有运行时依赖，开发依赖为 ruff、mypy、pytest",
+    "pyproject.toml 显式声明 [build-system]：build-backend 为 uv_build，requires 是带上下界且包含本机 uv 版本的范围（uv --version 为 0.11.11 时写 uv_build>=0.11.11,<0.12）。没有构建系统时 uv 不会把 multi_agent 装进环境",
+    "pyproject.toml 里的工具配置：mypy 开启 strict；pytest 的 testpaths 为 tests；ruff 用默认规则集，不添加排除项",
     "uv.lock 和 .python-version",
     ".gitignore：覆盖 .venv、__pycache__、.mypy_cache、.ruff_cache、.pytest_cache、构建产物和 .DS_Store",
     "src/multi_agent/ 及 core、adapters、store 三个子包，每个只有 __init__.py",
     "tests/unit/test_package.py：断言三个子包都能导入",
-    "tests/replay/scenarios/ 目录，以及 tests/replay/test_placeholder.py：一个在文件头注明是占位的测试，只断言场景目录存在，由后续的状态机任务替换"
+    "tests/replay/scenarios/.gitkeep（Git 不保留空目录，靠它让场景目录进入版本库），以及 tests/replay/test_placeholder.py：一个在文件头注明是占位的测试，只断言场景目录存在，由后续的状态机任务替换"
   ],
   "acceptance_criteria": [
-    "在只含本次改动的干净检出上运行 scripts/verify.sh，五个步骤全部通过，退出码为 0",
-    "检查跑完后 git status --short 没有输出",
-    "uv run python -c \"import multi_agent.core, multi_agent.adapters, multi_agent.store\" 的退出码为 0",
-    "diff 只包含 write_scope 内的路径，.agents、.claude、scripts、AGENTS.md、CLAUDE.md 没有改动",
-    "pyproject.toml 里 mypy 为 strict，ruff 没有关闭任何默认规则",
+    "在候选提交的全新检出（git worktree add 或 git clone 得到的目录）里运行 scripts/verify.sh，五个步骤全部通过，退出码为 0",
+    "在同一个检出里，检查跑完后 git status --short 没有输出",
+    "unit 步骤里的 tests/unit/test_package.py 导入 multi_agent.core、multi_agent.adapters、multi_agent.store 并通过；包是经构建后端装进环境的，pytest 配置里没有用 pythonpath 之类的设置把 src 加进搜索路径",
+    "pyproject.toml 有 [build-system]，build-backend 为 uv_build，requires 有上下界且包含实现时本机的 uv 版本",
+    "从开工时的 HEAD 到候选提交的 diff 只包含 write_scope 内的路径，.agents、.claude、scripts、AGENTS.md、CLAUDE.md 没有改动",
+    "pyproject.toml 里 mypy 为 strict；ruff 没有关闭任何默认规则，也没有排除项，lint 和 format 两步覆盖 src、tests 和 .agents/skills/task-card/scripts/validate_task_cards.py",
     "占位测试不伪造任何状态机行为"
   ],
   "test_refs": ["lint", "format", "typecheck", "unit", "replay"],
@@ -40,7 +42,7 @@
     {
       "question": "基线提交的作者邮箱还是占位值。修正它会改变提交哈希：是先修正并更新 baseline_commit，还是保持现状？",
       "blocks_dispatch": true,
-      "resolution": "先修正。用户 2026-11-14 提供了邮箱，提交已重建（文件树和提交说明不变），baseline_commit 已更新为修正后的提交。"
+      "resolution": "先修正。用户 2026-11-14 提供了邮箱，提交已重建为 16885d6（文件树和提交说明不变），此后的基线都在它的历史之上。"
     },
     {
       "question": "Python 最低版本定为 3.12、mypy 用 strict 模式，是否合适？没有异议就按此实现。",
