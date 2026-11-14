@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Deterministic backstop for the verify skill.
+# Enable once per clone: git config core.hooksPath scripts/hooks
+set -euo pipefail
+
+changed="$(git diff --cached --name-only --diff-filter=ACMRD)"
+
+# Docs-only commits skip the gate; anything else runs every step.
+needs_verify=0
+while IFS= read -r path; do
+  case "$path" in
+    "" | *.md) ;;
+    *) needs_verify=1 ;;
+  esac
+done <<<"$changed"
+
+[ "$needs_verify" -eq 1 ] || exit 0
+
+# Before the project is scaffolded there is nothing to check: pyproject.toml is
+# neither in HEAD nor in the index. Once it has been committed, losing it is an error.
+if ! git cat-file -e HEAD:pyproject.toml 2>/dev/null &&
+  ! git ls-files --error-unmatch pyproject.toml >/dev/null 2>&1; then
+  echo "pre-commit: no pyproject.toml committed or staged yet, verify skipped" >&2
+  exit 0
+fi
+
+exec "$(git rev-parse --show-toplevel)/scripts/verify.sh"

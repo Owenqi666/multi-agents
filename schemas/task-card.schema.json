@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Task card",
+  "description": "Handoff unit between planning and implementation. The field list follows PROJECT_PLAN.md, workflow step 1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "id",
+    "goal",
+    "baseline_commit",
+    "write_scope",
+    "depends_on",
+    "interface_contracts",
+    "deliverables",
+    "acceptance_criteria",
+    "test_refs",
+    "open_questions"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "$ref": "#/$defs/task_id"
+    },
+    "goal": {
+      "$ref": "#/$defs/text",
+      "description": "One outcome, stated without implementation steps."
+    },
+    "baseline_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "description": "Full 40-character hash of the commit the task starts from."
+    },
+    "write_scope": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/repo_path"
+      },
+      "description": "Repository-relative paths or globs the task may modify."
+    },
+    "depends_on": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/task_id"
+      },
+      "description": "Tasks that must be integrated before this one starts."
+    },
+    "interface_contracts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "definition"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/text"
+          },
+          "definition": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      },
+      "description": "Interfaces shared with other tasks, agreed before dependent work starts."
+    },
+    "deliverables": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/text"
+      }
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/text"
+      },
+      "description": "Each one decidable by a named test or by a reviewer reading the diff."
+    },
+    "test_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "$ref": "#/$defs/test_name"
+      },
+      "description": "Names of existing checks. New commands go in proposed_tests."
+    },
+    "open_questions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question",
+          "blocks_dispatch"
+        ],
+        "properties": {
+          "question": {
+            "$ref": "#/$defs/text"
+          },
+          "blocks_dispatch": {
+            "type": "boolean",
+            "description": "True when the answer changes what gets delivered."
+          },
+          "resolution": {
+            "$ref": "#/$defs/text",
+            "description": "The user's answer."
+          }
+        }
+      }
+    },
+    "proposed_tests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "executable",
+          "args",
+          "reason"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/test_name"
+          },
+          "executable": {
+            "$ref": "#/$defs/text"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reason": {
+            "$ref": "#/$defs/text"
+          }
+        }
+      },
+      "description": "Suggested new checks. Not run until the user adopts them."
+    }
+  },
+  "$defs": {
+    "text": {
+      "type": "string",
+      "pattern": "\\S",
+      "description": "Must not be blank."
+    },
+    "task_id": {
+      "type": "string",
+      "pattern": "^T-[0-9]{4}$",
+      "description": "T- followed by four digits, for example T-0007."
+    },
+    "test_name": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "description": "Lowercase letters, digits and hyphens, starting with a letter."
+    },
+    "repo_path": {
+      "type": "string",
+      "pattern": "^(?!/)(?!.*\\\\)(?!(?:.*/)?\\.\\.(?:/|$)).+$",
+      "description": "Repository-relative path or glob: forward slashes only, no leading slash, no '..' segment."
+    }
+  }
+}

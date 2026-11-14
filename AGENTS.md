@@ -1,0 +1,46 @@
+# Multi-agent 本地开发工作台
+
+Mac 上的个人开发工作台：复用已登录的 Codex 和 Claude Code，跨模型派发任务，冻结审核输入，把测试和审核证据绑定到具体提交。设计见 `PROJECT_PLAN.md`。本文件与计划冲突时以计划为准，并把冲突指出来。
+
+**当前阶段：0（编排核心与接入验证）。** 只做本阶段的交付内容，不提前实现后续阶段的功能。阶段由用户修改这一行来切换。
+
+## 不变量
+
+这些规则保护的是"证据可信"和"状态不被旧结果污染"，任何任务都适用。
+
+- **证据只记报告值。** 实际模型、生效档位、用量、改派这些证据字段只记运行时报告的值。拿不到就记"未确认"，不用请求值、默认值或推断值顶替。
+- **只有当前尝试能推进状态。** 写终态时确认该尝试仍是当前尝试，检查和写入在同一个事务里完成。晚到的结果只进历史。
+- **子进程不经过 shell。** 一律以程序加参数列表启动，不拼接命令字符串。
+- **防御只放在边界。** 系统边界只有两处：`adapters/`（两边 CLI 的输入输出）和 CLI 入口（用户输入）。超时、限流、认证失效、畸形输出在那里处理并归入失败分类。`core/` 和 `store/` 信任已校验的输入，出错直接抛，不吞异常，不返回兜底值。
+- **不为变绿而改检查。** 不削弱、跳过或删除已有的测试、回放场景和检查配置。确实需要改时，在交付说明里单列原因。
+- **受保护配置。** `.claude/`、`.agents/`、`AGENTS.md`、`CLAUDE.md`、`scripts/verify.sh`、`scripts/link-skills.sh`、`scripts/hooks/` 只有在任务卡的写入范围明确包含时才改。
+
+## 目录约定
+
+仓库还没有代码，按下表创建。要调整布局，就同时改这里和引用它的 skill。
+
+| 路径 | 内容 |
+| --- | --- |
+| `src/multi_agent/core/` | 状态机、冻结快照、规则解析、审核汇总 |
+| `src/multi_agent/adapters/` | Codex 与 Claude 适配器，唯一直接接触两边 CLI 的代码 |
+| `src/multi_agent/store/` | SQLite 持久化，迁移在 `store/migrations/` |
+| `tests/unit/` | 单元测试 |
+| `tests/replay/` | 合成事件回放，场景在 `tests/replay/scenarios/` |
+| `protocol/` | 本机 CLI 的版本、帮助输出和 Codex schema 快照。脚本生成，不手改 |
+| `schemas/` | 任务卡等结构化产物的 JSON Schema |
+| `tasks/` | 开发期任务卡 |
+
+## 检查
+
+工具链是 uv、ruff、mypy、pytest。`scripts/verify.sh` 是唯一的检查入口：不带参数跑全部步骤，`scripts/verify.sh <步骤名>` 跑单步，`scripts/verify.sh --list` 列出步骤名。提交前完整跑一遍。
+
+## Skills
+
+真实文件在 `.agents/skills/`，Codex 直接读这里。Claude Code 读的是 `.claude/skills/` 下指向它们的符号链接，两边是同一份内容。链接由 `scripts/link-skills.sh` 创建，克隆仓库或新增 skill 之后运行一次。
+
+| 什么时候 | 用哪个 |
+| --- | --- |
+| 提交前，或报告任务完成前 | `verify` |
+| 写或改 `adapters/`，或用到两边 CLI 的选项、方法、事件、输出字段 | `runtime-protocols` |
+| 增改状态、事件类型、失败分类或表结构 | `state-change` |
+| 规划工作、把任务交给另一个模型、开始实现一张任务卡 | `task-card` |
