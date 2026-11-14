@@ -1,0 +1,180 @@
+{
+  "initial": {
+    "snapshot_id": "snapshot-cancel-turn-terminal",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": [
+      {
+        "key": "a",
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high"
+      },
+      {
+        "key": "b",
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "raw_type": "synthetic.session",
+          "session_id": "cancel-turn-a"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "message",
+          "raw_type": "synthetic.message",
+          "text": "Message before cancellation"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "b's report survives a's cancellation"
+          }
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "cancel_requested"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied",
+        "attempt_status": "cancelling"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "message",
+          "raw_type": "synthetic.message",
+          "text": "Message before the turn ends"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "error",
+          "raw_type": "synthetic.error",
+          "failure_category": "cancelled",
+          "detail": "Synthetic turn termination after the cancellation request"
+        }
+      },
+      "expect": {
+        "round_status": "incomplete",
+        "disposition": "applied",
+        "attempt_status": "failed"
+      }
+    }
+  ],
+  "final": {
+    "round_status": "incomplete",
+    "snapshot_id": "snapshot-cancel-turn-terminal",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": {
+      "a": {
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high",
+        "current_attempt": 1,
+        "attempts": {
+          "1": {
+            "status": "failed",
+            "failure_category": "cancelled",
+            "result": null,
+            "exit_code": null,
+            "detail": "Synthetic turn termination after the cancellation request",
+            "session_id": "cancel-turn-a"
+          }
+        }
+      },
+      "b": {
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium",
+        "current_attempt": 1,
+        "attempts": {
+          "1": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "b's report survives a's cancellation"
+            },
+            "exit_code": null
+          }
+        }
+      }
+    }
+  }
+}

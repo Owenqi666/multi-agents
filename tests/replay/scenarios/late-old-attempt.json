@@ -1,0 +1,232 @@
+{
+  "initial": {
+    "snapshot_id": "snapshot-late-old-attempt",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": [
+      {
+        "key": "a",
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high"
+      },
+      {
+        "key": "b",
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "error",
+          "failure_category": "timeout",
+          "detail": "Synthetic timeout"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "error",
+          "failure_category": "timeout",
+          "detail": "Synthetic timeout"
+        }
+      },
+      "expect": {
+        "round_status": "incomplete",
+        "disposition": "applied",
+        "attempt_status": "failed"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 2,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 2,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "occurred_at": "2026-11-14T10:02:00Z",
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.late.completed",
+          "result": {
+            "report": "late result from a's first attempt",
+            "metadata": {
+              "labels": [
+                "old",
+                "late"
+              ]
+            }
+          }
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "history_only",
+        "attempt_status": "failed"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "a's second attempt"
+          }
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "b's second attempt"
+          }
+        }
+      },
+      "expect": {
+        "round_status": "ready_for_assessment",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 124
+        }
+      },
+      "expect": {
+        "round_status": "ready_for_assessment",
+        "disposition": "history_only",
+        "attempt_status": "failed"
+      }
+    }
+  ],
+  "final": {
+    "round_status": "ready_for_assessment",
+    "snapshot_id": "snapshot-late-old-attempt",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": {
+      "a": {
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high",
+        "current_attempt": 2,
+        "attempts": {
+          "1": {
+            "status": "failed",
+            "failure_category": "timeout",
+            "result": null,
+            "exit_code": null,
+            "detail": "Synthetic timeout"
+          },
+          "2": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "a's second attempt"
+            },
+            "exit_code": null
+          }
+        }
+      },
+      "b": {
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium",
+        "current_attempt": 2,
+        "attempts": {
+          "1": {
+            "status": "failed",
+            "failure_category": "timeout",
+            "result": null,
+            "exit_code": null,
+            "detail": "Synthetic timeout"
+          },
+          "2": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "b's second attempt"
+            },
+            "exit_code": null
+          }
+        }
+      }
+    }
+  }
+}

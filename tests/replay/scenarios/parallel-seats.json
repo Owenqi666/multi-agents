@@ -1,0 +1,211 @@
+{
+  "initial": {
+    "snapshot_id": "snapshot-parallel-seats",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": [
+      {
+        "key": "a",
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high"
+      },
+      {
+        "key": "b",
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "raw_type": "synthetic.session",
+          "session_id": "parallel-a",
+          "reported_model": "observed-a",
+          "reported_effort": "high"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "raw_type": "synthetic.session",
+          "session_id": "parallel-b",
+          "reported_model": "observed-b",
+          "reported_effort": "medium"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "message",
+          "raw_type": "synthetic.message",
+          "text": "b is reviewing the frozen diff"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "a completed",
+            "findings": [
+              {
+                "line": 8,
+                "confirmed": true
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied",
+        "attempt_status": "succeeded"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "usage",
+          "raw_type": "synthetic.usage",
+          "counts": {
+            "inputTokens": 30,
+            "outputTokens": 4
+          }
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "b completed",
+            "findings": []
+          },
+          "reported_model": "observed-b-final"
+        }
+      },
+      "expect": {
+        "round_status": "ready_for_assessment",
+        "disposition": "applied",
+        "attempt_status": "succeeded"
+      }
+    }
+  ],
+  "final": {
+    "round_status": "ready_for_assessment",
+    "snapshot_id": "snapshot-parallel-seats",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": {
+      "a": {
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high",
+        "current_attempt": 1,
+        "attempts": {
+          "1": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "a completed",
+              "findings": [
+                {
+                  "line": 8,
+                  "confirmed": true
+                }
+              ]
+            },
+            "exit_code": null,
+            "session_id": "parallel-a",
+            "reported_model": "observed-a",
+            "reported_effort": "high"
+          }
+        }
+      },
+      "b": {
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium",
+        "current_attempt": 1,
+        "attempts": {
+          "1": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "b completed",
+              "findings": []
+            },
+            "exit_code": null,
+            "session_id": "parallel-b",
+            "reported_model": "observed-b-final",
+            "reported_effort": "medium"
+          }
+        }
+      }
+    }
+  }
+}

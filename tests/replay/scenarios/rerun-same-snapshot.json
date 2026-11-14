@@ -1,0 +1,164 @@
+{
+  "initial": {
+    "snapshot_id": "snapshot-rerun-same-snapshot",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": [
+      {
+        "key": "a",
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high"
+      },
+      {
+        "key": "b",
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "a's original report"
+          }
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 1,
+        "event": {
+          "type": "error",
+          "raw_type": "synthetic.error",
+          "failure_category": "rate_limited",
+          "detail": "Synthetic rate limit",
+          "retry_after": "2026-11-14T10:00:30Z"
+        }
+      },
+      "expect": {
+        "round_status": "incomplete",
+        "disposition": "applied",
+        "attempt_status": "failed"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 2,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied",
+        "attempt_status": "running"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "b",
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "result": {
+            "report": "b's retry report",
+            "findings": []
+          }
+        }
+      },
+      "expect": {
+        "round_status": "ready_for_assessment",
+        "disposition": "applied",
+        "attempt_status": "succeeded"
+      }
+    }
+  ],
+  "final": {
+    "round_status": "ready_for_assessment",
+    "snapshot_id": "snapshot-rerun-same-snapshot",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": {
+      "a": {
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high",
+        "current_attempt": 1,
+        "attempts": {
+          "1": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "a's original report"
+            },
+            "exit_code": null
+          }
+        }
+      },
+      "b": {
+        "provider": "synthetic-b",
+        "model": "requested-b",
+        "effort": "medium",
+        "current_attempt": 2,
+        "attempts": {
+          "1": {
+            "status": "failed",
+            "failure_category": "rate_limited",
+            "result": null,
+            "exit_code": null,
+            "detail": "Synthetic rate limit",
+            "retry_after": "2026-11-14T10:00:30Z"
+          },
+          "2": {
+            "status": "succeeded",
+            "failure_category": null,
+            "result": {
+              "report": "b's retry report",
+              "findings": []
+            },
+            "exit_code": null
+          }
+        }
+      }
+    }
+  }
+}
