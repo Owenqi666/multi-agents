@@ -41,7 +41,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--dispatchable",
         action="store_true",
-        help="also require resolved blocking questions and an existing baseline_commit",
+        help="also require resolved blocking questions and a baseline_commit "
+        "in the history of HEAD",
     )
     return parser.parse_args()
 
@@ -99,13 +100,19 @@ def card_exists(card_id: str, directory: Path) -> bool:
     )
 
 
-def commit_exists(commit: str) -> bool:
+def baseline_problem(commit: str) -> str | None:
+    # A commit that was amended or rebased away still exists as an object,
+    # so existence is not enough: the baseline has to be an ancestor of HEAD.
     result = subprocess.run(
-        ["git", "-C", str(repo_root), "cat-file", "-e", f"{commit}^{{commit}}"],
+        ["git", "-C", str(repo_root), "merge-base", "--is-ancestor", commit, "HEAD"],
         capture_output=True,
         check=False,
     )
-    return result.returncode == 0
+    if result.returncode == 0:
+        return None
+    if result.returncode == 1:
+        return "is not in the history of HEAD"
+    return "is not a commit in this repository"
 
 
 def cross_check(
@@ -148,10 +155,9 @@ def cross_check(
                         f"blocking question is unresolved: {item['question']}"
                     )
             commit = card["baseline_commit"]
-            if not commit_exists(commit):
-                errors[path].append(
-                    f"baseline_commit {commit} is not in this repository"
-                )
+            problem = baseline_problem(commit)
+            if problem:
+                errors[path].append(f"baseline_commit {commit} {problem}")
     return errors
 
 
