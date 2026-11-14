@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "id": "T-0003",
+  "goal": "用 SQLite 持久化审核轮次，让“检查该尝试是否仍是当前尝试”和“写入状态”在同一个事务里完成，并让五个基线场景经过 store 回放的结果与直接调用 core 的结果一致。",
+  "baseline_commit": "b210e197e7f7865b560c49fdbd6950352a9dba50",
+  "write_scope": [
+    "src/multi_agent/store/**",
+    "tests/unit/test_store_*.py",
+    "tests/replay/**"
+  ],
+  "depends_on": ["T-0002"],
+  "interface_contracts": [
+    {
+      "name": "review-core-api",
+      "definition": "沿用 T-0002 的同名契约。store 只通过 core 的 apply 和 round_status 推进和读取状态，自己不实现转移规则。"
+    },
+    {
+      "name": "baseline-scenarios",
+      "definition": "沿用 T-0002 的同名契约。本卡不改场景文件里的信封和期望值。"
+    },
+    {
+      "name": "review-store-api",
+      "definition": "src/multi_agent/store 对外提供：打开数据库文件并执行尚未执行的迁移；create_round 写入一个新轮次，包括快照标识、提示词模板版本和各席位配置；apply(round_id, envelope) 在一个事务里读出该轮次的席位和尝试，调用 core 的 apply，写回变化并追加一条历史，返回处置；load_round(round_id) 返回 core 的轮次状态值；load_history(round_id) 按写入顺序返回信封和处置。core 抛出的异常原样向上传，事务回滚。store 不读时钟，不生成标识：轮次标识和时间都由调用方给出。"
+    }
+  ],
+  "deliverables": [
+    "src/multi_agent/store/migrations/ 下编号为 0001 的迁移：轮次、席位、尝试、历史的表结构",
+    "迁移执行器：按编号顺序执行，每个迁移只执行一次，已执行到的版本记录在数据库里",
+    "review-store-api 契约的 store 模块，只用标准库的 sqlite3",
+    "回放工具增加一个经过 store 的后端：每次运行用一个新的临时数据库文件，最终断言之前关闭并重新打开数据库。五个场景对两个后端都运行",
+    "tests/unit/test_store_*.py：事务、回滚、迁移和历史的单元测试"
+  ],
+  "acceptance_criteria": [
+    "replay 步骤通过：五个场景分别经 core 后端和 store 后端运行，逐步期望和最终期望完全相同；场景文件里的信封和期望值没有改动",
+    "每个场景经 store 运行后，load_history 返回的条目数等于信封数，顺序与输入一致，处置与契约一致，history_only 的信封也在其中",
+    "apply 的读取、对 core 的调用和写入在同一个事务里，事务一开始就取得写锁（审核者对照 diff 判定）",
+    "有单元测试证明写锁：另一个连接持有未提交的写事务时，apply 在不等待的设置下报数据库被锁；对方回滚后同一个 apply 成功",
+    "有单元测试证明回滚：core 抛异常时，席位、尝试和历史都没有变化",
+    "有单元测试证明迁移和重开：空数据库打开后是最新版本；再次打开不会重复执行迁移；关闭后重新打开，load_round 和 load_history 的结果不变",
+    "store 里没有转移规则，状态变化全部来自 core 的 apply 的返回值（审核者对照 diff 判定）",
+    "没有新增依赖：pyproject.toml 和 uv.lock 没有改动。src/multi_agent/core 没有改动",
+    "在候选提交的全新检出里运行 scripts/verify.sh，五个步骤全部通过；从开工时的 HEAD 到候选提交的 diff 只包含 write_scope 内的路径"
+  ],
+  "test_refs": ["lint", "format", "typecheck", "unit", "replay"],
+  "open_questions": [
+    {
+      "question": "T-0002 集成后，它实际的接口是否与本卡引用的契约一致？由规划方在 T-0002 集成后复核本卡并重定基线，复核之前不派发。",
+      "blocks_dispatch": true
+    },
+    {
+      "question": "数据库文件的默认位置留到阶段 1 的 CLI 再定，本卡的 store 只接受调用方给出的路径。没有异议就按此实现。",
+      "blocks_dispatch": false
+    }
+  ]
+}

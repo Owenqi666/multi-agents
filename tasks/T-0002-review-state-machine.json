@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "id": "T-0002",
+  "goal": "用不做 I/O 的纯函数实现审核轮次的最小数据模型和状态机，并用合成事件回放守住四个基线行为：两个席位并行、同一快照补跑、旧尝试迟到、取消。",
+  "baseline_commit": "b210e197e7f7865b560c49fdbd6950352a9dba50",
+  "write_scope": [
+    "src/multi_agent/core/**",
+    "tests/unit/test_core_*.py",
+    "tests/replay/**"
+  ],
+  "depends_on": [],
+  "interface_contracts": [
+    {
+      "name": "review-events",
+      "definition": "事件类型定义在 src/multi_agent/core/events.py，都是不可变值，分两组。工作台事件：attempt_started、cancel_requested。适配器事件：session_started（session_id，可选的 reported_model 和 reported_effort）、message（text）、usage（运行时报告的计数，键值原样保留）、completed（result，可选的 reported_model）、error（failure_category 可为空，detail，可选的 retry_after）、process_exited（exit_code）。每个适配器事件都带 raw_type，保留运行时原始的事件类型名。result 是 JSON 可序列化的值，阶段 0 不解释它的内容。事件进入状态机前由工作台包进信封，信封字段是 seat（席位键）、attempt（尝试编号，从 1 开始）、occurred_at（调用方给出的时间字符串，可为空）和事件本身。适配器事件自身不带 seat 和 attempt。"
+    },
+    {
+      "name": "review-state",
+      "definition": "尝试状态有四个：running、cancelling、succeeded、failed。failed 带 failure_category，取值是计划列出的八类：auth_expired（认证失效）、rate_limited（限流）、model_unavailable（模型不可用）、timeout（超时）、cancelled（取消）、out_of_scope_patch（越界补丁）、tests_failed（测试失败）、integration_conflict（集成冲突），或者为空，表示未确认。轮次状态有三个：in_progress（有席位还没有尝试，或有席位的当前尝试是 running 或 cancelling）、ready_for_assessment（每个席位的当前尝试都是 succeeded）、incomplete（其余情况）。每个事件处理后得到一个处置：applied（事件属于当前尝试，已按转移表处理）或 history_only（只留记录，不改状态）。"
+    },
+    {
+      "name": "review-core-api",
+      "definition": "src/multi_agent/core 对外提供两个纯函数。apply(state, envelope) 返回新的轮次状态值和这个事件的处置；输入不合法时抛异常，传入的状态值不变。round_status(state) 返回轮次状态。轮次状态值不可变，包含快照标识、提示词模板版本、每个席位的配置（provider、请求的 model 和 effort）、该席位的全部尝试和当前尝试编号。新轮次由调用方用快照标识、提示词模板版本和席位配置直接构造，此时各席位都没有尝试。每次尝试记录编号、状态、failure_category、detail、retry_after、session_id、reported_model、reported_effort、result 和 exit_code，没有值的字段为空。状态值不含历史：历史由调用方按顺序保存每个信封和它的处置。core 不做 I/O，不读时钟，不生成标识，不 import adapters 和 store。"
+    },
+    {
+      "name": "attempt-transitions",
+      "definition": "规则按顺序判定。1. attempt_started：席位还没有尝试时 attempt 必须是 1；当前尝试是 failed 时 attempt 必须是当前编号加 1。满足时新尝试成为当前尝试，状态为 running，处置为 applied。其他情况抛异常，包括当前尝试是 running、cancelling 或 succeeded。2. 其他事件：席位不存在，或 attempt 大于当前编号时抛异常；attempt 小于当前编号时处置为 history_only。3. 当前尝试是 running：session_started 记录 session_id 和它报告的模型、档位；message 和 usage 不改状态；completed 转为 succeeded，保存 result 和它报告的模型；error 转为 failed，保存 failure_category、detail 和 retry_after；cancel_requested 转为 cancelling。以上处置都是 applied。process_exited 没有登记，抛异常，因为适配器必须先给出 completed 或 error。4. 当前尝试是 cancelling：completed、error、process_exited 都转为 failed，failure_category 为 cancelled，不保存 result；error 的 detail 照常保存，process_exited 同时记录 exit_code；session_started、message、usage 不改状态。以上处置都是 applied。重复的 cancel_requested 处置为 history_only。5. 当前尝试是 succeeded 或 failed：process_exited 记录 exit_code，处置为 applied；其余事件处置为 history_only。6. reported_model 和 reported_effort 只取自事件。事件没有报告时保持为空，不从席位配置复制。"
+    },
+    {
+      "name": "baseline-scenarios",
+      "definition": "场景文件放在 tests/replay/scenarios/，每个文件给出轮次的初始配置、按顺序排列的信封、每一步之后期望的轮次状态和处置（需要时还有某次尝试此刻的状态），以及最终期望。记号 a#1 表示席位 a 的第 1 次尝试。cancel-process-exit 只有席位 a，其余场景都有 a、b 两个席位。parallel-seats（两个席位并行）：a#1 attempt_started；b#1 attempt_started；a#1 session_started；b#1 session_started；b#1 message；a#1 completed；b#1 usage；b#1 completed。前七步之后轮次都是 in_progress，第八步之后是 ready_for_assessment；全部处置为 applied；最终 a#1 和 b#1 都是 succeeded，各自保存自己的 result。rerun-same-snapshot（同一快照补跑）：a#1 attempt_started；b#1 attempt_started；a#1 completed；b#1 error（rate_limited，带 retry_after）；b#2 attempt_started；b#2 completed。第四步之后轮次是 incomplete，第五步之后是 in_progress，第六步之后是 ready_for_assessment；全部处置为 applied；最终 a 的当前尝试仍是 1 且 result 不变，b#1 是 failed（rate_limited，retry_after 保留），b#2 是 succeeded，快照标识和 b 的席位配置前后相同。late-old-attempt（旧尝试迟到）：a#1 attempt_started；b#1 attempt_started；a#1 error（timeout）；b#1 error（timeout）；a#2 attempt_started；b#2 attempt_started；a#1 completed；a#2 completed；b#2 completed；b#1 process_exited。第七步和第十步处置为 history_only，其余为 applied；第四步之后轮次是 incomplete，第七步之后仍是 in_progress，第九步和第十步之后都是 ready_for_assessment；最终 a 保存的是第 2 次尝试的 result，a#1 和 b#1 仍是 failed（timeout）且没有 result。cancel-turn-terminal（取消，以回合终态为依据）：a#1 attempt_started；b#1 attempt_started；a#1 session_started；a#1 message；b#1 completed；a#1 cancel_requested；a#1 message；a#1 error（cancelled）。第六步之后 a#1 是 cancelling，轮次仍是 in_progress；第八步之后 a#1 是 failed（cancelled），轮次是 incomplete；全部处置为 applied；最终 b#1 仍是 succeeded 并保存 result。cancel-process-exit（取消，以进程停止为依据）：a#1 attempt_started；a#1 session_started；a#1 usage；a#1 cancel_requested；a#1 process_exited（exit_code 130）。第四步之后 a#1 是 cancelling；第五步之后 a#1 是 failed（cancelled）并记录 exit_code 130，轮次是 incomplete；全部处置为 applied。"
+    }
+  ],
+  "deliverables": [
+    "src/multi_agent/core/events.py：review-events 契约里的事件类型和信封",
+    "src/multi_agent/core/transitions.py：转移表，登记 attempt-transitions 契约里的全部合法转移，没有登记的组合抛异常",
+    "src/multi_agent/core 里的轮次状态值类型，以及 review-core-api 契约的 apply 和 round_status",
+    "tests/replay/ 下的回放工具：读取 tests/replay/scenarios/ 里的场景文件，把信封按顺序交给一个可替换的后端，逐步核对期望。本卡只提供直接调用 core 的后端，后端的接口要让 T-0003 能再加一个经过 store 的后端",
+    "baseline-scenarios 契约的五个场景文件，文件名与场景名相同，格式为 JSON",
+    "tests/unit/test_core_*.py：转移表、抛异常的情况、证据规则和轮次状态的单元测试",
+    "删除 tests/replay/test_placeholder.py 和 tests/replay/scenarios/.gitkeep，它们被真实的回放测试和场景文件取代"
+  ],
+  "acceptance_criteria": [
+    "replay 步骤通过：五个场景逐步核对轮次状态、处置和契约点名的尝试状态，并核对最终每次尝试的状态、failure_category、result 和 exit_code",
+    "场景文件的信封顺序和期望值与 baseline-scenarios 契约逐条一致（审核者对照 diff 判定）",
+    "回放工具遇到场景文件里不认识的键时报错；每个场景连续运行两次，两次的状态和处置序列相同",
+    "unit 步骤通过，覆盖 attempt-transitions 契约的每一条规则，包括：规则 1、2、3 中每一种抛异常的情况，且抛异常后传入的状态值不变；取消请求之后到达的 completed 不保存 result；只有一个席位的轮次在该席位 succeeded 后成为 ready_for_assessment",
+    "证据规则有单元测试：事件没有报告模型或档位时，尝试的 reported_model 和 reported_effort 为空，席位配置里的请求值不会被复制过去",
+    "合法转移只登记在 src/multi_agent/core/transitions.py，core 的其他模块没有按状态写分支绕开它（审核者对照 diff 判定）",
+    "src/multi_agent/core 不做 I/O、不读时钟、不生成标识，不 import adapters 和 store（审核者对照 diff 判定）",
+    "没有新增依赖：pyproject.toml 和 uv.lock 没有改动",
+    "在候选提交的全新检出里运行 scripts/verify.sh，五个步骤全部通过；从开工时的 HEAD 到候选提交的 diff 只包含 write_scope 内的路径"
+  ],
+  "test_refs": ["lint", "format", "typecheck", "unit", "replay"],
+  "open_questions": [
+    {
+      "question": "计划列出的八类失败原因没有覆盖进程意外退出和输出无法解析。这类失败怎么记：failure_category 留空表示未确认，还是在计划里新增第九类？",
+      "blocks_dispatch": true,
+      "resolution": "留空表示未确认，不新增分类，原始信息保存在 detail 里。用户 2026-11-14 确认。"
+    },
+    {
+      "question": "取消请求之后回合仍然报告完成时，这次尝试按取消处理，还是按成功处理并采用结果？",
+      "blocks_dispatch": true,
+      "resolution": "按取消处理：尝试记为 failed（cancelled），结果只留在历史里。用户 2026-11-14 确认。"
+    },
+    {
+      "question": "阶段 0 的数据模型只覆盖审核：快照标识、审核轮次、席位、尝试和历史。运行、任务、阶段留到阶段 2 再引入。没有异议就按此实现。",
+      "blocks_dispatch": false
+    }
+  ]
+}
