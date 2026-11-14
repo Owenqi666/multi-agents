@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0004",
   "goal": "定义 Codex 和 Claude 两个适配器共用的异步接口和事件产出约定，并用一个按脚本产出事件的适配器证明这个接口能被实现和驱动。不调用真实 CLI。",
-  "baseline_commit": "aeee4629eb2ee2af36fd028cd85c9175b6f4b269",
+  "baseline_commit": "22e8e3ddc09833306cc2aefc0ec92abd5aac542d",
   "write_scope": [
     "src/multi_agent/adapters/**",
     "tests/unit/test_adapters_*.py"
@@ -11,7 +11,7 @@
   "interface_contracts": [
     {
       "name": "review-events",
-      "definition": "沿用 T-0002 的同名契约。适配器产出的是其中的适配器事件，不带 seat 和 attempt。"
+      "definition": "沿用 T-0002 的同名契约，实际类型在 src/multi_agent/core/events.py：SessionStarted、Message、Usage、Completed、Error、ProcessExited，以及它们的联合类型 AdapterEvent。适配器产出的是这些事件，不带 seat 和 attempt。"
     },
     {
       "name": "adapter-api",
@@ -48,7 +48,8 @@
     },
     {
       "question": "T-0002 集成后，它实际的事件类型是否与本卡引用的 review-events 契约一致？由规划方在 T-0002 集成后复核本卡并重定基线，复核之前不派发。",
-      "blocks_dispatch": true
+      "blocks_dispatch": true,
+      "resolution": "已复核，一致。src/multi_agent/core/events.py 提供六个适配器事件类型和联合类型 AdapterEvent，字段与契约相符，raw_type 是可以为空的关键字参数。基线重定为 22e8e3d。规划方 2026-11-14。"
     },
     {
       "question": "真实的 Codex 和 Claude 适配器不在本卡范围内。它们依赖暂缓中的实机验证，等你恢复实机联调时再立卡。没有异议就按此安排。",

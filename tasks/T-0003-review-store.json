@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0003",
   "goal": "用 SQLite 持久化审核轮次，让“检查该尝试是否仍是当前尝试”和“写入状态”在同一个事务里完成，并让五个基线场景经过 store 回放的结果与直接调用 core 的结果一致。",
-  "baseline_commit": "aeee4629eb2ee2af36fd028cd85c9175b6f4b269",
+  "baseline_commit": "22e8e3ddc09833306cc2aefc0ec92abd5aac542d",
   "write_scope": [
     "src/multi_agent/store/**",
     "tests/unit/test_store_*.py",
@@ -12,11 +12,15 @@
   "interface_contracts": [
     {
       "name": "review-core-api",
-      "definition": "沿用 T-0002 的同名契约。store 只通过 core 的 apply 和 round_status 推进和读取状态，自己不实现转移规则。"
+      "definition": "沿用 T-0002 的同名契约，实际接口在 src/multi_agent/core/__init__.py 和 events.py：apply(state, envelope) 返回 RoundState 和 Disposition，round_status(state) 返回 RoundStatus。store 只通过它们推进和读取状态，自己不实现转移规则。result 和 usage 的计数在 core 里是只读容器，不能直接交给 json.dumps，也不能 deepcopy 或 pickle：写库前用 core.events.thaw_json 还原。读回时，只有这两种 JSON 载荷会在构造事件和尝试时自动重新冻结并与原值相等。轮次状态本身要逐层构造：SeatConfig、SeatState、AttemptState 和 EvidenceSource 各自实例化，seats 和 attempts 用 tuple，状态和失败分类用对应的枚举类型；构造函数不会把一整份字典自动还原成这些对象。"
     },
     {
       "name": "baseline-scenarios",
       "definition": "沿用 T-0002 的同名契约。本卡不改场景文件里的信封和期望值。"
+    },
+    {
+      "name": "replay-backend",
+      "definition": "沿用 tests/replay/test_review_replay.py 里的 ReplayBackend 约定：后端由初始轮次状态构造，提供 apply、load_round 和 load_history；replay 函数返回每一步之后的轮次状态值和处置。本卡增加一个经过 store 的后端。两个后端共用同一套场景发现逻辑：tests/replay/scenarios/ 里发现的每个场景都在两个后端上运行，以后新增场景文件不需要改回放工具。每个场景在两个后端上的逐步结果相等。"
     },
     {
       "name": "review-store-api",
@@ -27,11 +31,11 @@
     "src/multi_agent/store/migrations/ 下编号为 0001 的迁移：轮次、席位、尝试、历史的表结构",
     "迁移执行器：按编号顺序执行，每个迁移只执行一次，已执行到的版本记录在数据库里",
     "review-store-api 契约的 store 模块，只用标准库的 sqlite3",
-    "回放工具增加一个经过 store 的后端：每次运行用一个新的临时数据库文件，最终断言之前关闭并重新打开数据库。五个场景对两个后端都运行",
+    "回放工具增加一个经过 store 的后端：每次运行用一个新的临时数据库文件，最终断言之前关闭并重新打开数据库。场景目录里发现的每个场景对两个后端都运行，store 后端不限定在写死的场景名单上",
     "tests/unit/test_store_*.py：事务、回滚、原子性、迁移和历史的单元测试"
   ],
   "acceptance_criteria": [
-    "replay 步骤通过：五个场景分别经 core 后端和 store 后端运行，逐步期望和最终期望完全相同；场景文件里的信封和期望值没有改动",
+    "replay 步骤通过：tests/replay/scenarios/ 里发现的每个场景（目前是五个基线场景）分别经 core 后端和 store 后端运行，逐步期望和最终期望完全相同；两个后端共用同一套场景发现逻辑，新增场景文件不改回放工具就会在两个后端上运行；场景文件里的信封和期望值没有改动",
     "逐步比较完整状态：每一步之后，store 后端 load_round 返回的轮次状态值与 core 后端的状态值相等，不只是场景点名的字段相等",
     "逐条比较完整历史：重新打开数据库后，load_history 返回的每个信封与输入的信封逐字段相等（包括迟到事件的 result、用量计数、occurred_at 和 raw_type），顺序与输入一致，处置与 core 后端相同，history_only 的信封也在其中",
     "apply 的读取、对 core 的调用和写入在同一个事务里，事务一开始就取得写锁（审核者对照 diff 判定）",
@@ -39,7 +43,7 @@
     "有单元测试证明回滚：core 抛异常时，席位、尝试和历史都没有变化",
     "有单元测试证明原子性：事务中途的写入失败时（例如状态已经写入而历史写入出错），状态和历史一起回到事务开始之前",
     "有单元测试证明迁移和重开：空数据库打开后是最新版本；再次打开不会重复执行迁移；关闭后重新打开，load_round 和 load_history 的结果不变",
-    "词汇一致：core 定义的每个尝试状态和每个 failure_category（包括空值）都能写入并原样读回（单元测试）；表结构里没有 core 不认识的状态或分类（审核者对照 diff 判定）",
+    "词汇一致：core 定义的每个尝试状态和每个 failure_category（包括空值）都能写入并原样读回，证据来源也一样（单元测试）；表结构里没有 core 不认识的状态或分类（审核者对照 diff 判定）",
     "共同验收：候选提交包含 T-0002 的全部改动。state-change 要求的转移表、迁移和回放场景三者一致，以这个提交上的第 1、2、3、9 条为准",
     "store 里没有转移规则，状态变化全部来自 core 的 apply 的返回值（审核者对照 diff 判定）",
     "没有新增依赖：pyproject.toml 和 uv.lock 没有改动。src/multi_agent/core 没有改动",
@@ -49,7 +53,8 @@
   "open_questions": [
     {
       "question": "T-0002 集成后，它实际的接口是否与本卡引用的契约一致？由规划方在 T-0002 集成后复核本卡并重定基线，复核之前不派发。",
-      "blocks_dispatch": true
+      "blocks_dispatch": true,
+      "resolution": "已复核，一致。T-0002 的候选提交 22e8e3d 通过审核：apply、round_status、状态值和事件类型与契约相符，状态值不含历史，回放工具的后端可以替换。按实际接口补写了 review-core-api 的说明，新增 replay-backend 契约，基线重定为 22e8e3d。规划方 2026-11-14。"
     },
     {
       "question": "数据库文件的默认位置留到阶段 1 的 CLI 再定，本卡的 store 只接受调用方给出的路径。没有异议就按此实现。",
