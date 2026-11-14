@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0005",
   "goal": "取消请求之后才到达的 session_started 也记录会话标识和运行时报告的模型、档位，让已取消的尝试不丢掉运行时已经报告过的证据。",
-  "baseline_commit": "22e8e3ddc09833306cc2aefc0ec92abd5aac542d",
+  "baseline_commit": "7d2a3d1c20f90889e7d6e75261bd2001236ddcd7",
   "write_scope": [
     "src/multi_agent/core/transitions.py",
     "tests/unit/test_core_review.py",
@@ -37,7 +37,8 @@
   "open_questions": [
     {
       "question": "T-0003 集成后，由规划方对照当时的代码复核本卡并重定基线，复核之前不派发。",
-      "blocks_dispatch": true
+      "blocks_dispatch": true,
+      "resolution": "已复核。T-0003 通过审核：两个后端共用场景发现逻辑，新增场景文件不改回放工具就会在两边运行。在 7d2a3d1 的副本上模拟过本卡：新场景在改动前失败，转移表改一行之后在 core 和 store 两个后端上都通过，现有测试里只有 tests/unit/test_core_review.py 的一个用例需要更新。基线重定为 7d2a3d1。规划方 2026-11-14。"
     },
     {
       "question": "本卡来自 T-0002 的审核。原契约第 4 条把 session_started 和 message、usage 并列写成“不改状态”，实现按字面做成了完全不记录，于是取消请求早于会话开始时，这次尝试上看不到会话标识和运行时报告的模型。信息仍在历史里，没有丢失。没有异议就按本卡修改；认为没有必要的话可以删除本卡。",
