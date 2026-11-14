@@ -1,0 +1,100 @@
+{
+  "initial": {
+    "snapshot_id": "snapshot-cancel-before-session",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": [
+      {
+        "key": "a",
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high"
+      }
+    ]
+  },
+  "steps": [
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "attempt_started"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "cancel_requested"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied",
+        "attempt_status": "cancelling"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "raw_type": "synthetic.session",
+          "session_id": "cancel-before-session-a",
+          "reported_model": "reported-a",
+          "reported_effort": "medium"
+        }
+      },
+      "expect": {
+        "round_status": "in_progress",
+        "disposition": "applied",
+        "attempt_status": "cancelling"
+      }
+    },
+    {
+      "envelope": {
+        "seat": "a",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 130
+        }
+      },
+      "expect": {
+        "round_status": "incomplete",
+        "disposition": "applied",
+        "attempt_status": "failed"
+      }
+    }
+  ],
+  "final": {
+    "round_status": "incomplete",
+    "snapshot_id": "snapshot-cancel-before-session",
+    "prompt_template_version": "synthetic-review-v1",
+    "seats": {
+      "a": {
+        "provider": "synthetic-a",
+        "model": "requested-a",
+        "effort": "high",
+        "current_attempt": 1,
+        "attempts": {
+          "1": {
+            "status": "failed",
+            "failure_category": "cancelled",
+            "result": null,
+            "exit_code": 130,
+            "session_id": "cancel-before-session-a",
+            "reported_model": "reported-a",
+            "reported_effort": "medium"
+          }
+        }
+      }
+    }
+  }
+}

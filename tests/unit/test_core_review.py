@@ -169,20 +169,62 @@ def test_running_message_and_usage_leave_attempt_unchanged() -> None:
     assert after_updates == running
 
 
-def test_cancelling_keeps_activity_in_history_without_changing_state() -> None:
-    cancelling = apply_all(START, CANCEL)
+@pytest.mark.parametrize("has_prior_report", [False, True])
+@pytest.mark.parametrize("model", [None, "late-model"])
+@pytest.mark.parametrize("effort", [None, "medium"])
+def test_cancelling_records_session_and_preserves_missing_reports(
+    has_prior_report: bool, model: str | None, effort: str | None
+) -> None:
+    prior = (
+        (
+            Envelope(
+                "a", 1, SessionStarted("first", "first-model", "low", raw_type="first")
+            ),
+        )
+        if has_prior_report
+        else ()
+    )
+    cancelling = apply_all(START, *prior, CANCEL)
+    event = SessionStarted("late-session", model, effort, raw_type="late")
+    updated, disposition = apply(cancelling, Envelope("a", 1, event))
+    (attempt,) = updated.seats[0].attempts
+
+    assert disposition is Disposition.APPLIED
+    assert attempt.status == "cancelling"
+    assert round_status(updated) == "in_progress"
+    assert attempt.session_id == "late-session"
+    previous_source = (
+        EvidenceSource("session_started", "first") if has_prior_report else None
+    )
+    source = EvidenceSource("session_started", "late")
+    assert attempt.reported_model == (
+        model if model is not None else "first-model" if has_prior_report else None
+    )
+    assert attempt.reported_model_source == (
+        source if model is not None else previous_source
+    )
+    assert attempt.reported_effort == (
+        effort if effort is not None else "low" if has_prior_report else None
+    )
+    assert attempt.reported_effort_source == (
+        source if effort is not None else previous_source
+    )
+
+
+def test_cancelling_keeps_other_activity_without_changing_state() -> None:
+    cancelling = apply_all(
+        START,
+        CANCEL,
+        Envelope("a", 1, SessionStarted("session", "late-model", "medium")),
+    )
     result, disposition = apply(cancelling, CANCEL)
     assert result == cancelling
     assert disposition is Disposition.HISTORY_ONLY
 
-    after_updates = apply_all(
-        START,
-        CANCEL,
-        Envelope("a", 1, SessionStarted("session", "late-model", "medium")),
-        Envelope("a", 1, Message("text")),
-        Envelope("a", 1, Usage({"tokens": 4})),
-    )
-    assert after_updates == cancelling
+    for event in (Message("text"), Usage({"tokens": 4})):
+        after_update, disposition = apply(cancelling, Envelope("a", 1, event))
+        assert disposition is Disposition.APPLIED
+        assert after_update == cancelling
 
 
 @pytest.mark.parametrize(

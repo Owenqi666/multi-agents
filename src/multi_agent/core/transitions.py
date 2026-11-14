@@ -125,7 +125,7 @@ _TRANSITIONS: dict[AttemptStatus, dict[type[ReviewEvent], Transition | None]] = 
         CancelRequested: _request_cancel,
     },
     AttemptStatus.CANCELLING: {
-        SessionStarted: _keep,
+        SessionStarted: _on(SessionStarted, _report_session),
         Message: _keep,
         Usage: _keep,
         Completed: _on(Completed, _report_cancelled_completion),
