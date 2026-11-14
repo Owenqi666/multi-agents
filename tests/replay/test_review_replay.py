@@ -2,6 +2,7 @@
 
 import json
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -29,6 +30,7 @@ from multi_agent.core.events import (
     Usage,
     thaw_json,
 )
+from multi_agent.store import ReviewStore
 
 SCENARIOS = Path(__file__).parent / "scenarios"
 BASELINE_SCENARIOS = {
@@ -76,6 +78,33 @@ class CoreBackend:
 
     def load_history(self) -> tuple[tuple[Envelope, Disposition], ...]:
         return tuple(self._history)
+
+
+class StoreBackend:
+    def __init__(self, path: Path, state: RoundState) -> None:
+        self.path = path
+        self.store = ReviewStore(path)
+        try:
+            self.store.create_round("replay", state)
+        except BaseException:
+            self.store.close()
+            raise
+
+    def apply(self, envelope: Envelope) -> Disposition:
+        return self.store.apply("replay", envelope)
+
+    def load_round(self) -> RoundState:
+        return self.store.load_round("replay")
+
+    def load_history(self) -> tuple[tuple[Envelope, Disposition], ...]:
+        return self.store.load_history("replay")
+
+    def reopen(self) -> None:
+        self.store.close()
+        self.store = ReviewStore(self.path)
+
+    def close(self) -> None:
+        self.store.close()
 
 
 @dataclass(frozen=True)
@@ -150,6 +179,7 @@ def replay(
     initial: dict,
     steps: list[dict],
     final: dict,
+    before_final: Callable[[ReplayBackend], None] | None = None,
 ) -> tuple[tuple[RoundState, Disposition], ...]:
     runner = backend(read_round(**initial))
     trace = []
@@ -178,6 +208,10 @@ def replay(
             )
         trace.append((state, disposition))
         expected_history.append((envelope, Disposition(expectation.disposition)))
+    final_state = runner.load_round()
+    if before_final is not None:
+        before_final(runner)
+    assert runner.load_round() == final_state
     check_final(runner.load_round(), final)
     assert runner.load_history() == tuple(expected_history)
     return tuple(trace)
@@ -187,9 +221,25 @@ def replay(
     "name",
     sorted(BASELINE_SCENARIOS | {path.stem for path in SCENARIOS.glob("*.json")}),
 )
-def test_review_scenario(name: str) -> None:
+def test_review_scenario(name: str, tmp_path: Path) -> None:
     scenario = json.loads((SCENARIOS / f"{name}.json").read_text(encoding="utf-8"))
-    assert replay(CoreBackend, **scenario) == replay(CoreBackend, **scenario)
+    core_trace = replay(CoreBackend, **scenario)
+    assert core_trace == replay(CoreBackend, **scenario)
+    for run in range(2):
+        with ExitStack() as resources:
+
+            def store_backend(
+                state: RoundState,
+                database_path: Path = tmp_path / f"replay-{run}.sqlite",
+            ) -> StoreBackend:
+                backend = StoreBackend(database_path, state)
+                resources.callback(backend.close)
+                return backend
+
+            assert (
+                replay(store_backend, before_final=StoreBackend.reopen, **scenario)
+                == core_trace
+            )
 
 
 @pytest.mark.parametrize(
