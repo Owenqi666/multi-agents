@@ -125,6 +125,11 @@ def test_terminal_and_exit_remain_separate_when_cancel_arrives_late() -> None:
 
 def test_environment_keeps_unavailable_fields_empty() -> None:
     async def run() -> None:
+        unavailable = await ScriptedAdapter([]).check_environment()
+        assert unavailable.cli_version is None
+        assert unavailable.logged_in is None
+        assert unavailable.models is None
+
         adapter = ScriptedAdapter(
             [], environment=EnvironmentInfo("reported-version", False)
         )

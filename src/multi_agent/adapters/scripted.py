@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from multi_agent.core.events import AdapterEvent, Completed, Error, ProcessExited
 
@@ -114,3 +115,8 @@ class ScriptedAdapter(Adapter):
     async def result(self, turn: TurnHandle) -> TurnResult:
         state = self._turns[turn]
         return TurnResult(state.terminal, state.process_exit)
+
+
+if TYPE_CHECKING:
+    # Instantiation makes mypy reject inherited, unimplemented protocol methods.
+    _adapter: Adapter = ScriptedAdapter(())
