@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0004",
   "goal": "定义 Codex 和 Claude 两个适配器共用的异步接口和事件产出约定，并用一个按脚本产出事件的适配器证明这个接口能被实现和驱动。不调用真实 CLI。",
-  "baseline_commit": "b210e197e7f7865b560c49fdbd6950352a9dba50",
+  "baseline_commit": "aeee4629eb2ee2af36fd028cd85c9175b6f4b269",
   "write_scope": [
     "src/multi_agent/adapters/**",
     "tests/unit/test_adapters_*.py"
@@ -19,21 +19,21 @@
     },
     {
       "name": "adapter-event-obligations",
-      "definition": "对一轮产出的事件：1. 终态事件（completed 或 error）最多一个。2. process_exited 最多一个，并且是这一轮的最后一个事件。3. 没有被请求取消而进程不给终态就退出时，先产出 error（failure_category 为空，detail 说明退出情况），再产出 process_exited。4. 被请求取消之后进程不给终态就停止时，只产出 process_exited。5. 超时、限流、认证失效、模型不可用和畸形输出由适配器判定后写进 error 的 failure_category，无法归类的留空。6. reported_model 和 reported_effort 只填运行时报告的值，raw_type 填运行时原始的事件类型名。工作台先把 cancel_requested 交给状态机，再调用适配器的 cancel。"
+      "definition": "对一轮产出的事件。结构规则：1. 终态事件（completed 或 error）最多一个。2. process_exited 最多一个，并且是这一轮的最后一个事件。3. 事件流结束时，必须已经产出过终态事件，或者在被请求取消之后产出过 process_exited；空的事件流和只有过程事件的事件流都不合法。具体情形：4. 没有被请求取消而进程不给终态就退出时，先产出 error（failure_category 为空，detail 说明退出情况），再产出 process_exited。5. 被请求取消之后进程不给终态就停止时，只产出 process_exited。6. 回合已有终态而进程继续运行时（例如 Codex App Server），事件流在终态事件之后结束，不产出 process_exited，回合结果里的进程退出信息为空。内容规则：7. 超时、限流、认证失效和模型不可用由适配器判定后写进 error 的 failure_category；畸形输出和其他无法归类的失败，failure_category 留空，detail 保留原始信息。8. reported_model 和 reported_effort 只填运行时报告的值。raw_type 填运行时原始的事件类型名；适配器自己生成的事件（进程退出、补出的 error、解析失败）没有原始类型，raw_type 留空。取消的上下文：工作台先把 cancel_requested 交给状态机，再调用适配器的 cancel。是否被请求过取消不在适配器事件里，核对事件序列时由调用方另外给出。"
     }
   ],
   "deliverables": [
     "src/multi_agent/adapters/base.py：adapter-api 契约的接口，以及环境检查结果、会话配置、会话和回合句柄、回合结果的值类型",
     "src/multi_agent/adapters/ 下一个按脚本产出事件的适配器：脚本规定一轮产出哪些事件、被取消后产出哪些事件。它不启动子进程",
-    "src/multi_agent/adapters/ 下一个纯函数，核对一轮的事件序列是否满足 adapter-event-obligations 的第 1 到 4 条，供以后真实适配器的测试复用",
+    "src/multi_agent/adapters/ 下一个纯函数，核对一轮的事件序列是否满足 adapter-event-obligations 的结构规则。输入是事件序列和“进程退出之前是否已经请求取消”，供以后真实适配器的测试复用",
     "base.py 模块文档里的操作对照表：六个操作在 Codex App Server 和 Claude 无头模式下各自对应的方法、选项或事件，每一项注明 runtime-protocols 事实表里的状态（已验证、快照、文档或未确认）",
     "tests/unit/test_adapters_*.py：用脚本适配器驱动接口的单元测试，异步测试用 asyncio.run 包一层"
   ],
   "acceptance_criteria": [
-    "typecheck 步骤通过，并且脚本适配器被 mypy 按适配器接口检查过（例如一处带接口类型标注的赋值）",
+    "typecheck 步骤通过，并且“脚本适配器符合适配器接口”由 src/multi_agent/adapters/ 里的代码触发 mypy 检查（例如脚本适配器模块里一处带接口类型标注的赋值）。typecheck 只扫描 src，放在测试里的标注不算",
     "unit 步骤覆盖两条路径：启动会话、提交一轮、读完事件、取结果；提交一轮、请求取消、读到 process_exited、取结果",
     "unit 步骤覆盖 check_environment：取不到的字段为空，没有用请求值或默认值顶替",
-    "事件序列核对函数有单元测试：符合约定的序列通过；违反第 1、2、3、4 条的序列各有一个被拒绝的例子",
+    "事件序列核对函数有单元测试。同一个只含 process_exited 的序列，在已请求取消时通过，在没有请求取消时被拒绝。被拒绝的还有：空序列、只有过程事件的序列、有两个终态事件的序列、process_exited 之后还有事件的序列。通过的还有：有终态而没有 process_exited 的序列、没有请求取消时先 error 再 process_exited 的序列",
     "操作对照表覆盖六个操作在两边的做法，标注的状态与 runtime-protocols 的事实表一致，状态为未确认的项没有写成既定事实（审核者对照 diff 判定）",
     "adapters 只 import core 的事件类型，不 import store；没有启动子进程、发起网络请求或调用 codex、claude 的代码（审核者对照 diff 判定）",
     "没有新增依赖：pyproject.toml 和 uv.lock 没有改动",

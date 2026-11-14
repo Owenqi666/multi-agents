@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0003",
   "goal": "用 SQLite 持久化审核轮次，让“检查该尝试是否仍是当前尝试”和“写入状态”在同一个事务里完成，并让五个基线场景经过 store 回放的结果与直接调用 core 的结果一致。",
-  "baseline_commit": "b210e197e7f7865b560c49fdbd6950352a9dba50",
+  "baseline_commit": "aeee4629eb2ee2af36fd028cd85c9175b6f4b269",
   "write_scope": [
     "src/multi_agent/store/**",
     "tests/unit/test_store_*.py",
@@ -20,7 +20,7 @@
     },
     {
       "name": "review-store-api",
-      "definition": "src/multi_agent/store 对外提供：打开数据库文件并执行尚未执行的迁移；create_round 写入一个新轮次，包括快照标识、提示词模板版本和各席位配置；apply(round_id, envelope) 在一个事务里读出该轮次的席位和尝试，调用 core 的 apply，写回变化并追加一条历史，返回处置；load_round(round_id) 返回 core 的轮次状态值；load_history(round_id) 按写入顺序返回信封和处置。core 抛出的异常原样向上传，事务回滚。store 不读时钟，不生成标识：轮次标识和时间都由调用方给出。"
+      "definition": "src/multi_agent/store 对外提供：打开数据库文件并执行尚未执行的迁移；create_round 写入一个新轮次，包括快照标识、提示词模板版本和各席位配置；apply(round_id, envelope) 在一个事务里读出该轮次的席位和尝试，调用 core 的 apply，写回变化并追加一条历史，返回处置；load_round(round_id) 返回 core 的轮次状态值；load_history(round_id) 按写入顺序返回信封和处置，信封与写入时逐字段相同。core 抛出的异常原样向上传，事务回滚。store 不读时钟，不生成标识：轮次标识和时间都由调用方给出。"
     }
   ],
   "deliverables": [
@@ -28,15 +28,19 @@
     "迁移执行器：按编号顺序执行，每个迁移只执行一次，已执行到的版本记录在数据库里",
     "review-store-api 契约的 store 模块，只用标准库的 sqlite3",
     "回放工具增加一个经过 store 的后端：每次运行用一个新的临时数据库文件，最终断言之前关闭并重新打开数据库。五个场景对两个后端都运行",
-    "tests/unit/test_store_*.py：事务、回滚、迁移和历史的单元测试"
+    "tests/unit/test_store_*.py：事务、回滚、原子性、迁移和历史的单元测试"
   ],
   "acceptance_criteria": [
     "replay 步骤通过：五个场景分别经 core 后端和 store 后端运行，逐步期望和最终期望完全相同；场景文件里的信封和期望值没有改动",
-    "每个场景经 store 运行后，load_history 返回的条目数等于信封数，顺序与输入一致，处置与契约一致，history_only 的信封也在其中",
+    "逐步比较完整状态：每一步之后，store 后端 load_round 返回的轮次状态值与 core 后端的状态值相等，不只是场景点名的字段相等",
+    "逐条比较完整历史：重新打开数据库后，load_history 返回的每个信封与输入的信封逐字段相等（包括迟到事件的 result、用量计数、occurred_at 和 raw_type），顺序与输入一致，处置与 core 后端相同，history_only 的信封也在其中",
     "apply 的读取、对 core 的调用和写入在同一个事务里，事务一开始就取得写锁（审核者对照 diff 判定）",
     "有单元测试证明写锁：另一个连接持有未提交的写事务时，apply 在不等待的设置下报数据库被锁；对方回滚后同一个 apply 成功",
     "有单元测试证明回滚：core 抛异常时，席位、尝试和历史都没有变化",
+    "有单元测试证明原子性：事务中途的写入失败时（例如状态已经写入而历史写入出错），状态和历史一起回到事务开始之前",
     "有单元测试证明迁移和重开：空数据库打开后是最新版本；再次打开不会重复执行迁移；关闭后重新打开，load_round 和 load_history 的结果不变",
+    "词汇一致：core 定义的每个尝试状态和每个 failure_category（包括空值）都能写入并原样读回（单元测试）；表结构里没有 core 不认识的状态或分类（审核者对照 diff 判定）",
+    "共同验收：候选提交包含 T-0002 的全部改动。state-change 要求的转移表、迁移和回放场景三者一致，以这个提交上的第 1、2、3、9 条为准",
     "store 里没有转移规则，状态变化全部来自 core 的 apply 的返回值（审核者对照 diff 判定）",
     "没有新增依赖：pyproject.toml 和 uv.lock 没有改动。src/multi_agent/core 没有改动",
     "在候选提交的全新检出里运行 scripts/verify.sh，五个步骤全部通过；从开工时的 HEAD 到候选提交的 diff 只包含 write_scope 内的路径"
