@@ -83,7 +83,9 @@ Codex 成功回合优先读取显式 `final_answer`；没有该标记时兼容�
 
 Claude 预检联合检查 `auth status` 的 JSON 与退出码：`loggedIn=false` 且退出码 1 记为 `auth_expired`，不会启动模型回合。其他异常退出仍失败；版本检查始终要求退出码 0。未登录退出码的依据是 [Claude CLI reference](https://code.claude.com/docs/en/cli-reference)，本次仅用假 CLI 验证该分支。
 
-控制进程意外退出后，未完成尝试可在 `show` 中看到。确认先前 CLI 已停止后，`retry ROUND_ID --recover` 可结束遗留 `running` 控制尝试并重新派发；其旧进程退出码仍未知，不伪造取消证据。遗留 `cancelling` 缺终态时拒绝恢复，可开启新审核轮次并保留旧记录。文件锁释放只能证明控制进程不再持锁，不能证明其孤儿子进程已结束。
+控制进程意外退出后，未完成尝试可在 `show` 中看到。只有当前尝试没有 `completion_unconfirmed` 证据、且已确认先前 CLI 停止时，`retry ROUND_ID --recover` 才可结束遗留 `running` 控制尝试并重新派发；其旧进程退出码仍未知，不伪造取消证据。当前尝试已记录 `completion_unconfirmed` 时，普通 `retry` 和 `--recover` 都拒绝派发，也不会改变任何选中席位的尝试或历史。遗留 `cancelling` 缺终态时同样拒绝恢复。文件锁释放只能证明控制进程不再持锁，不能证明其孤儿子进程已结束。
+
+环境预检也拥有进程和临时认证资源。预检取消会等待它的清理结果；取消与结果同时到达时仍保留实际返回或失败原因。适配器报告 `adapter.cleanup_incomplete`，或预检抛出未经分类的异常时，执行证据保留具体 `completion_unconfirmed` 和日志目录；没有取消的尝试保持 `running`，已接受取消的保持 `cancelling`，整体评估仍为不完整。认证目录删除失败和采集进程终止失败均按未确认清理处理，包括进程创建期间取消、隔离目录部分创建失败后的清理；不能凭尚未启动模型就当成已停止。正常清理完成的取消、普通预检失败和成功预检继续沿用原有行为。
 
 Codex 审核与环境预检使用独立的临时 HOME/CODEX_HOME，只继承官方 ChatGPT `auth.json` 的必要认证及刷新元数据。临时认证目录在冻结输入和日志之外，目录权限为 0700、文件为 0600；不会改写用户原配置或登录。缺失/无效登录、非 0.169.0 运行时、无法落实隔离策略都会明确失败。
 

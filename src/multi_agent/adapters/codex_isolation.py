@@ -289,14 +289,28 @@ class CodexIsolation:
             return instance
         except BaseException as original:
             try:
-                instance.cleanup()
+                removed = instance.cleanup()
             except (OSError, ValueError) as cleanup_error:
-                # The authentication/path error remains the actionable failure;
-                # cleanup() records the retained owner before it propagates.
-                original.add_note(
-                    "Codex isolation cleanup also failed: "
-                    + type(cleanup_error).__name__
-                )
+                # Retained resources take priority over a retryable creation
+                # failure. Keep that original cause and cleanup's owner log.
+                raise RuntimeFailure(
+                    Error(
+                        str(
+                            recorder.redactor.redact(
+                                "Codex isolation creation cleanup unconfirmed: "
+                                f"{type(cleanup_error).__name__}: {cleanup_error}"
+                            )
+                        ),
+                        raw_type="adapter.cleanup_incomplete",
+                    )
+                ) from original
+            if not removed:
+                raise RuntimeFailure(
+                    Error(
+                        "Codex isolation creation resources remain owned; cleanup unconfirmed",
+                        raw_type="adapter.cleanup_incomplete",
+                    )
+                ) from original
             raise
 
     def _incomplete(self, reason: str) -> None:

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -11,7 +12,8 @@ from pathlib import Path
 import pytest
 
 from multi_agent.adapters.base import Permission, SessionConfig
-from multi_agent.adapters.probe.process import Process
+from multi_agent.adapters.codex_isolation import CodexIsolation
+from multi_agent.adapters.probe.process import Process, SpawnFailed
 from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.runtime import RuntimeAdapter, RuntimeFailure
 from multi_agent.adapters.runtime_decode import CodexDecoder, claude_events
@@ -1251,3 +1253,330 @@ def test_codex_cancel_during_version_preflight_preserves_stop_evidence(
     rows = [json.loads(line) for line in capture.read_text().splitlines()]
     assert [row["argv"] for row in rows if row["kind"] == "spawn"] == [["--version"]]
     assert runtime_requests(capture) == []
+
+
+@pytest.mark.parametrize("trigger", ["success", "cancel", "preflight-failure"])
+@pytest.mark.parametrize("cleanup_outcome", ["false", "rmtree-error"])
+def test_codex_environment_resource_cleanup_failure_keeps_unknown_marker(
+    tmp_path, monkeypatch, trigger, cleanup_outcome
+):
+    adapter, _, capture = setup(
+        tmp_path,
+        monkeypatch,
+        "codex",
+        {
+            "success": "success",
+            "cancel": "version-hang",
+            "preflight-failure": "config-error",
+        }[trigger],
+        timeout=10,
+    )
+    original_create = CodexIsolation.create
+    original_cleanup = CodexIsolation.cleanup
+    original_start = Process.start
+    original_rmtree = shutil.rmtree
+    owners = []
+    handles = []
+
+    def capture_create(cls, *args, **kwargs):
+        owner = original_create(*args, **kwargs)
+        owners.append(owner)
+        return owner
+
+    monkeypatch.setattr(CodexIsolation, "create", classmethod(capture_create))
+    if cleanup_outcome == "false":
+
+        def fail_cleanup(owner):
+            owner._incomplete("injected_cleanup_false")
+            return False
+
+        monkeypatch.setattr(CodexIsolation, "cleanup", fail_cleanup)
+    else:
+        # Exercise the real cleanup() OSError branch, including its retained
+        # resource locator; other temporary-directory cleanup must still work.
+        def fail_owned_rmtree(path, *args, **kwargs):
+            if any(Path(path) == owner.root for owner in owners):
+                raise OSError("injected isolated auth directory removal failure")
+            return original_rmtree(path, *args, **kwargs)
+
+        monkeypatch.setattr(shutil, "rmtree", fail_owned_rmtree)
+
+    async def run():
+        spawned = asyncio.Event()
+
+        async def capture_start(cls, name, argv, cwd, recorder, **kwargs):
+            process = await original_start(name, argv, cwd, recorder, **kwargs)
+            handles.append(process)
+            spawned.set()
+            return process
+
+        monkeypatch.setattr(Process, "start", classmethod(capture_start))
+        task = asyncio.create_task(adapter.check_environment())
+        try:
+            async with asyncio.timeout(5):
+                if trigger == "cancel":
+                    await spawned.wait()
+                    await handles[0].first_stdout.wait()
+                    assert handles[0].child.returncode is None
+                    assert task.cancel()
+                with pytest.raises(RuntimeFailure) as failure:
+                    await task
+            assert failure.value.event.raw_type == "adapter.cleanup_incomplete"
+            assert failure.value.event.failure_category is None
+            assert len(owners) == 1
+            owner = owners[0]
+            assert owner.root.is_dir()
+            assert owner.root.stat().st_mode & 0o777 == 0o700
+            auth = owner.codex_home / "auth.json"
+            assert auth.is_file() and auth.stat().st_mode & 0o777 == 0o600
+            assert owner._processes and all(owner._processes.values())
+            assert all(p.child.returncode is not None for p in handles)
+            assert not adapter._sessions and not adapter._turns
+            log = next((tmp_path / "logs").glob("*.jsonl")).read_text()
+            assert '"kind": "cleanup_incomplete"' in log
+            assert '"kind": "isolation_removed"' not in log
+            assert (
+                "injected_cleanup_false"
+                if cleanup_outcome == "false"
+                else "resource_removal_failed"
+            ) in log
+            if trigger == "preflight-failure":
+                assert '"has_error": true' in log
+                assert "synthetic-config-poison" not in log
+        finally:
+            monkeypatch.setattr(CodexIsolation, "cleanup", original_cleanup)
+            if cleanup_outcome == "rmtree-error":
+                monkeypatch.setattr(shutil, "rmtree", original_rmtree)
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            for index, owner in enumerate(owners):
+                with Recorder(
+                    tmp_path / f"environment-resource-cleanup-{index}.jsonl", Redactor()
+                ) as recorder:
+                    owner.recorder = recorder
+                    for process in owner._processes:
+                        process._recorder = recorder
+                        await owner.terminate(process, 0.05)
+                    assert owner.cleanup()
+                assert not owner.root.exists()
+            assert all(p.child.returncode is not None for p in handles)
+
+    asyncio.run(run())
+    methods = [request.get("method") for request in runtime_requests(capture)]
+    assert "thread/start" not in methods and "turn/start" not in methods
+
+
+@pytest.mark.parametrize("cancelled", [False, True])
+@pytest.mark.parametrize("stop_error", [None, OSError, RuntimeError])
+def test_claude_environment_collect_cleanup_preserves_failure_evidence(
+    tmp_path, monkeypatch, cancelled, stop_error
+):
+    adapter, _, capture = setup(
+        tmp_path, monkeypatch, "claude", "version-hang", timeout=10
+    )
+    original_start = Process.start
+    original_read = Process.read
+    original_terminate = Process.terminate
+    handles = []
+
+    async def fail_read(process):
+        await original_read(process)
+        raise ValueError("injected environment collection failure")
+
+    async def fail_stop(process, grace):
+        raise stop_error("injected environment process stop failure")
+
+    if not cancelled:
+        monkeypatch.setattr(Process, "read", fail_read)
+    if stop_error is not None:
+        monkeypatch.setattr(Process, "terminate", fail_stop)
+
+    async def run():
+        spawned = asyncio.Event()
+
+        async def capture_start(cls, name, argv, cwd, recorder, **kwargs):
+            process = await original_start(name, argv, cwd, recorder, **kwargs)
+            handles.append(process)
+            spawned.set()
+            return process
+
+        monkeypatch.setattr(Process, "start", classmethod(capture_start))
+        task = asyncio.create_task(adapter.check_environment())
+        try:
+            async with asyncio.timeout(5):
+                await spawned.wait()
+                if cancelled:
+                    await handles[0].first_stdout.wait()
+                    assert handles[0].child.returncode is None
+                    assert task.cancel()
+                if cancelled and stop_error is None:
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
+                else:
+                    with pytest.raises(RuntimeFailure) as failure:
+                        await task
+                    event = failure.value.event
+                    assert event.failure_category is None
+                    if stop_error is not None:
+                        assert event.raw_type == "adapter.cleanup_incomplete"
+                        assert (
+                            "injected environment process stop failure" in event.detail
+                        )
+                    else:
+                        assert event.raw_type is None
+                        assert "injected environment collection failure" in event.detail
+            assert len(handles) == 1
+            assert (handles[0].child.returncode is None) == (stop_error is not None)
+            assert not adapter._sessions and not adapter._turns
+        finally:
+            monkeypatch.setattr(Process, "read", original_read)
+            monkeypatch.setattr(Process, "terminate", original_terminate)
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            for index, process in enumerate(handles):
+                with Recorder(
+                    tmp_path / f"environment-process-cleanup-{index}.jsonl", Redactor()
+                ) as recorder:
+                    process._recorder = recorder
+                    await original_terminate(process, 0.05)
+            assert all(p.child.returncode is not None for p in handles)
+
+    asyncio.run(run())
+    rows = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [row["argv"] for row in rows if row["kind"] == "spawn"] == [["--version"]]
+
+
+@pytest.mark.parametrize("stop_error", [None, OSError, RuntimeError, LookupError])
+def test_environment_creation_cancel_waits_for_real_process_start_cleanup(
+    tmp_path, monkeypatch, stop_error
+):
+    adapter = RuntimeAdapter(
+        "claude",
+        executable="synthetic-claude-unused",
+        log_dir=tmp_path / "logs",
+        timeout=10,
+        grace=0.05,
+    )
+
+    async def run():
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        handles = []
+        launches = []
+        returned_spawn = []
+        original_spawn = adapter._spawn
+        injected = (
+            stop_error("injected creation-time process stop failure")
+            if stop_error is not None
+            else None
+        )
+
+        class FakeChild:
+            def __init__(self):
+                self.stdout = asyncio.StreamReader()
+                self.stderr = asyncio.StreamReader()
+                self.returncode = None
+
+            def finish(self):
+                self.returncode = 0
+                self.stdout.feed_eof()
+                self.stderr.feed_eof()
+
+        child = FakeChild()
+
+        async def create_child(*argv, **kwargs):
+            launches.append(argv)
+            entered.set()
+            await release.wait()
+            return child
+
+        async def observe_spawn(*args, **kwargs):
+            process = await original_spawn(*args, **kwargs)
+            returned_spawn.append(process)
+            return process
+
+        async def stop_child(process, grace):
+            # Only Process.start.finish_creation can reach cleanup before the
+            # _spawn await returns a handle to _collect's own finally block.
+            assert not returned_spawn
+            handles.append(process)
+            if injected is not None:
+                raise injected
+            child.finish()
+            await process.wait()
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", create_child)
+        monkeypatch.setattr(adapter, "_spawn", observe_spawn)
+        monkeypatch.setattr(Process, "terminate", stop_child)
+        task = asyncio.create_task(adapter.check_environment())
+        try:
+            async with asyncio.timeout(5):
+                await entered.wait()
+                assert not release.is_set() and child.returncode is None
+                assert task.cancel()
+                release.set()
+                if injected is None:
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
+                else:
+                    with pytest.raises(RuntimeFailure) as failure:
+                        await task
+                    assert failure.value.event.raw_type == "adapter.cleanup_incomplete"
+                    assert failure.value.event.failure_category is None
+                    assert (
+                        "creation-time process stop failure"
+                        in failure.value.event.detail
+                    )
+                    assert failure.value.__cause__ is injected
+            assert len(handles) == 1 and not returned_spawn
+            assert launches == [("synthetic-claude-unused", "--version")]
+            assert (child.returncode is None) == (injected is not None)
+            assert not adapter._sessions and not adapter._turns
+        finally:
+            release.set()
+            if not task.done():
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            with Recorder(
+                tmp_path / "creation-test-cleanup.jsonl", Redactor()
+            ) as recorder:
+                for process in handles:
+                    process._recorder = recorder
+                if child.returncode is None:
+                    child.finish()
+                for process in handles:
+                    await process.wait()
+                    assert all(reader.done() for reader in process._readers)
+                    assert process._exit.done() and process._watcher.done()
+
+    asyncio.run(run())
+
+
+def test_environment_known_spawn_failure_is_not_cleanup_unknown(tmp_path, monkeypatch):
+    adapter = RuntimeAdapter(
+        "claude",
+        executable="synthetic-missing-claude",
+        log_dir=tmp_path / "logs",
+    )
+    creation_error = FileNotFoundError("injected executable was not created")
+    launches = []
+
+    async def fail_creation(*argv, **kwargs):
+        launches.append(argv)
+        raise creation_error
+
+    async def unexpected_cleanup(process, grace):
+        pytest.fail("SpawnFailed must not invent an owned child")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fail_creation)
+    monkeypatch.setattr(Process, "terminate", unexpected_cleanup)
+    with pytest.raises(RuntimeFailure) as failure:
+        asyncio.run(adapter.check_environment())
+    assert failure.value.event.raw_type is None
+    assert failure.value.event.failure_category is None
+    assert isinstance(failure.value.__cause__, SpawnFailed)
+    assert failure.value.__cause__.__cause__ is creation_error
+    assert launches == [("synthetic-missing-claude", "--version")]
+    assert not adapter._sessions and not adapter._turns

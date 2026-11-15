@@ -33,6 +33,7 @@ from multi_agent.core.events import (
     Message,
     ProcessExited,
     SessionStarted,
+    thaw_json,
 )
 from multi_agent.core.snapshot import (
     FrozenFile,
@@ -415,6 +416,288 @@ def test_preflight_normalized_error_is_preserved(h):
     assert attempt.failure_category == FailureCategory.AUTH_EXPIRED
 
 
+def gated_preflight(h, monkeypatch, *, outcome, trigger, dual=False):
+    """Run the real runner with an explicit preflight/result/cleanup handshake."""
+    stop = asyncio.Event()
+    entered = asyncio.Event()
+    result_ready = asyncio.Event()
+    cancellation_received = asyncio.Event()
+    cleanup_ready = asyncio.Event()
+    cleanup_finished = asyncio.Event()
+    cleanup_completed = asyncio.Event()
+    environment_cancel_counts = []
+    successful_peer_finished = asyncio.Event()
+    target = "reviewer-2" if dual else "reviewer-1"
+    marker = "owned preflight resource still present /synthetic/owned-preflight"
+    raised = None
+    peer_before = None
+    peer_history_before = None
+
+    class GatedPreflightAdapter(RecordingAdapter):
+        async def check_environment(self):
+            self.owner.preflights.append(self.seat.key)
+            entered.set()
+            try:
+                try:
+                    await result_ready.wait()
+                except asyncio.CancelledError:
+                    cancellation_received.set()
+                    await cleanup_ready.wait()
+                    cleanup_completed.set()
+                    if outcome == "clean_cancel":
+                        raise
+                if trigger == "together":
+                    # Setting stop and completing this task contain no await:
+                    # both outcomes exist when the runner regains control.
+                    stop.set()
+                if outcome == "cleanup_incomplete":
+                    raise RuntimeFailure(
+                        Error(marker, raw_type="adapter.cleanup_incomplete")
+                    )
+                if outcome == "unclassified":
+                    raise OSError("unclassified preflight cleanup: " + marker)
+                if outcome == "ordinary_failure":
+                    raise RuntimeFailure(
+                        Error(
+                            "classified preflight authentication rejected",
+                            FailureCategory.AUTH_EXPIRED,
+                            raw_type="fixture.preflight.auth",
+                        )
+                    )
+                assert outcome == "success"
+                return self.owner.environment
+            finally:
+                environment_cancel_counts.append(asyncio.current_task().cancelling())
+                cleanup_finished.set()
+
+    def factory(seat, log_dir, metadata, schema):
+        h.factories.append((seat, log_dir, metadata, schema))
+        adapter = GatedPreflightAdapter if seat.key == target else RecordingAdapter
+        return adapter(h, seat, script(), h.environment)
+
+    monkeypatch.setattr(runner, "make_adapter", factory)
+    configs = (SeatConfig("reviewer-1", "codex", "model-one", "high"),)
+    if dual:
+        configs += (SeatConfig("reviewer-2", "claude", "model-two", "high"),)
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            configs,
+            timeout=180,
+            grace=2,
+            executables={"codex": "codex", "claude": "claude"},
+        )
+        original_set_execution = store.set_execution
+
+        def record_execution(round_id, seat, attempt, metadata):
+            original_set_execution(round_id, seat, attempt, metadata)
+            if dual and seat == "reviewer-1":
+                successful_peer_finished.set()
+
+        monkeypatch.setattr(store, "set_execution", record_execution)
+
+        async def run():
+            nonlocal raised, peer_before, peer_history_before
+            executing = asyncio.create_task(
+                runner.execute_round(store, identifier, h.data, stop=stop)
+            )
+            try:
+                await asyncio.wait_for(entered.wait(), 2)
+                if dual:
+                    await asyncio.wait_for(successful_peer_finished.wait(), 2)
+                    peer_before = store.load_round(identifier).seats[0]
+                    assert peer_before.attempts[-1].status == AttemptStatus.SUCCEEDED
+                    peer_history_before = tuple(
+                        row
+                        for row in store.load_history(identifier)
+                        if row[0].seat == "reviewer-1"
+                    )
+                if trigger in ("cancel", "external_cancel"):
+                    if trigger == "external_cancel":
+                        executing.cancel()
+                    else:
+                        stop.set()
+                    await asyncio.wait_for(cancellation_received.wait(), 2)
+                    assert not cleanup_finished.is_set()
+                    assert not executing.done()
+                    if trigger == "external_cancel":
+                        # The environment is now in its suspended finally path.
+                        # A second controller cancellation must not cancel it again.
+                        executing.cancel()
+                    cleanup_ready.set()
+                else:
+                    result_ready.set()
+                try:
+                    await asyncio.wait_for(asyncio.shield(executing), 2)
+                except (
+                    OSError,
+                    ValueError,
+                    RuntimeFailure,
+                    asyncio.CancelledError,
+                ) as error:
+                    raised = error
+                assert cleanup_finished.is_set()
+            finally:
+                result_ready.set()
+                cleanup_ready.set()
+                if not executing.done():
+                    executing.cancel()
+                await asyncio.gather(executing, return_exceptions=True)
+
+        with runner.execution_lock(h.data):
+            asyncio.run(run())
+        state = store.load_round(identifier)
+        history = store.load_history(identifier)
+        execution = store.load_execution(identifier)
+        shown = runner.view_round(store, identifier, history=True)
+    return {
+        "round_id": identifier,
+        "target": target,
+        "marker": marker,
+        "raised": raised,
+        "state": state,
+        "history": history,
+        "execution": execution,
+        "shown": shown,
+        "peer_before": peer_before,
+        "peer_history_before": peer_history_before,
+        "cleanup_completed": cleanup_completed.is_set(),
+        "environment_cancel_counts": environment_cancel_counts,
+    }
+
+
+def test_repeated_external_cancel_during_preflight_waits_for_unique_cleanup_outcome(
+    h, monkeypatch
+):
+    observed = gated_preflight(
+        h, monkeypatch, outcome="cleanup_incomplete", trigger="external_cancel"
+    )
+    assert isinstance(observed["raised"], asyncio.CancelledError)
+    assert observed["cleanup_completed"] is True
+    assert observed["environment_cancel_counts"] == [1]
+    attempt = observed["state"].seats[0].attempts[-1]
+    assert attempt.status == AttemptStatus.CANCELLING
+    assert attempt.exit_code is None and attempt.session_id is None
+    events = [envelope.event for envelope, _ in observed["history"]]
+    assert sum(isinstance(event, CancelRequested) for event in events) == 1
+    assert not any(
+        isinstance(event, (Error, Completed, ProcessExited, SessionStarted))
+        for event in events
+    )
+    assert (
+        observed["marker"]
+        in observed["execution"]["reviewer-1"]["1"]["completion_unconfirmed"]
+    )
+    assert h.sessions == [] and h.prompts == []
+
+
+@pytest.mark.parametrize("trigger", ["none", "cancel", "together"])
+@pytest.mark.parametrize("outcome", ["cleanup_incomplete", "unclassified"])
+def test_preflight_unknown_completion_retains_state_reason_and_no_terminal(
+    h, monkeypatch, trigger, outcome
+):
+    observed = gated_preflight(h, monkeypatch, outcome=outcome, trigger=trigger)
+    attempt = observed["state"].seats[0].attempts[-1]
+    assert observed["raised"] is not None
+    assert attempt.status == (
+        AttemptStatus.RUNNING if trigger == "none" else AttemptStatus.CANCELLING
+    )
+    assert attempt.failure_category is None
+    assert attempt.exit_code is None and attempt.session_id is None
+    assert attempt.result is None
+    assert attempt.reported_model is None and attempt.reported_effort is None
+    events = [envelope.event for envelope, _ in observed["history"]]
+    assert not any(
+        isinstance(event, (Error, Completed, ProcessExited, SessionStarted))
+        for event in events
+    )
+    assert sum(isinstance(event, CancelRequested) for event in events) == int(
+        trigger != "none"
+    )
+    evidence = observed["execution"]["reviewer-1"]["1"]
+    assert observed["marker"] in evidence["completion_unconfirmed"]
+    if outcome == "unclassified":
+        assert "unclassified preflight cleanup" in evidence["completion_unconfirmed"]
+    assert (
+        Path(evidence["log_dir"])
+        == h.data / "logs" / observed["round_id"] / "reviewer-1" / "1"
+    )
+    assert observed["shown"]["assessment"]["status"] == "incomplete"
+    assert h.sessions == [] and h.prompts == []
+
+
+@pytest.mark.parametrize(
+    "outcome,trigger",
+    [
+        ("clean_cancel", "cancel"),
+        ("ordinary_failure", "none"),
+        ("ordinary_failure", "together"),
+        ("success", "none"),
+        ("success", "together"),
+    ],
+)
+def test_preflight_confirmed_outcomes_preserve_normal_and_simultaneous_results(
+    h, monkeypatch, outcome, trigger
+):
+    observed = gated_preflight(h, monkeypatch, outcome=outcome, trigger=trigger)
+    attempt = observed["state"].seats[0].attempts[-1]
+    assert observed["raised"] is None
+    evidence = observed["execution"]["reviewer-1"]["1"]
+    assert "completion_unconfirmed" not in evidence
+    events = [envelope.event for envelope, _ in observed["history"]]
+    if outcome == "success":
+        assert evidence["environment"]["cli_version"] == h.environment.cli_version
+        assert evidence["environment"]["logged_in"] is True
+    if outcome == "success" and trigger == "none":
+        assert attempt.status == AttemptStatus.SUCCEEDED
+        assert thaw_json(attempt.result) == GOOD and attempt.exit_code == 0
+        assert len(h.sessions) == len(h.prompts) == 1
+    else:
+        assert attempt.status == AttemptStatus.FAILED
+        assert attempt.session_id is None and attempt.exit_code is None
+        assert h.sessions == [] and h.prompts == []
+        assert not any(
+            isinstance(event, (SessionStarted, Completed, ProcessExited))
+            for event in events
+        )
+        terminal = [event for event in events if isinstance(event, Error)]
+        assert len(terminal) == 1
+        if outcome == "ordinary_failure":
+            assert terminal[0].failure_category == FailureCategory.AUTH_EXPIRED
+            assert terminal[0].raw_type == "fixture.preflight.auth"
+            assert "authentication rejected" in terminal[0].detail
+        else:
+            assert attempt.failure_category == FailureCategory.CANCELLED
+
+
+@pytest.mark.parametrize("trigger", ["none", "cancel", "together"])
+def test_preflight_unknown_completion_preserves_successful_peer_report_and_history(
+    h, monkeypatch, trigger
+):
+    observed = gated_preflight(
+        h, monkeypatch, outcome="cleanup_incomplete", trigger=trigger, dual=True
+    )
+    assert observed["raised"] is not None
+    peer, target = observed["state"].seats
+    assert peer == observed["peer_before"]
+    assert (
+        tuple(row for row in observed["history"] if row[0].seat == "reviewer-1")
+        == observed["peer_history_before"]
+    )
+    assert peer.attempts[-1].status == AttemptStatus.SUCCEEDED
+    assert thaw_json(peer.attempts[-1].result) == GOOD
+    assert target.attempts[-1].status == (
+        AttemptStatus.RUNNING if trigger == "none" else AttemptStatus.CANCELLING
+    )
+    assert (
+        observed["marker"]
+        in observed["execution"]["reviewer-2"]["1"]["completion_unconfirmed"]
+    )
+    assert [seat.key for seat, _ in h.sessions] == ["reviewer-1"]
+    assert [seat for seat, _ in h.prompts] == ["reviewer-1"]
+
+
 def unfinished(h, *, cancelling=False):
     config = SeatConfig("reviewer-1", "codex", "model-one", "high")
     with ReviewStore(h.data / "reviews.sqlite3") as store:
@@ -456,6 +739,87 @@ def test_unconfirmed_cancellation_cannot_be_recovered_as_stopped(h):
     assert h.factories == []
     assert (
         h.state("interrupted").seats[0].attempts[0].status == AttemptStatus.CANCELLING
+    )
+
+
+@pytest.mark.parametrize("status", ["running", "cancelling", "failed"])
+@pytest.mark.parametrize("recover", [False, True])
+def test_retry_rejects_current_completion_unconfirmed_without_new_attempt(
+    h, status, recover
+):
+    unfinished(h, cancelling=status == "cancelling")
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        if status == "failed":
+            store.apply(
+                "interrupted", Envelope("reviewer-1", 1, Error("legacy failure"))
+            )
+        store.set_execution(
+            "interrupted",
+            "reviewer-1",
+            1,
+            {
+                "completion_unconfirmed": "owned preflight process may remain",
+                "log_dir": str(h.data / "logs"),
+            },
+        )
+        before = runner.view_round(store, "interrupted", history=True)
+    h.invoke("retry", "interrupted", *(["--recover"] if recover else []), code=2)
+    after = h.invoke("show", "interrupted", "--history")
+    assert after == before
+    assert len(h.state("interrupted").seats[0].attempts) == 1
+    assert h.factories == [] and h.prompts == []
+
+
+def test_retry_validates_all_unknown_completion_evidence_before_recovering_any_seat(h):
+    configs = (
+        SeatConfig("reviewer-1", "codex", "model-one", "high"),
+        SeatConfig("reviewer-2", "claude", "model-two", "high"),
+    )
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            configs,
+            timeout=180,
+            grace=2,
+            executables={"codex": "codex", "claude": "claude"},
+        )
+        for seat in configs:
+            store.apply(identifier, Envelope(seat.key, 1, AttemptStarted()))
+        store.set_execution(
+            identifier,
+            "reviewer-2",
+            1,
+            {"completion_unconfirmed": "second seat stop remains unknown"},
+        )
+        before = runner.view_round(store, identifier, history=True)
+    h.invoke("retry", identifier, "--recover", code=2)
+    assert h.invoke("show", identifier, "--history") == before
+    assert h.factories == []
+
+
+def test_recovery_checks_current_attempt_evidence_without_rebinding_old_marker(h):
+    unfinished(h)
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        store.apply(
+            "interrupted", Envelope("reviewer-1", 1, Error("historical failed attempt"))
+        )
+        store.set_execution(
+            "interrupted",
+            "reviewer-1",
+            1,
+            {"completion_unconfirmed": "historical diagnostic"},
+        )
+        store.apply("interrupted", Envelope("reviewer-1", 2, AttemptStarted()))
+        before = store.load_round("interrupted").seats[0].attempts[0]
+    output = h.invoke("retry", "interrupted", "--recover")
+    attempts = h.state("interrupted").seats[0].attempts
+    assert len(attempts) == 3 and attempts[0] == before
+    assert attempts[1].status == AttemptStatus.FAILED and attempts[1].exit_code is None
+    assert attempts[2].status == AttemptStatus.SUCCEEDED
+    assert (
+        output["execution"]["reviewer-1"]["1"]["completion_unconfirmed"]
+        == "historical diagnostic"
     )
 
 

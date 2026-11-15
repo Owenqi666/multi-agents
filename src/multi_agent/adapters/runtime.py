@@ -854,17 +854,49 @@ class RuntimeAdapter(Adapter):
         *,
         isolation: CodexIsolation | None = None,
     ) -> tuple[str, int]:
-        process = await self._spawn(argv, cwd, recorder, isolation=isolation)
+        try:
+            process = await self._spawn(argv, cwd, recorder, isolation=isolation)
+        except SpawnFailed:
+            # Process.start distinguishes a confirmed executable-launch failure
+            # from failure while owning or cleaning up a newly created child.
+            raise
+        except Exception as error:
+            # No returned handle does not prove no child exists. In particular,
+            # creation-time cancellation can fail inside Process.start cleanup.
+            raise RuntimeFailure(
+                Error(
+                    str(
+                        recorder.redactor.redact(
+                            f"environment process creation or cleanup unconfirmed: "
+                            f"{type(error).__name__}: {error}"
+                        )
+                    ),
+                    raw_type="adapter.cleanup_incomplete",
+                )
+            ) from error
         try:
             lines: list[str] = []
             while (value := await _read(process)) is not None:
                 lines.append(json.dumps(value) if isinstance(value, dict) else value)
             return "\n".join(lines), await process.wait_exited()
         finally:
-            if isolation is not None:
-                await isolation.terminate(process, self.grace)
-            else:
-                await process.terminate(self.grace)
+            try:
+                if isolation is not None:
+                    await isolation.terminate(process, self.grace)
+                else:
+                    await process.terminate(self.grace)
+            except (OSError, ValueError, RuntimeError) as error:
+                raise RuntimeFailure(
+                    Error(
+                        str(
+                            recorder.redactor.redact(
+                                f"environment process stop unconfirmed: "
+                                f"{type(error).__name__}: {error}"
+                            )
+                        ),
+                        raw_type="adapter.cleanup_incomplete",
+                    )
+                ) from error
 
     async def _audit_codex(self, rpc: _Rpc, isolation: CodexIsolation) -> None:
         """Check the runtime's merged values and the sources before any turn.
@@ -1047,7 +1079,21 @@ class RuntimeAdapter(Adapter):
                             finally:
                                 await isolation.terminate(process, self.grace)
                     finally:
-                        if not isolation.cleanup():
+                        try:
+                            removed = isolation.cleanup()
+                        except OSError as error:
+                            raise RuntimeFailure(
+                                Error(
+                                    str(
+                                        recorder.redactor.redact(
+                                            f"isolated environment resource removal "
+                                            f"unconfirmed: {type(error).__name__}: {error}"
+                                        )
+                                    ),
+                                    raw_type="adapter.cleanup_incomplete",
+                                )
+                            ) from error
+                        if not removed:
                             raise RuntimeFailure(
                                 Error(
                                     "isolated environment resources remain owned; cleanup unconfirmed",

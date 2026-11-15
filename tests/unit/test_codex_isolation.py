@@ -624,7 +624,13 @@ def test_creation_cleanup_failure_preserves_original_auth_error(
     monkeypatch.setattr(codex_isolation.shutil, "rmtree", failed_remove)
     with pytest.raises(RuntimeFailure) as failure:
         context.create()
-    assert failure.value.event.failure_category == FailureCategory.AUTH_EXPIRED
+    assert failure.value.event.raw_type == "adapter.cleanup_incomplete"
+    assert failure.value.event.failure_category is None
+    original = failure.value.__cause__
+    assert isinstance(original, RuntimeFailure)
+    assert original.event.failure_category == FailureCategory.AUTH_EXPIRED
+    assert original.event.raw_type == "adapter.isolation_auth"
+    assert isinstance(original.__cause__, FileNotFoundError)
     roots = list(context.temporary.iterdir())
     assert len(roots) == 1
     assert stat.S_IMODE(roots[0].stat().st_mode) == 0o700
@@ -632,7 +638,68 @@ def test_creation_cleanup_failure_preserves_original_auth_error(
     assert records[-1]["kind"] == "cleanup_incomplete"
     assert records[-1]["owner"] == str(roots[0])
     assert records[-1]["resources_removed"] is False
-    assert "OSError" in failure.value.__notes__[0]
+    assert records[-1]["reason"] == "resource_removal_failed"
+    assert "OSError" in failure.value.event.detail
+
+
+def test_partial_auth_creation_and_removal_failure_keeps_unknown_cleanup(
+    isolation_context, monkeypatch
+):
+    context = isolation_context
+    original_auth = context.auth_file.read_bytes()
+    original_open = Path.open
+    original_remove = codex_isolation.shutil.rmtree
+    creation_error = OSError("synthetic config creation failure")
+    secret = subscription_auth()["tokens"]["access_token"]
+    attempted_configs = []
+
+    def fail_config_open(path, *args, **kwargs):
+        if path.name == "config.toml" and path.is_relative_to(context.temporary):
+            attempted_configs.append(path)
+            copied_auth = path.parent / "auth.json"
+            assert copied_auth.is_file()
+            assert (
+                json.loads(copied_auth.read_text())["tokens"]["access_token"] == secret
+            )
+            raise creation_error
+        return original_open(path, *args, **kwargs)
+
+    def fail_remove(path):
+        raise OSError("synthetic removal failure with " + secret)
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(Path, "open", fail_config_open)
+            patch.setattr(codex_isolation.shutil, "rmtree", fail_remove)
+            with pytest.raises(RuntimeFailure) as failure:
+                context.create()
+        assert failure.value.event.raw_type == "adapter.cleanup_incomplete"
+        assert failure.value.event.failure_category is None
+        assert failure.value.__cause__ is creation_error
+        assert "OSError" in failure.value.event.detail
+        assert secret not in failure.value.event.detail
+        assert len(attempted_configs) == 1
+        roots = list(context.temporary.iterdir())
+        assert len(roots) == 1
+        root = roots[0]
+        assert stat.S_IMODE(root.stat().st_mode) == 0o700
+        auth_copy = root / "codex" / "auth.json"
+        assert stat.S_IMODE(auth_copy.stat().st_mode) == 0o600
+        assert json.loads(auth_copy.read_text())["tokens"]["access_token"] == secret
+        assert not attempted_configs[0].exists()
+        assert context.auth_file.read_bytes() == original_auth
+        log = context.path.read_text()
+        assert secret not in log
+        records = [json.loads(line) for line in log.splitlines()]
+        assert not any(row["kind"] == "isolation_created" for row in records)
+        assert not any(row["kind"] == "isolation_removed" for row in records)
+        assert records[-1]["kind"] == "cleanup_incomplete"
+        assert records[-1]["owner"] == str(root)
+        assert records[-1]["resources_removed"] is False
+        assert records[-1]["reason"] == "resource_removal_failed"
+    finally:
+        for root in context.temporary.iterdir():
+            original_remove(root)
 
 
 def test_resource_deletion_failure_retains_private_files_and_can_be_retried(

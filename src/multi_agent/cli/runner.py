@@ -210,10 +210,19 @@ def prepare_retry(
     ]
     if not selected:
         raise ValueError("no failed or unstarted seats to retry")
+    executions = cast(dict[str, Any], thaw_json(store.load_execution(identifier)))
     # Validate every selected seat before changing any attempt.
     for seat in selected:
         if not seat.attempts:
             continue
+        execution = executions.get(seat.config.key, {}).get(
+            str(seat.attempts[-1].number), {}
+        )
+        if "completion_unconfirmed" in execution:
+            raise ValueError(
+                "attempt completion remains unconfirmed; retry and recovery are blocked; "
+                "inspect its execution evidence and logs"
+            )
         status = seat.attempts[-1].status
         if status == AttemptStatus.SUCCEEDED:
             raise ValueError("successful seats cannot be rerun in the same round")
@@ -400,33 +409,88 @@ async def execute_round(
                 )
                 environment_task = asyncio.create_task(adapter.check_environment())
                 stopped = asyncio.create_task(stop_event.wait())
+                cancellation_requested = False
+                environment_cancelled = False
+                interrupted: asyncio.CancelledError | None = None
+
+                def cancel_environment() -> None:
+                    nonlocal cancellation_requested, environment_cancelled
+                    if not cancellation_requested:
+                        emit(CancelRequested())
+                        cancellation_requested = True
+                    if (
+                        not environment_task.done()
+                        and not environment_task.cancelling()
+                    ):
+                        environment_cancelled = environment_task.cancel()
+
                 try:
                     await asyncio.wait(
                         (environment_task, stopped), return_when=asyncio.FIRST_COMPLETED
                     )
-                    if stop_event.is_set():
-                        environment_task.cancel()
-                        await asyncio.gather(environment_task, return_exceptions=True)
-                        emit(
-                            Error(
-                                "cancelled before model session launch",
-                                FailureCategory.CANCELLED,
-                                raw_type="cli.before_session",
-                            )
-                        )
-                        return
+                except asyncio.CancelledError as error:
+                    interrupted = error
+                if stop_event.is_set() or interrupted is not None:
+                    cancel_environment()
+                stopped.cancel()
+                # Own one settlement future. Repeated controller cancellation
+                # must not cancel the adapter again while its finally cleans up.
+                settled = asyncio.gather(
+                    environment_task, stopped, return_exceptions=True
+                )
+                while True:
                     try:
-                        info = await environment_task
-                    except RuntimeFailure as failure:
-                        emit(failure.event)
+                        preflight_outcome, _ = await asyncio.shield(settled)
+                        break
+                    except asyncio.CancelledError as error:
+                        if interrupted is None:
+                            interrupted = error
+                        cancel_environment()
+                if stop_event.is_set():
+                    cancel_environment()
+
+                if isinstance(preflight_outcome, RuntimeFailure):
+                    if preflight_outcome.event.raw_type == "adapter.cleanup_incomplete":
+                        evidence["completion_unconfirmed"] = (
+                            preflight_outcome.event.detail
+                        )
+                    else:
+                        emit(preflight_outcome.event)
+                        if interrupted is not None:
+                            raise interrupted from preflight_outcome
                         return
-                    evidence["environment"] = _environment_value(info)
-                finally:
-                    stopped.cancel()
-                    environment_task.cancel()
-                    await asyncio.gather(
-                        stopped, environment_task, return_exceptions=True
+                elif isinstance(preflight_outcome, BaseException):
+                    if not (
+                        isinstance(preflight_outcome, asyncio.CancelledError)
+                        and environment_cancelled
+                    ):
+                        evidence["completion_unconfirmed"] = (
+                            f"environment preflight {type(preflight_outcome).__name__}: "
+                            f"{preflight_outcome}"
+                        )
+                else:
+                    evidence["environment"] = _environment_value(preflight_outcome)
+
+                if "completion_unconfirmed" in evidence:
+                    if interrupted is not None:
+                        raise interrupted from cast(BaseException, preflight_outcome)
+                    raise ValueError(
+                        "environment preflight completion remains unconfirmed; "
+                        "attempt stays incomplete"
+                    ) from cast(BaseException, preflight_outcome)
+                if cancellation_requested:
+                    emit(
+                        Error(
+                            "cancelled before model session launch",
+                            FailureCategory.CANCELLED,
+                            raw_type="cli.before_session",
+                        )
                     )
+                    if interrupted is not None:
+                        raise interrupted
+                    return
+                assert isinstance(preflight_outcome, EnvironmentInfo)
+                info = preflight_outcome
                 if environment_error := _check_environment(info, seat.config):
                     emit(environment_error)
                     return

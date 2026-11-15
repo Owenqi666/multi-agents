@@ -399,3 +399,212 @@ def test_real_cli_preserves_literal_email_path_quotes_and_masks_registered_auth(
     assert all(
         secret not in path.read_text() for path in (data / "logs").rglob("*.jsonl")
     )
+
+
+_PREFLIGHT_CLEANUP_SCRIPT = """
+import asyncio
+import json
+import sys
+from pathlib import Path
+
+from multi_agent.adapters.base import EnvironmentInfo
+from multi_agent.adapters.runtime_decode import RuntimeFailure
+from multi_agent.adapters.scripted import ScriptedAdapter, TurnScript
+from multi_agent.cli import runner
+from multi_agent.core import SeatConfig
+from multi_agent.core.events import (
+    Completed, Error, FailureCategory, ProcessExited, SessionStarted,
+)
+from multi_agent.store import ReviewStore
+
+
+async def main():
+    data = Path(sys.argv[1])
+    snapshot_id, mode = sys.argv[2:]
+    entered = asyncio.Event()
+    stop = asyncio.Event()
+    detail = 'fixture preflight cleanup remains unknown'
+
+    class UnknownPreflight(ScriptedAdapter):
+        def __init__(self, log_dir):
+            super().__init__(())
+            self.log_dir = log_dir
+
+        async def check_environment(self):
+            self.log_dir.mkdir(parents=True)
+            (self.log_dir / 'preflight.jsonl').write_text(json.dumps({
+                'kind': 'cleanup_incomplete', 'detail': detail,
+                'synthetic_adapter_evidence': True,
+            }) + '\\n')
+            entered.set()
+            if mode != 'failure':
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    if mode == 'cancel-unclassified':
+                        raise OSError(detail) from None
+            raise RuntimeFailure(Error(
+                detail, raw_type='adapter.cleanup_incomplete',
+            ))
+
+        async def start_session(self, config):
+            raise AssertionError('unknown preflight must not launch a session')
+
+    def factory(config, log_dir, metadata, schema):
+        if config.key == 'reviewer-2':
+            return UnknownPreflight(log_dir)
+        return ScriptedAdapter((TurnScript(
+            (
+                SessionStarted('fixture-success-session'),
+                Completed({'summary': 'Preserve successful seat', 'findings': []}),
+                ProcessExited(0),
+            ),
+            (Error('fixture stopped', FailureCategory.CANCELLED), ProcessExited(0)),
+        ),), environment=EnvironmentInfo('fixture-runtime', True))
+
+    runner.make_adapter = factory
+    with ReviewStore(data / 'reviews.sqlite3') as store:
+        with runner.execution_lock(data):
+            round_id = runner.new_review(
+                store, snapshot_id,
+                (
+                    SeatConfig('reviewer-1', 'codex', 'success-model', 'high'),
+                    SeatConfig('reviewer-2', 'claude', 'unknown-model', 'high'),
+                ),
+                timeout=5, grace=0.1,
+                executables={provider: str(data / ('must-not-launch-' + provider))
+                             for provider in ('codex', 'claude')},
+            )
+            # All persisted state and history are produced by the real runner.
+            await runner.execute_round(
+                store, round_id, data, stop=asyncio.Event(), seat_keys=('reviewer-1',),
+            )
+            success_before = runner.view_round(store, round_id, history=True)
+
+            async def request_cancel():
+                await entered.wait()
+                stop.set()
+
+            cancelling = (asyncio.create_task(request_cancel())
+                          if mode != 'failure' else None)
+            boundary_error = None
+            try:
+                await runner.execute_round(
+                    store, round_id, data, stop=stop, seat_keys=('reviewer-2',),
+                )
+            except ValueError as error:
+                boundary_error = str(error)
+            finally:
+                if cancelling is not None:
+                    cancelling.cancel()
+                    await asyncio.gather(cancelling, return_exceptions=True)
+    return {'round_id': round_id, 'success_before': success_before,
+            'boundary_error': boundary_error}
+
+
+async def bounded():
+    async with asyncio.timeout(5):
+        return await main()
+
+
+print(json.dumps(asyncio.run(bounded())))
+"""
+
+
+@pytest.mark.parametrize("mode", ["failure", "cancel", "cancel-unclassified"])
+def test_real_cli_preserves_unconfirmed_preflight_and_rejects_all_retries(
+    tmp_path, mode
+):
+    data = tmp_path / "data"
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("Review the frozen constant change.")
+    diff = tmp_path / "change.patch"
+    diff.write_text(
+        "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-value = 1\n+value = 2\n"
+    )
+    frozen = cli(
+        data,
+        "freeze",
+        "--diff",
+        str(diff),
+        "--requirements",
+        str(requirements),
+        "--acceptance",
+        "value equals two",
+    )
+    fixture = tmp_path / "preflight_fixture.py"
+    fixture.write_text(_PREFLIGHT_CLEANUP_SCRIPT)
+    prepared = subprocess.run(
+        [sys.executable, str(fixture), str(data), frozen["snapshot_id"], mode],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=15,
+    )
+    assert prepared.returncode == 0, prepared.stderr
+    receipt = json.loads(prepared.stdout)
+    restored = cli(data, "show", receipt["round_id"], "--history")
+    assert restored["snapshot_id"] == frozen["snapshot_id"]
+    assert restored["status"] == "in_progress"
+    assert restored["assessment"]["status"] == "incomplete"
+    assert receipt["boundary_error"] is not None
+    success, unknown = restored["seats"]
+    assert success == receipt["success_before"]["seats"][0]
+    assert success["attempts"][0]["status"] == "succeeded"
+    assert success["attempts"][0]["result"]["summary"] == "Preserve successful seat"
+    assert unknown["current_attempt"] == 1
+    assert len(unknown["attempts"]) == 1
+    attempt = unknown["attempts"][0]
+    assert attempt["status"] == ("running" if mode == "failure" else "cancelling")
+    for key in (
+        "failure_category",
+        "session_id",
+        "result",
+        "exit_code",
+        "reported_model",
+        "reported_effort",
+    ):
+        assert attempt[key] is None
+    evidence = restored["execution"]["reviewer-2"]["1"]
+    assert (
+        "fixture preflight cleanup remains unknown"
+        in evidence["completion_unconfirmed"]
+    )
+    if mode == "cancel-unclassified":
+        assert "OSError" in evidence["completion_unconfirmed"]
+    assert evidence["environment"] is None
+    adapter_log = Path(evidence["log_dir"]) / "preflight.jsonl"
+    assert json.loads(adapter_log.read_text())["kind"] == "cleanup_incomplete"
+    unknown_events = [
+        item["envelope"]["event"]["type"]
+        for item in restored["history"]
+        if item["envelope"]["seat"] == "reviewer-2"
+    ]
+    assert unknown_events == (
+        ["attempt_started"]
+        if mode == "failure"
+        else ["attempt_started", "cancel_requested"]
+    )
+    successful_history = [
+        item for item in restored["history"] if item["envelope"]["seat"] == "reviewer-1"
+    ]
+    assert successful_history == receipt["success_before"]["history"]
+    for options in ([], ["--recover"]):
+        rejected = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "multi_agent",
+                "--data-dir",
+                str(data),
+                "retry",
+                receipt["round_id"],
+                *options,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=15,
+        )
+        assert rejected.returncode == 2, (rejected.stdout, rejected.stderr)
+        assert cli(data, "show", receipt["round_id"], "--history") == restored
