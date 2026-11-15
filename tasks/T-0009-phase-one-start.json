@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "T-0009",
+  "goal": "根据用户授权进入阶段 1，保留历史并明确离线实施顺序。",
+  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "write_scope": [
+    "AGENTS.md",
+    "PROJECT_PLAN.md",
+    "tasks/T-0009-phase-one-start.json",
+    "tasks/T-0010-frozen-input.json",
+    "tasks/T-0011-review-reports.json",
+    "tasks/T-0012-review-adapters.json",
+    "tasks/T-0013-review-cli.json",
+    "tasks/T-0014-review-benchmark.json",
+    "docs/deliveries/T-0009.md"
+  ],
+  "depends_on": [
+    "T-0008"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope",
+      "definition": "只实现阶段 1 CLI 审核，不实现阶段 2/3；本轮不启动真实模型请求。"
+    }
+  ],
+  "deliverables": [
+    "根据用户授权进入阶段 1，保留历史并明确离线实施顺序。",
+    "docs/deliveries/T-0009.md：开工 HEAD、验收对应、路径、检查与限制"
+  ],
+  "acceptance_criteria": [
+    "审核 diff：阶段标记为 1；阶段 0 当前说明引用 11 月 15 日实机结果，历史暂缓记录保留。",
+    "所有新增任务卡通过 schema 和 dispatchable 校验；独立同厂商子代理复核卡片，明确不是跨厂商审核。",
+    "verify 五步保持基线通过，不改检查配置。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

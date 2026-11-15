@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "id": "T-0013",
+  "goal": "连接冻结输入、持久化和审核适配器，交付可补跑且历史隔离的单审/双审 CLI。",
+  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "write_scope": [
+    "src/multi_agent/__main__.py",
+    "src/multi_agent/cli/main.py",
+    "src/multi_agent/cli/runner.py",
+    "src/multi_agent/cli/prompt.py",
+    "src/multi_agent/store/database.py",
+    "src/multi_agent/store/migrations/0002_inputs.sql",
+    "tests/unit/test_review_cli.py",
+    "tests/replay/test_phase_one.py",
+    "tests/replay/scenarios/phase-one/**",
+    "docs/review-cli.md",
+    "docs/deliveries/T-0013.md"
+  ],
+  "depends_on": [
+    "T-0010",
+    "T-0011",
+    "T-0012"
+  ],
+  "interface_contracts": [
+    {
+      "name": "entry",
+      "definition": "python -m multi_agent freeze/run/show/retry/confirm/benchmark; freeze stores input+hash in SQLite; run selects exactly 1 or 2 distinct model IDs and explicit efforts, immutable round. Default data outside target repo. run creates separate readonly snapshot directories and identical initial prompt for blind seats; asyncio parallel; failed only retry same config/snapshot; show includes history and reported unknowns. No auto accept/merge/rework execution."
+    },
+    {
+      "name": "persistence",
+      "definition": "ReviewStore existing apply remains only current-attempt writer, same transaction. Add snapshot inputs and round execution/confirmation metadata via 0002 migration, no editing old migrations. No new attempt/round states necessary; assessment derived from frozen input/current successful reports. Interrupted running attempts shown as recoverable; explicit recovery only if no live owner. CLI confirmations validate IDs/round, max one cross-confirmation round, only blockers, completed independent reports required. confirm 用继承席位配置的独立只读运行时会话生成结果，不把手填 JSON 当模型结论。使用现有 RoundState/attempt 机制建立 parent_round_id 关联的唯一子轮次（confirmation prompt/schema），完整记录来源与重试证据；仅在双方原报告齐全后启动，只传 P0/P1。测试输入文件包含 required_commands 和 results，只有声明的全部命令通过才可能 ready；显示 user_supplied 来源。 confirmation 仅限双审父轮次，创建子轮次与 UNIQUE parent 约束同一事务；seat 由执行上下文绑定，目标必须是另一席位阻塞项。Ctrl-C 持久化 CancelRequested，调用 adapter.cancel，等终态/停止，保留成功席位。"
+    }
+  ],
+  "deliverables": [
+    "连接冻结输入、持久化和审核适配器，交付可补跑且历史隔离的单审/双审 CLI。",
+    "docs/deliveries/T-0013.md：开工 HEAD、验收对应、路径、检查与限制"
+  ],
+  "acceptance_criteria": [
+    "unit/replay：单审只启一个；双审并行相同冻结输入且无对方报告；全部齐全才评估。",
+    "unit/replay：失败补跑仅失败席位，保留成功报告和配置；旧终态只进历史；新代码产生新快照旧报告仍可查；进程重启可展示历史与待恢复状态。",
+    "unit：schema错误转失败不污染 core；无测试证据明确待用户决定；外部数据目录、独立席位目录；CLI 参数错误无模型调用。",
+    "迁移升级已有 v1 DB 仍保留轮次历史；新增回放同时检查最终状态和历史；完整 verify。",
+    "docs 给出 freeze/run/show/retry 操作和真实请求由用户运行、测试证据为用户提供、只读与 Codex 配置隔离限制；不实现阶段 2/3。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

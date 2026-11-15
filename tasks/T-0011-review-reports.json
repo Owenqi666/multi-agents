@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "T-0011",
+  "goal": "结构化审核报告能核对冻结引用并保留原始意见，按证据汇总验收结论。",
+  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "write_scope": [
+    "src/multi_agent/core/reports.py",
+    "src/multi_agent/adapters/report_validation.py",
+    "tests/unit/test_reports.py",
+    "docs/deliveries/T-0011.md"
+  ],
+  "depends_on": [
+    "T-0010"
+  ],
+  "interface_contracts": [
+    {
+      "name": "report wire v1",
+      "definition": "JSON object {summary:string, findings:[{id:string,severity:P0|P1|P2|P3,category:string,side:baseline|candidate,path:string,line_start:integer>=1,line_end:integer>=line_start,quote:string,title:string,impact:string,rationale:string}]}; all fields required, unknown keys rejected, unique finding IDs. report_validation.REPORT_SCHEMA and validate_report(value:object)->dict[str,Any] raise ValueError at adapter/CLI boundary."
+    },
+    {
+      "name": "reports API",
+      "definition": "core.reports: check_report(report:dict, snapshot:FrozenSnapshot)->dict adds reference_status verified|unverified and reference_reason per finding without destroying original fields. assess(snapshot:FrozenSnapshot,reports:dict[str,dict],expected_seats:tuple[str,...],confirmations:tuple[dict,...]=())->dict with status ready|needs_rework|user_decision|incomplete, groups and reasons. Candidate duplicates group by side/path/line/category, preserving source seat+finding. P0/P1 blocking. Cross confirmations {seat, target_seat, finding_id, decision:agree|disagree|uncertain, reason}; one round maximum enforced by caller. Opposite silence unconfirmed. No all reports means no overall assessment. Tests require nonempty matching-candidate records all exit 0; diff-only never ready. ready 还要求 snapshot.required_tests 非空，每条 required command 都有 candidate 对应通过记录；未声明完整测试集合或缺记录则 user_decision。所有测试证据标明用户提供、未由本阶段执行。"
+    }
+  ],
+  "deliverables": [
+    "结构化审核报告能核对冻结引用并保留原始意见，按证据汇总验收结论。",
+    "docs/deliveries/T-0011.md：开工 HEAD、验收对应、路径、检查与限制"
+  ],
+  "acceptance_criteria": [
+    "unit：基线删除行、候选行逐行与 quote 核对；错误路径、行号、引文、binary/diff-only 标为待核实。",
+    "unit：缺报告不评估；无测试/提交不匹配/测试失败不会可验收；已核对单方 P1 仍阻塞；证据不足或实质分歧待用户决定。",
+    "unit：重复项保留两份原文及证据；另一席位未提到显示未确认；交叉确认结果有理由且不掩盖异议。",
+    "schema 完整可用于两边结构化输出，畸形报告在边界拒绝；完整 verify。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

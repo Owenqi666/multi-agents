@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "id": "T-0010",
+  "goal": "从本地仓库两个提交或粘贴 diff 生成可复现的冻结审核输入。",
+  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "write_scope": [
+    "src/multi_agent/core/snapshot.py",
+    "src/multi_agent/cli/__init__.py",
+    "src/multi_agent/cli/snapshot.py",
+    "tests/unit/test_snapshot.py",
+    "docs/deliveries/T-0010.md"
+  ],
+  "depends_on": [
+    "T-0009"
+  ],
+  "interface_contracts": [
+    {
+      "name": "snapshot",
+      "definition": "core.snapshot: FrozenFile(side: str, path: str, text: str|None, oid: str, mode: str); TestEvidence(commit: str, command: tuple[str,...], exit_code: int, log: str); FrozenSnapshot(repository: str|None, baseline: str|None, candidate: str|None, diff: str, requirements: str, acceptance: tuple[str,...], tests: tuple[TestEvidence,...], files: tuple[FrozenFile,...]); frozen dataclasses. snapshot_id property SHA256 canonical JSON of all fields; to_dict()->dict; from_dict(dict)->FrozenSnapshot trusted codec. FrozenSnapshot 最后还有 required_tests: tuple[tuple[str,...],...]=()，进入哈希，是用户声明必须通过的完整命令集合。"
+    },
+    {
+      "name": "CLI input boundary",
+      "definition": "cli.snapshot: freeze_repository(repo: Path, baseline: str, candidate: str, requirements: str, acceptance: tuple[str,...], tests: tuple[TestEvidence,...]=())->FrozenSnapshot; freeze_diff(diff: str, requirements: str, acceptance: tuple[str,...])->FrozenSnapshot; materialize(snapshot: FrozenSnapshot, destination: Path)->None writes base/candidate text trees (baseline/ candidate/), symlinks as inert text and no .git, no executable code. Strict user input validation at CLI boundary. All Git subprocesses argv, no shell, no hooks/external diff/textconv. Files from commits not working tree; preserve binary metadata and symlink mode; path traversal rejected. freeze_repository 增加 keyword-only required_tests: tuple[tuple[str,...],...]=()。"
+    }
+  ],
+  "deliverables": [
+    "从本地仓库两个提交或粘贴 diff 生成可复现的冻结审核输入。",
+    "docs/deliveries/T-0010.md：开工 HEAD、验收对应、路径、检查与限制"
+  ],
+  "acceptance_criteria": [
+    "unit：同样输入哈希相同；任一提交、diff、需求、验收或测试日志变动影响哈希；工作树污染不改变冻结结果。",
+    "unit：两侧文件及删除/重命名正确、仅从提交读取；畸形引用、路径、测试证据被 CLI 边界拒绝；Git 命令使用 argv。",
+    "unit：materialize 不跟随仓库 symlink、不创建 .git、不读取工作树；支持空仓库差异和 binary 标记；diff-only 明确无仓库和测试。",
+    "完整 verify；交付说明列出边界限制。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

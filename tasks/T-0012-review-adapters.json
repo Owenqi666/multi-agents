@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "id": "T-0012",
+  "goal": "用已录制协议实现两个只读审核适配器，离线假 CLI 验证完整生命周期。",
+  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "write_scope": [
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/runtime_decode.py",
+    "src/multi_agent/adapters/base.py",
+    "tests/unit/test_runtime.py",
+    "tests/unit/runtime_fakes/**",
+    "docs/deliveries/T-0012.md"
+  ],
+  "depends_on": [
+    "T-0009"
+  ],
+  "interface_contracts": [
+    {
+      "name": "runtime API",
+      "definition": "runtime.RuntimeAdapter(provider:str, *, executable:str|None=None, timeout:float=180, grace:float=2, log_dir:Path, output_schema:dict|None=None) implements existing Adapter; provider codex|claude. Fresh process/session per turn; only Permission.READ_ONLY. check_environment explicit separate local version/auth/model checks. Completed.result contains parsed structured output JSON, no requested model/effort copied to evidence. Raw unknown events and process exit retained in external log_dir. output_schema optional lets caller pass report schema without module dependency."
+    },
+    {
+      "name": "boundary",
+      "definition": "Use runtime-protocols and local snapshots, no real CLI calls during implementation/tests (version/help allowed only to check protocol version). Claude removes ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN, safe-mode+Read,Grep,Glob+no persistence. Codex read-only sandbox never approvals, ephemeral, new temp cwd supplied by caller; application/user custom instruction/MCP isolation limitations documented, never claim more than verified. Handle errors timeout/auth/model/rate/cancel, malformed JSON/early exit Error(category=None). Preserve raw events. Terminal and process exit separate; no synthetic reported metadata. Cancellation cleanup after bounded grace."
+    }
+  ],
+  "deliverables": [
+    "用已录制协议实现两个只读审核适配器，离线假 CLI 验证完整生命周期。",
+    "docs/deliveries/T-0012.md：开工 HEAD、验收对应、路径、检查与限制"
+  ],
+  "acceptance_criteria": [
+    "unit：fake executables assert exact argv/RPC structure and readonly, environment sanitization, fresh sessions, explicit requested effort. Tests never call real binaries.",
+    "unit：fixtures prove Claude is_error/terminal_reason and modelUsage, Codex turn.status, echoed model ignored, reported effort None; malformed/timeout/early exit normalized to Error, process exit retained.",
+    "unit：cancel stops or interrupts and cleans child processes; result terminal and exit distinct; stderr/unknown events logged outside repository.",
+    "runtime-protocol names checked against snapshots; complete verify; outdated base.py evidence prose corrected with fixture references."
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

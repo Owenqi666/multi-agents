@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "id": "T-0014",
+  "goal": "提供 8 个固定审核样本、留出集和可导入真实结果的评估基准。",
+  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "write_scope": [
+    "src/multi_agent/cli/benchmark.py",
+    "tests/fixtures/benchmark/**",
+    "tests/unit/test_benchmark.py",
+    "docs/review-benchmark.md",
+    "docs/deliveries/T-0014.md"
+  ],
+  "depends_on": [
+    "T-0013"
+  ],
+  "interface_contracts": [
+    {
+      "name": "benchmark",
+      "definition": "CLI benchmark subcommand from T13 lazily calls cli.benchmark.main(argv:list[str])->int. Fixed 8 cases with known defects/clean/unilateral, development and held-out sets. Evaluate imported per-mode results for codex-only, claude-only, dual, official-plugin baseline; dedup verified finding matches, missed, false positives, duration and reported usage. Never fabricate real model findings/latency/usage or call models automatically."
+    }
+  ],
+  "deliverables": [
+    "提供 8 个固定审核样本、留出集和可导入真实结果的评估基准。",
+    "docs/deliveries/T-0014.md：开工 HEAD、验收对应、路径、检查与限制"
+  ],
+  "acceptance_criteria": [
+    "unit：8 样本和留出集固定，可自动验证注入缺陷/无缺陷；评分能计重复、漏报、误报、无结果，缺用量为未确认。",
+    "unit：四种模式相同输入哈希约束，拒绝重复样本/未知 ID/不匹配快照；真实基准未运行清楚标明。",
+    "文档给用户真实运行/导入步骤，官方插件基线为外部导入；完整 verify。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
