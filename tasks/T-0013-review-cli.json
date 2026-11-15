@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0013",
   "goal": "连接冻结输入、持久化和审核适配器，交付可补跑且历史隔离的单审/双审 CLI。",
-  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "baseline_commit": "38d680caaa03211b237b4c81fa637a0d3abd9209",
   "write_scope": [
     "src/multi_agent/__main__.py",
     "src/multi_agent/cli/main.py",
@@ -12,7 +12,9 @@
     "tests/replay/test_phase_one.py",
     "tests/replay/scenarios/phase-one/**",
     "docs/review-cli.md",
-    "docs/deliveries/T-0013.md"
+    "docs/deliveries/T-0013.md",
+    "src/multi_agent/adapters/runtime.py",
+    "tests/unit/test_runtime.py"
   ],
   "depends_on": [
     "T-0010",
@@ -24,11 +26,19 @@
   "interface_contracts": [
     {
       "name": "entry",
-      "definition": "python -m multi_agent freeze/run/show/retry/confirm/benchmark; freeze stores input+hash in SQLite; run selects exactly 1 or 2 distinct model IDs and explicit efforts, immutable round. Default data outside target repo. run creates separate readonly snapshot directories and identical initial prompt for blind seats; asyncio parallel; failed only retry same config/snapshot; show includes history and reported unknowns. No auto accept/merge/rework execution."
+      "definition": "python -m multi_agent freeze/run/show/retry/confirm（benchmark 入口由 T-0014 顺序接入）; freeze stores input+hash in SQLite; run selects exactly 1 or 2 distinct model IDs and explicit efforts, immutable round. Default data outside target repo. run creates separate readonly snapshot directories and identical initial prompt for blind seats; asyncio parallel; failed only retry same config/snapshot; show includes history and reported unknowns. No auto accept/merge/rework execution."
     },
     {
       "name": "persistence",
       "definition": "ReviewStore existing apply remains only current-attempt writer, same transaction. Add snapshot inputs and round execution/confirmation metadata via 0002 migration, no editing old migrations. No new attempt/round states necessary; assessment derived from frozen input/current successful reports. Interrupted running attempts shown as recoverable; explicit recovery only if no live owner. CLI confirmations validate IDs/round, max one cross-confirmation round, only blockers, completed independent reports required. confirm 用继承席位配置的独立只读运行时会话生成结果，不把手填 JSON 当模型结论。使用现有 RoundState/attempt 机制建立 parent_round_id 关联的唯一子轮次（confirmation prompt/schema），完整记录来源与重试证据；仅在双方原报告齐全后启动，只传 P0/P1。测试输入文件包含 required_commands 和 results，只有声明的全部命令通过才可能 ready；显示 user_supplied 来源。 confirmation 仅限双审父轮次，创建子轮次与 UNIQUE parent 约束同一事务；seat 由执行上下文绑定，目标必须是另一席位阻塞项。Ctrl-C 持久化 CancelRequested，调用 adapter.cancel，等终态/停止，保留成功席位。 T-0015 提供存储API和迁移，本卡复用不修改store。CLI进程持有数据库级非阻塞flock串行派发，轮内双审并行；show可并行读。遗留running显式recover后用category=None终止旧控制尝试，进程exit仍未知；遗留cancelling缺终态证据保持未完成。"
+    },
+    {
+      "name": "runner and confirmation boundary",
+      "definition": "runner.make_adapter(config:SeatConfig,log_dir:Path,metadata:dict,schema:dict)->Adapter is test factory boundary. async execute_round(store,round_id,directory,*,stop:asyncio.Event|None=None)->None; caller holds execution_lock(directory). Confirmation runtime output exact {summary:string,confirmations:[{target_seat,finding_id,decision:agree|disagree|uncertain,reason}]}; seat is bound by runner, never accepted from output. Targets must be other original seat P0/P1. Unanswered targets recorded as missing, not fabricated confirmations. main command returns0 for processed runs (consult JSON assessment),2 for invalid CLI input. Output top status is existing RoundStatus, assessment.status is ready|needs_rework|user_decision|incomplete. Global data-dir; run SNAPSHOT_ID --seat PROVIDER MODEL EFFORT repeat; show [ROUND_ID] --history; retry ROUND_ID --seat KEY repeat --recover; confirm ROUND_ID."
+    },
+    {
+      "name": "unconfirmed cancellation",
+      "definition": "复核发现运行时cleanup失败仍报告取消的依赖缺陷，本卡收紧runtime与runner：已启动子进程但清理失败且无真实terminal/exit时不得合成CANCELLED；adapter保留Error(category=None,raw_type=adapter.cleanup_incomplete)和未知exit，runner不将它送入CANCELLING转移，而是保留未完成并记录不确定证据。从未启动进程可before-launch取消，实际终态或exit可确认。新增回归，状态/事件枚举不变。"
     }
   ],
   "deliverables": [

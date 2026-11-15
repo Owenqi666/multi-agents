@@ -1,0 +1,39 @@
+{
+  "name": "dual-retry-late-result",
+  "steps": [
+    {
+      "op": "run", "round": "first", "snapshot": "initial", "dual": true,
+      "responses": {
+        "reviewer-1": {"summary": "first independent report"},
+        "reviewer-2": {"failure": "timeout"}
+      },
+      "expect_status": "incomplete"
+    },
+    {
+      "op": "retry", "round": "first",
+      "responses": {"reviewer-2": {"summary": "recovered independent report"}},
+      "expect_status": "ready_for_assessment"
+    },
+    {
+      "op": "late", "round": "first", "seat": "reviewer-2", "attempt": 1,
+      "summary": "stale report retained only in history"
+    },
+    {"op": "show", "round": "first", "expect_status": "ready_for_assessment"}
+  ],
+  "expected": {
+    "first": {
+      "snapshot": "initial",
+      "attempts": {"reviewer-1": 1, "reviewer-2": 2},
+      "current_summaries": {
+        "reviewer-1": "first independent report",
+        "reviewer-2": "recovered independent report"
+      },
+      "completed_summaries": [
+        "first independent report", "recovered independent report",
+        "stale report retained only in history"
+      ],
+      "failure_categories": ["timeout"],
+      "history_only": 1
+    }
+  }
+}

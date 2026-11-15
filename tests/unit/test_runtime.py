@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 from multi_agent.adapters.base import Permission, SessionConfig
+from multi_agent.adapters.probe.process import Process
+from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.runtime import RuntimeAdapter, RuntimeFailure
 from multi_agent.adapters.runtime_decode import CodexDecoder, claude_events
 from multi_agent.core.events import (
@@ -461,3 +463,62 @@ def test_large_reported_integer_cost_remains_finite_evidence():
     )
     usage = next(e for e in events if isinstance(e, Usage))
     assert usage.counts["client_estimated_cost_usd"] == amount
+
+
+@pytest.mark.parametrize(
+    "observed_terminal,request_cancel", [(False, True), (False, False), (True, False)]
+)
+def test_cleanup_failure_never_claims_unobserved_process_stop(
+    tmp_path, monkeypatch, observed_terminal, request_cancel
+):
+    mode = "hang-after-result" if observed_terminal else "ignore-cancel"
+    adapter, config, _ = setup(tmp_path, monkeypatch, "claude", mode, timeout=0.4)
+    owned = []
+    original_terminate = Process.terminate
+
+    async def fail_cleanup(process, grace):
+        if process not in owned:
+            owned.append(process)
+        raise OSError("injected process cleanup failure")
+
+    monkeypatch.setattr(Process, "terminate", fail_cleanup)
+
+    async def run():
+        try:
+            turn = await adapter.submit_turn(
+                await adapter.start_session(config), "wait"
+            )
+            events = []
+            async for event in adapter.events(turn):
+                events.append(event)
+                if (
+                    request_cancel
+                    and isinstance(event, Message)
+                    and event.text == "waiting"
+                ):
+                    await adapter.cancel(turn)
+            return events, await adapter.result(turn)
+        finally:
+            # The regression deliberately leaves an actual fake subprocess alive.
+            # Restore cleanup and provide a live recorder, then safely reap it.
+            monkeypatch.setattr(Process, "terminate", original_terminate)
+            for index, process in enumerate(owned):
+                with Recorder(
+                    tmp_path / f"test-cleanup-{index}.jsonl", Redactor()
+                ) as recorder:
+                    process._recorder = recorder
+                    await original_terminate(process, 0.05)
+
+    events, result = asyncio.run(run())
+    assert result.process_exit is None
+    assert not any(isinstance(event, ProcessExited) for event in events)
+    if observed_terminal:
+        assert isinstance(result.terminal, Completed)
+        assert (
+            "cleanup_incomplete"
+            in next((tmp_path / "logs").glob("*.jsonl")).read_text()
+        )
+    else:
+        assert isinstance(result.terminal, Error)
+        assert result.terminal.failure_category is None
+        assert result.terminal.raw_type == "adapter.cleanup_incomplete"

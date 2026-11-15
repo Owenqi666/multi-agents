@@ -1,6 +1,6 @@
 # 阶段 1 审核 CLI
 
-当前先提供冻结输入入口。审核运行、报告汇总与补跑在后续任务卡接入；这里的冻结命令不会发模型请求，也不会执行提交里的代码或测试。
+阶段 1 提供冻结、单审/双审、报告汇总、补跑和一轮交叉确认。`freeze`、`snapshot`、`show` 不发模型请求；`run`、`retry`、`confirm` 会请求所选真实 CLI，由用户本人在终端运行。自动化开发验证仅使用假 CLI 和已录制夹具。所有命令均不执行目标项目的测试命令。
 
 从仓库两个提交创建快照：
 
@@ -38,3 +38,49 @@ uv run python -m multi_agent snapshot SNAPSHOT_ID
 快速试跑可以用 `freeze --diff /path/to/patch.diff` 替代仓库与两个提交；仍需需求和验收条件，不能携带测试证据。此类输入只能生成报告，引用位置待核实。
 
 快照包括双方文本文件、完整对象 ID、模式、diff、需求、验收和测试证据。binary 与 gitlink 只保留元数据；symlink 在审核目录变成普通文本。暂不展开子模块或运行构建，过大输入会拒绝而不截断。
+
+
+## 单审或双审
+
+以下命令会发真实请求；模型和档位显式选择。环境检查记录版本、登录和可获得的目录，目录缺失记未确认，不自动替换不可用模型。
+
+```bash
+uv run python -m multi_agent run SNAPSHOT_ID --seat codex gpt-6.1-sol high
+uv run python -m multi_agent run SNAPSHOT_ID \
+  --seat codex gpt-6.1-sol high --seat claude claude-opus-5-5 high
+```
+
+只选一个席位时只启动一个审核会话；双审必须选择不同模型。每位使用全新目录和相同冻结首轮输入，并行执行。模型不会被提供另一位的首轮报告。最多两个席位，一条命令只为每个选中席位启动一次模型会话；`--timeout`（默认 180 秒）和 `--grace`（默认 2 秒）控制运行和取消收尾。再次重试需要用户明确运行命令。
+
+输出 `round_id` 和业务评估 `assessment.status`：`ready`（可验收）、`needs_rework`（需要返工）、`user_decision`（待用户决定）、`incomplete`（报告或确认未完成）。顶层 `status` 是编排状态，不代表验收。`ready` 仅依据本轮用户提供的完整测试集合与审核报告；工具不替用户接受或合并，也不自动执行返工。
+
+```bash
+uv run python -m multi_agent show ROUND_ID --history
+uv run python -m multi_agent show
+uv run python -m multi_agent retry ROUND_ID
+uv run python -m multi_agent retry ROUND_ID --seat reviewer-2
+```
+
+补跑沿用快照、模型、档位和提示词版本，只重开失败或尚未启动的席位。成功报告保留，旧尝试迟到只进入历史。更换模型或代码时创建新轮次；代码更新先重新冻结与提供新提交的测试证据。旧轮次仍可查询旧快照。
+
+`show` 包含请求配置、运行时实际报告值、退出码、来源日志和尝试历史；缺失的实际模型/生效档位是 null 并标“未确认”。请求值不会补填实际值。用量事件保留在 `--history` 中，不对多次累计通知再次相加。原始流及未知事件位于数据目录的 `logs/轮次/席位/尝试/`，与快照检出分开。
+
+## 一轮交叉确认
+
+```bash
+uv run python -m multi_agent confirm ROUND_ID
+```
+
+仅双审首轮报告全部完成后可启动。只为有他人 P0/P1 需要核对的席位创建新只读会话，模型/档位继承原席位，父轮次最多关联一个确认轮次。返回的是子轮次 ID；查看父轮次获取结合确认结果的整体评估。子轮次失败用 `retry CHILD_ROUND_ID`，不新建第二轮确认。
+
+确认来源由运行器绑定，不能由模型自报席位；缺回答显示 `unanswered_confirmations`，不被当成同意。一方未提及的独立发现仍保留；未核对引用或确认分歧会交用户决定。位置归并只是候选重复项，不能证明语义相同或诊断正确。
+
+## 取消、恢复与限制
+
+Ctrl-C 请求取消，等待运行时终态或进程停止，保留已经完成的席位。数据库级文件锁让本地同一数据目录一次只运行一个控制进程，轮内仍并行；运行期间可 `show`。
+
+控制进程意外退出后，未完成尝试可在 `show` 中看到。确认先前 CLI 已停止后，`retry ROUND_ID --recover` 可结束遗留 `running` 控制尝试并重新派发；其旧进程退出码仍未知，不伪造取消证据。遗留 `cancelling` 缺终态时拒绝恢复，可开启新审核轮次并保留旧记录。文件锁释放只能证明控制进程不再持锁，不能证明其孤儿子进程已结束。
+
+Codex 使用已验证只读沙箱与拒绝审批；Claude 使用 safe-mode、Read/Grep/Glob，并去掉 API key/token 环境变量以保留订阅登录。每次审核检查检出前后的文件内容与模式。Codex 用户级指令、skills/MCP 完全隔离仍未实机确认，独立目录是上下文隔离，不是隔绝整台计算机的访问控制。普通进程组后代会清理，主动脱离会话的外部进程不在此保证内。
+
+命令处理成功返回 0，即使审核发现问题；脚本应读取 JSON 的状态。用户输入错误、执行锁冲突或非法补跑返回 2。没有自动接受、合并、改写项目规则或执行目标代码。

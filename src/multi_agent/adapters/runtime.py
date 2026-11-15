@@ -263,6 +263,7 @@ class RuntimeAdapter(Adapter):
     async def _run(self, handle: TurnHandle, state: _Turn) -> None:
         recorder: Recorder | None = None
         failure: Error | None = None
+        cleanup_problem: Error | None = None
         try:
             recorder = self._recorder(handle.identifier, state.config.cwd)
             recorder.emit(
@@ -289,7 +290,17 @@ class RuntimeAdapter(Adapter):
         except asyncio.CancelledError:
             state.cancelled = True
             failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
-        except (OSError, SpawnFailed, ValueError, TypeError, KeyError) as error:
+        except OSError as error:
+            if state.observed_terminal is not None:
+                cleanup_problem = Error(
+                    f"runtime cleanup failure: {error}",
+                    raw_type="adapter.cleanup_incomplete",
+                )
+            else:
+                failure = Error(
+                    f"runtime boundary failure: {type(error).__name__}: {error}"
+                )
+        except (SpawnFailed, ValueError, TypeError, KeyError) as error:
             failure = Error(
                 f"runtime boundary failure: {type(error).__name__}: {error}"
             )
@@ -308,17 +319,31 @@ class RuntimeAdapter(Adapter):
                                 code, raw_type="process_exit"
                             )
             except (OSError, ValueError, RuntimeError) as error:
-                failure = Error(f"runtime cleanup failure: {error}")
+                cleanup_problem = Error(
+                    f"runtime cleanup failure: {error}",
+                    raw_type="adapter.cleanup_incomplete",
+                )
             finally:
-                # Cancellation is only confirmed here, after process termination,
-                # unless the runtime itself reported a cancellation terminal.
-                if state.cancelled and state.observed_terminal is None:
-                    failure = Error(
-                        "process stopped after cancellation", FailureCategory.CANCELLED
-                    )
+                # A cancellation request is not proof of process termination.
+                # The runner keeps CANCELLING when this diagnostic has no exit
+                # or runtime terminal, instead of feeding it to the state machine.
+                if state.observed_terminal is None:
+                    if state.process is not None and state.exit_event is None:
+                        failure = Error(
+                            "runtime process stop remains unconfirmed",
+                            raw_type="adapter.cleanup_incomplete",
+                        )
+                    elif state.cancelled:
+                        failure = Error(
+                            "process stopped after cancellation"
+                            if state.process is not None
+                            else "cancelled before process launch",
+                            FailureCategory.CANCELLED,
+                        )
                 terminal = (
                     failure
                     or state.observed_terminal
+                    or cleanup_problem
                     or Error("runtime exited without a terminal result")
                 )
                 state.terminal = terminal
@@ -327,7 +352,13 @@ class RuntimeAdapter(Adapter):
                     state.queue.put_nowait(state.exit_event)
                 state.queue.put_nowait(None)
                 if recorder is not None:
-                    recorder.close()
+                    try:
+                        if cleanup_problem is not None:
+                            recorder.emit(
+                                "cleanup_incomplete", detail=cleanup_problem.detail
+                            )
+                    finally:
+                        recorder.close()
 
     async def _codex(self, state: _Turn, recorder: Recorder) -> None:
         process = await self._spawn(

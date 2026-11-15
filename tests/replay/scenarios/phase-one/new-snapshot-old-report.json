@@ -1,0 +1,31 @@
+{
+  "name": "new-snapshot-old-report",
+  "steps": [
+    {
+      "op": "run", "round": "original", "snapshot": "initial", "dual": false,
+      "responses": {"reviewer-1": {"summary": "report for original candidate"}},
+      "expect_status": "ready_for_assessment"
+    },
+    {"op": "snapshot", "snapshot": "revised", "candidate": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+    {
+      "op": "run", "round": "updated", "snapshot": "revised", "dual": false,
+      "responses": {"reviewer-1": {"summary": "report for revised candidate"}},
+      "expect_status": "ready_for_assessment"
+    },
+    {"op": "show", "round": "original", "expect_status": "ready_for_assessment"}
+  ],
+  "expected": {
+    "original": {
+      "snapshot": "initial", "attempts": {"reviewer-1": 1},
+      "current_summaries": {"reviewer-1": "report for original candidate"},
+      "completed_summaries": ["report for original candidate"],
+      "failure_categories": [], "history_only": 0
+    },
+    "updated": {
+      "snapshot": "revised", "attempts": {"reviewer-1": 1},
+      "current_summaries": {"reviewer-1": "report for revised candidate"},
+      "completed_summaries": ["report for revised candidate"],
+      "failure_categories": [], "history_only": 0
+    }
+  }
+}

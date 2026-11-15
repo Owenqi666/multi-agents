@@ -1,12 +1,14 @@
 """User-input boundary for the phase-one review CLI."""
 
 import argparse
+import asyncio
 import json
 import sqlite3
 import sys
 from pathlib import Path
 from typing import Any, cast
 
+from multi_agent.core import SeatConfig
 from multi_agent.core.events import thaw_json
 from multi_agent.core.snapshot import FrozenSnapshot, TestEvidence
 from multi_agent.store import ReviewStore
@@ -105,6 +107,36 @@ def parser() -> argparse.ArgumentParser:
     freeze.add_argument("--tests", type=Path)
     snapshot = commands.add_parser("snapshot", help="print a stored frozen input")
     snapshot.add_argument("snapshot_id")
+    run = commands.add_parser(
+        "run", help="start selected real read-only reviewer sessions"
+    )
+    run.add_argument("snapshot_id")
+    run.add_argument(
+        "--seat",
+        nargs=3,
+        action="append",
+        required=True,
+        metavar=("PROVIDER", "MODEL", "EFFORT"),
+    )
+    run.add_argument("--timeout", type=float, default=180)
+    run.add_argument("--grace", type=float, default=2)
+    run.add_argument("--codex-bin", default="codex")
+    run.add_argument("--claude-bin", default="claude")
+    show = commands.add_parser(
+        "show", help="show current reports, recovery state and evidence"
+    )
+    show.add_argument("round_id", nargs="?")
+    show.add_argument("--history", action="store_true")
+    retry = commands.add_parser(
+        "retry", help="retry failed seats with their original configuration"
+    )
+    retry.add_argument("round_id")
+    retry.add_argument("--seat", action="append")
+    retry.add_argument("--recover", action="store_true")
+    confirm = commands.add_parser(
+        "confirm", help="one cross-confirmation round for blocking findings"
+    )
+    confirm.add_argument("round_id")
     return result
 
 
@@ -168,8 +200,56 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
     with ReviewStore(directory / "reviews.sqlite3") as store:
         if args.command == "freeze":
             return freeze_input(args, store)
-        snapshot = load_snapshot(store, args.snapshot_id)
-        return {"snapshot_id": snapshot.snapshot_id, "input": snapshot.to_dict()}
+        if args.command == "snapshot":
+            snapshot = load_snapshot(store, args.snapshot_id)
+            return {"snapshot_id": snapshot.snapshot_id, "input": snapshot.to_dict()}
+        from . import runner
+
+        if args.command == "show":
+            if args.round_id is None:
+                return {
+                    "rounds": [
+                        runner.view_round(store, key) for key in store.list_reviews()
+                    ]
+                }
+            return runner.view_round(store, args.round_id, history=args.history)
+        with runner.execution_lock(directory):
+            seat_keys = None
+            if args.command == "run":
+                runner.ensure_external(
+                    directory, load_snapshot(store, args.snapshot_id)
+                )
+                seats = tuple(
+                    SeatConfig(f"reviewer-{index}", *fields)
+                    for index, fields in enumerate(args.seat, 1)
+                )
+                identifier = runner.new_review(
+                    store,
+                    args.snapshot_id,
+                    seats,
+                    timeout=args.timeout,
+                    grace=args.grace,
+                    executables={"codex": args.codex_bin, "claude": args.claude_bin},
+                )
+            else:
+                state = store.load_round(args.round_id)
+                runner.ensure_external(
+                    directory, load_snapshot(store, state.snapshot_id)
+                )
+                if args.command == "confirm":
+                    identifier = runner.new_confirmation(store, args.round_id)
+                else:
+                    identifier = args.round_id
+                    seat_keys = runner.prepare_retry(
+                        store,
+                        identifier,
+                        tuple(args.seat) if args.seat else None,
+                        recover=args.recover,
+                    )
+            asyncio.run(
+                runner.execute_round(store, identifier, directory, seat_keys=seat_keys)
+            )
+            return runner.view_round(store, identifier)
 
 
 def main(argv: list[str] | None = None) -> int:
