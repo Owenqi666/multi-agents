@@ -1,7 +1,8 @@
-"""Phase-one CLI contract tests; adapters are synthetic and never launch a CLI."""
+"""Phase-one CLI tests using scripted adapters and local fake executables only."""
 
 import asyncio
 import json
+import sys
 from collections import defaultdict
 from dataclasses import replace
 from pathlib import Path
@@ -9,7 +10,8 @@ from pathlib import Path
 import pytest
 
 from multi_agent.adapters.base import EnvironmentInfo, Permission
-from multi_agent.adapters.runtime import RuntimeFailure
+from multi_agent.adapters.probe.recording import Recorder, Redactor
+from multi_agent.adapters.runtime import RuntimeAdapter, RuntimeFailure
 from multi_agent.adapters.scripted import ScriptedAdapter, TurnScript
 from multi_agent.cli import main as cli
 from multi_agent.cli import runner
@@ -134,9 +136,9 @@ class RecordingAdapter(ScriptedAdapter):
             await asyncio.wait_for(self.owner.barrier.wait(), 2)
         return await super().submit_turn(session, text)
 
-    async def cancel(self, turn):
+    async def cancel(self, turn, *, on_accepted=None):
         self.owner.cancelled.append(self.seat.key)
-        await super().cancel(turn)
+        return await super().cancel(turn, on_accepted=on_accepted)
 
 
 class Harness:
@@ -821,3 +823,462 @@ def test_cancellation_without_terminal_or_exit_stays_unconfirmed(
     )
     assert any(isinstance(envelope.event, CancelRequested) for envelope, _ in history)
     assert execution["reviewer-1"]["1"]["completion_unconfirmed"]
+
+
+@pytest.fixture
+def runtime_executables(tmp_path):
+    source = (Path(__file__).parent / "runtime_fakes" / "fake_cli.py").read_text()
+    executables = {}
+    for provider in ("codex", "claude"):
+        path = tmp_path / f"fake-{provider}"
+        path.write_text(f"#!{sys.executable}\n{source}")
+        path.chmod(0o755)
+        executables[provider] = str(path)
+    return executables
+
+
+class CompletionWindowAdapter(RuntimeAdapter):
+    """Observe real decoding, holding cleanup until the runner decides cancellation."""
+
+    def __init__(
+        self,
+        seat,
+        log_dir,
+        metadata,
+        schema,
+        monkeypatch,
+        *,
+        mode,
+        observe,
+        report=None,
+    ):
+        super().__init__(
+            seat.provider,
+            executable=metadata["executables"][seat.provider],
+            timeout=metadata["timeout"],
+            grace=metadata["grace"],
+            log_dir=log_dir,
+            output_schema=schema,
+        )
+        self.mode = mode
+        self.observe = observe
+        self.report = report
+        self.monkeypatch = monkeypatch
+        self.release_cleanup = asyncio.Event()
+        self.cancel_decisions = []
+        self.completion_windows = []
+
+    def _environment(self):
+        env = super()._environment()
+        env["FAKE_RUNTIME_MODE"] = self.mode
+        if self.report is not None:
+            env["FAKE_RUNTIME_REPORT"] = json.dumps(self.report)
+        return env
+
+    def _observe(self, state, event):
+        super()._observe(state, event)
+        if isinstance(event, Completed):
+            self.completion_windows.append(
+                (
+                    state.observed_terminal is event,
+                    state.terminal is None,
+                    state.process.child.returncode is None,
+                )
+            )
+            if self.mode in ("hang-after-result", "contradictory"):
+                original = state.process.wait_for_exit
+
+                async def wait_for_exit(seconds):
+                    await asyncio.wait_for(self.release_cleanup.wait(), 5)
+                    return await original(seconds)
+
+                self.monkeypatch.setattr(state.process, "wait_for_exit", wait_for_exit)
+        self.observe(event)
+
+    async def cancel(self, turn, *, on_accepted=None):
+        accepted = await super().cancel(turn, on_accepted=on_accepted)
+        self.cancel_decisions.append(accepted)
+        self.release_cleanup.set()
+        return accepted
+
+
+async def execute_bounded(store, identifier, directory, *, stop, seat_keys=None):
+    async with asyncio.timeout(10):
+        await runner.execute_round(
+            store, identifier, directory, stop=stop, seat_keys=seat_keys
+        )
+
+
+def test_runtime_completed_before_cancel_preserves_report(
+    h, monkeypatch, runtime_executables
+):
+    stop = asyncio.Event()
+    adapters = []
+
+    def factory(seat, log_dir, metadata, schema):
+        def observe(event):
+            if isinstance(event, Completed):
+                stop.set()
+
+        adapter = CompletionWindowAdapter(
+            seat,
+            log_dir,
+            metadata,
+            schema,
+            monkeypatch,
+            mode="hang-after-result",
+            observe=observe,
+        )
+        adapters.append(adapter)
+        return adapter
+
+    monkeypatch.setattr(runner, "make_adapter", factory)
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            (SeatConfig("reviewer-1", "claude", "requested-claude", "high"),),
+            timeout=5,
+            grace=0.1,
+            executables=runtime_executables,
+        )
+        with runner.execution_lock(h.data):
+            asyncio.run(execute_bounded(store, identifier, h.data, stop=stop))
+        attempt = store.load_round(identifier).seats[0].attempts[-1]
+        history = store.load_history(identifier)
+    assert adapters[0].completion_windows == [(True, True, True)]
+    assert adapters[0].cancel_decisions == [False]
+    assert attempt.status == AttemptStatus.SUCCEEDED
+    assert attempt.result == {"summary": "ok", "findings": ()}
+    assert attempt.reported_model == "actual-claude"
+    assert attempt.failure_category is None and attempt.exit_code is not None
+    assert sum(isinstance(envelope.event, Completed) for envelope, _ in history) == 1
+    assert not any(
+        isinstance(envelope.event, CancelRequested) for envelope, _ in history
+    )
+
+
+def test_runtime_dual_cancel_preserves_completed_seat_and_retries_only_failed_seat(
+    h, monkeypatch, runtime_executables
+):
+    stop = asyncio.Event()
+    completed = asyncio.Event()
+    other_running = asyncio.Event()
+    adapters = defaultdict(list)
+
+    def factory(seat, log_dir, metadata, schema):
+        retry = bool(adapters[seat.key])
+
+        def observe(event):
+            if not retry:
+                if seat.key == "reviewer-1" and isinstance(event, Completed):
+                    completed.set()
+                if (
+                    seat.key == "reviewer-2"
+                    and isinstance(event, Message)
+                    and event.text == "waiting"
+                ):
+                    other_running.set()
+                if completed.is_set() and other_running.is_set():
+                    stop.set()
+
+        adapter = CompletionWindowAdapter(
+            seat,
+            log_dir,
+            metadata,
+            schema,
+            monkeypatch,
+            mode="success"
+            if retry
+            else ("hang-after-result" if seat.key == "reviewer-1" else "wait"),
+            observe=observe,
+        )
+        adapters[seat.key].append(adapter)
+        return adapter
+
+    monkeypatch.setattr(runner, "make_adapter", factory)
+    seats = (
+        SeatConfig("reviewer-1", "claude", "requested-claude", "high"),
+        SeatConfig("reviewer-2", "codex", "model-1", "high"),
+    )
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            seats,
+            timeout=5,
+            grace=0.1,
+            executables=runtime_executables,
+        )
+        with runner.execution_lock(h.data):
+            asyncio.run(execute_bounded(store, identifier, h.data, stop=stop))
+            initial = store.load_round(identifier)
+            first, second = (seat.attempts[-1] for seat in initial.seats)
+            assert first.status == AttemptStatus.SUCCEEDED
+            assert first.result == {"summary": "ok", "findings": ()}
+            assert second.status == AttemptStatus.FAILED
+            assert second.failure_category == FailureCategory.CANCELLED
+            assert second.result is None and second.exit_code is not None
+            selected = runner.prepare_retry(store, identifier, None, recover=False)
+            assert selected == ("reviewer-2",)
+            asyncio.run(
+                execute_bounded(
+                    store, identifier, h.data, stop=asyncio.Event(), seat_keys=selected
+                )
+            )
+        final = store.load_round(identifier)
+        history = store.load_history(identifier)
+    assert adapters["reviewer-1"][0].completion_windows == [(True, True, True)]
+    assert adapters["reviewer-1"][0].cancel_decisions == [False]
+    assert adapters["reviewer-2"][0].cancel_decisions == [True]
+    assert len(adapters["reviewer-1"]) == 1 and len(adapters["reviewer-2"]) == 2
+    assert final.snapshot_id == initial.snapshot_id == h.frozen.snapshot_id
+    assert final.seats[0] == initial.seats[0]
+    assert len(final.seats[1].attempts) == 2
+    assert final.seats[1].config == seats[1]
+    assert final.seats[1].attempts[-1].status == AttemptStatus.SUCCEEDED
+    requests = [
+        envelope
+        for envelope, _ in history
+        if isinstance(envelope.event, CancelRequested)
+    ]
+    assert [(envelope.seat, envelope.attempt) for envelope in requests] == [
+        ("reviewer-2", 1)
+    ]
+    request_index = next(
+        i
+        for i, (envelope, _) in enumerate(history)
+        if isinstance(envelope.event, CancelRequested)
+    )
+    cancelled_index = next(
+        i
+        for i, (envelope, _) in enumerate(history)
+        if envelope.seat == "reviewer-2" and isinstance(envelope.event, Error)
+    )
+    assert request_index < cancelled_index
+
+
+@pytest.mark.parametrize(
+    ("provider", "mode", "invalid_report", "detail"),
+    [
+        (
+            "claude",
+            "hang-after-result",
+            {"summary": "bad", "findings": "malformed"},
+            "invalid structured report",
+        ),
+        ("codex", "contradictory", None, "multiple terminal"),
+    ],
+)
+def test_runtime_late_cancel_does_not_hide_invalid_report_or_contradictory_terminal(
+    h, monkeypatch, runtime_executables, provider, mode, invalid_report, detail
+):
+    stop = asyncio.Event()
+    adapters = []
+
+    def factory(seat, log_dir, metadata, schema):
+        def observe(event):
+            if isinstance(event, Completed):
+                stop.set()
+
+        adapter = CompletionWindowAdapter(
+            seat,
+            log_dir,
+            metadata,
+            schema,
+            monkeypatch,
+            mode=mode,
+            observe=observe,
+            report=invalid_report,
+        )
+        adapters.append(adapter)
+        return adapter
+
+    monkeypatch.setattr(runner, "make_adapter", factory)
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            (SeatConfig("reviewer-1", provider, "model-1", "high"),),
+            timeout=5,
+            grace=0.1,
+            executables=runtime_executables,
+        )
+        with runner.execution_lock(h.data):
+            asyncio.run(execute_bounded(store, identifier, h.data, stop=stop))
+        attempt = store.load_round(identifier).seats[0].attempts[-1]
+        history = store.load_history(identifier)
+    assert adapters[0].completion_windows == [(True, True, True)]
+    assert adapters[0].cancel_decisions == [False]
+    assert attempt.status == AttemptStatus.FAILED
+    assert attempt.failure_category is None and attempt.result is None
+    assert detail in attempt.detail
+    assert attempt.exit_code is not None
+    assert not any(
+        isinstance(envelope.event, (CancelRequested, Completed))
+        for envelope, _ in history
+    )
+
+
+def test_accepted_cancellation_finishes_after_stream_before_terminal_persistence(
+    h, monkeypatch
+):
+    stop = asyncio.Event()
+    accepted_started = asyncio.Event()
+    stream_finished = asyncio.Event()
+    decisions = []
+
+    class DelayedCancellation(RecordingAdapter):
+        async def submit_turn(self, session, text):
+            turn = await super().submit_turn(session, text)
+            stop.set()
+            return turn
+
+        async def cancel(self, turn, *, on_accepted=None):
+            accepted = await super().cancel(turn, on_accepted=on_accepted)
+            accepted_started.set()
+            await asyncio.wait_for(stream_finished.wait(), 5)
+            decisions.append(accepted)
+            return accepted
+
+        async def events(self, turn):
+            await asyncio.wait_for(accepted_started.wait(), 5)
+            async for event in super().events(turn):
+                yield event
+            stream_finished.set()
+
+    def factory(seat, log_dir, metadata, schema):
+        planned = TurnScript(
+            (Completed(GOOD), ProcessExited(0)),
+            (Completed(GOOD), ProcessExited(0)),
+        )
+        return DelayedCancellation(h, seat, planned, h.environment)
+
+    monkeypatch.setattr(runner, "make_adapter", factory)
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            (SeatConfig("reviewer-1", "codex", "model-one", "high"),),
+            timeout=5,
+            grace=0.1,
+            executables={"codex": "unused", "claude": "unused"},
+        )
+        with runner.execution_lock(h.data):
+            asyncio.run(execute_bounded(store, identifier, h.data, stop=stop))
+        attempt = store.load_round(identifier).seats[0].attempts[-1]
+        history = store.load_history(identifier)
+    assert decisions == [True] and stream_finished.is_set()
+    assert h.cancelled == ["reviewer-1"]
+    assert attempt.status == AttemptStatus.FAILED
+    assert attempt.failure_category == FailureCategory.CANCELLED
+    assert attempt.result is None and attempt.exit_code == 0
+    request_index = next(
+        i
+        for i, (envelope, _) in enumerate(history)
+        if isinstance(envelope.event, CancelRequested)
+    )
+    terminal_index = next(
+        i
+        for i, (envelope, _) in enumerate(history)
+        if isinstance(envelope.event, Completed)
+    )
+    assert request_index < terminal_index
+
+
+def test_runtime_accepted_cancel_io_failures_keep_cancelling_and_forbid_recovery(
+    h, monkeypatch, runtime_executables
+):
+    stop = asyncio.Event()
+    adapters = []
+
+    class BrokenCancellation(RuntimeAdapter):
+        process = None
+        original_terminate = None
+        acceptance_before_io = False
+
+        def _environment(self):
+            env = super()._environment()
+            env["FAKE_RUNTIME_MODE"] = "wait"
+            return env
+
+        def _observe(self, state, event):
+            super()._observe(state, event)
+            if isinstance(event, Message) and event.text == "waiting":
+                self.process = state.process
+                self.original_terminate = state.process.terminate
+
+                async def failed_terminate(grace):
+                    raise OSError("injected cleanup failure")
+
+                monkeypatch.setattr(state.process, "terminate", failed_terminate)
+                stop.set()
+
+        async def _send_cancel(self, state):
+            self.acceptance_before_io = (
+                store.load_round(identifier).seats[0].attempts[-1].status
+                == AttemptStatus.CANCELLING
+            )
+            # Wake the real reader into its cleanup path without waiting for a
+            # deadline. Both cleanup attempts fail, so the child is still live.
+            state.task.cancel()
+            raise OSError("injected interrupt failure")
+
+    def factory(seat, log_dir, metadata, schema):
+        adapter = BrokenCancellation(
+            seat.provider,
+            executable=metadata["executables"][seat.provider],
+            timeout=5,
+            grace=0.1,
+            log_dir=log_dir,
+            output_schema=schema,
+        )
+        adapters.append(adapter)
+        return adapter
+
+    monkeypatch.setattr(runner, "make_adapter", factory)
+    with ReviewStore(h.data / "reviews.sqlite3") as store:
+        identifier = runner.new_review(
+            store,
+            h.frozen.snapshot_id,
+            (SeatConfig("reviewer-1", "claude", "requested-claude", "high"),),
+            timeout=5,
+            grace=0.1,
+            executables=runtime_executables,
+        )
+
+        async def exercise():
+            try:
+                with pytest.raises(OSError, match="injected cleanup failure"):
+                    await execute_bounded(store, identifier, h.data, stop=stop)
+                attempt = store.load_round(identifier).seats[0].attempts[-1]
+                assert attempt.status == AttemptStatus.CANCELLING
+                assert attempt.exit_code is None and attempt.failure_category is None
+                assert attempt.result is None
+                assert adapters[0].acceptance_before_io
+                assert adapters[0].process.child.returncode is None
+                with pytest.raises(ValueError, match="lacks terminal evidence"):
+                    runner.prepare_retry(store, identifier, None, recover=True)
+            finally:
+                for index, adapter in enumerate(adapters):
+                    if adapter.process is not None:
+                        monkeypatch.setattr(
+                            adapter.process, "terminate", adapter.original_terminate
+                        )
+                        with Recorder(
+                            h.data / f"test-cleanup-{index}.jsonl", Redactor()
+                        ) as recorder:
+                            adapter.process._recorder = recorder
+                            await adapter.original_terminate(0.1)
+
+        with runner.execution_lock(h.data):
+            asyncio.run(exercise())
+        history = store.load_history(identifier)
+    assert (
+        sum(isinstance(envelope.event, CancelRequested) for envelope, _ in history) == 1
+    )
+    assert not any(
+        isinstance(envelope.event, (Completed, Error, ProcessExited))
+        for envelope, _ in history
+    )
+    assert adapters[0].process.child.returncode is not None

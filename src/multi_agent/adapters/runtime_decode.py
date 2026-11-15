@@ -43,6 +43,14 @@ def string_value(value: object, name: str) -> str:
     return value
 
 
+def _agent_text(value: object) -> str:
+    # AgentMessage.text has no schema minimum length. A nonselected empty
+    # message must not invalidate an otherwise usable explicit final answer.
+    if not isinstance(value, str):
+        raise TypeError("agentMessage.text must be a string")
+    return value
+
+
 def _json_value(value: object) -> JSONValue:
     if value is None or isinstance(value, (str, bool, int)):
         return value
@@ -109,6 +117,7 @@ class CodexDecoder:
         self.turn_id = turn_id
         self.structured = structured
         self.final_text: str | None = None
+        self.unknown_text: str | None = None
 
     def decode(self, message: dict[str, Any]) -> tuple[AdapterEvent, ...]:
         method = message.get("method")
@@ -134,9 +143,11 @@ class CodexDecoder:
         if method == "item/completed":
             item = object_value(params.get("item"), "item")
             if item.get("type") == "agentMessage":
-                text = string_value(item.get("text"), "agentMessage.text")
+                text = _agent_text(item.get("text"))
                 if item.get("phase") == "final_answer":
                     self.final_text = text
+                elif item.get("phase") is None:
+                    self.unknown_text = text
                 return (Message(text, raw_type=method),)
             return ()
         assert turn is not None
@@ -154,16 +165,24 @@ class CodexDecoder:
             raise TypeError("turn.items must be an array")
         for item in items:
             data = object_value(item, "turn item")
-            if (
-                data.get("type") == "agentMessage"
-                and data.get("phase") == "final_answer"
-            ):
-                self.final_text = string_value(data.get("text"), "agentMessage.text")
-        if self.final_text is None:
+            if data.get("type") == "agentMessage":
+                text = _agent_text(data.get("text"))
+                if data.get("phase") == "final_answer":
+                    self.final_text = text
+                elif data.get("phase") is None:
+                    self.unknown_text = text
+        # MessagePhase permits absent/null values for legacy providers. Only a
+        # successful turn can promote the last such message to an answer; never
+        # search backwards for parseable JSON or override an explicit final.
+        selected_text = (
+            self.final_text if self.final_text is not None else self.unknown_text
+        )
+        if selected_text is None:
             raise ValueError("completed turn has no final answer")
+        text = string_value(selected_text, "completed answer")
         return (
             Completed(
-                result_value(self.final_text, structured=self.structured),
+                result_value(text, structured=self.structured),
                 raw_type=method,
             ),
         )

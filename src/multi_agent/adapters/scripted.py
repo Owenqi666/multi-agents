@@ -1,7 +1,7 @@
 """A deterministic, in-memory implementation of the adapter protocol."""
 
 import asyncio
-from collections.abc import AsyncIterator, Sequence
+from collections.abc import AsyncIterator, Callable, Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -107,10 +107,20 @@ class ScriptedAdapter(Adapter):
             state.observed, cancelled_before_exit=state.cancellation_requested
         )
 
-    async def cancel(self, turn: TurnHandle) -> None:
+    async def cancel(
+        self, turn: TurnHandle, *, on_accepted: Callable[[], None] | None = None
+    ) -> bool:
         state = self._turns[turn]
-        if state.terminal is None and state.process_exit is None:
-            state.cancellation_requested = True
+        if (
+            state.terminal is not None
+            or state.process_exit is not None
+            or state.cancellation_requested
+        ):
+            return False
+        state.cancellation_requested = True
+        if on_accepted is not None:
+            on_accepted()
+        return True
 
     async def result(self, turn: TurnHandle) -> TurnResult:
         state = self._turns[turn]

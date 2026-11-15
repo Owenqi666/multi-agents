@@ -10,8 +10,9 @@ def validate_event_sequence(
 ) -> None:
     """Reject incomplete or contradictory streams, raising ValueError.
 
-    The caller supplies whether cancellation was requested before process exit.
-    This function cannot infer cancellation from adapter events alone.
+    The caller supplies whether Adapter.cancel accepted a cancellation before
+    any terminal or process exit was observed. A rejected late request does not
+    satisfy this flag. It cannot be inferred from adapter events alone.
     """
     terminal_count = sum(isinstance(event, (Completed, Error)) for event in events)
     exit_positions = [

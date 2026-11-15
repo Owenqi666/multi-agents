@@ -23,6 +23,7 @@ from multi_agent.core.events import (
     ProcessExited,
     SessionStarted,
     Usage,
+    thaw_json,
 )
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "runtime"
@@ -124,6 +125,75 @@ def test_environment_is_explicit_and_preserves_catalog(tmp_path, monkeypatch, pr
     else:
         assert first.models is None and first.model_efforts is None
     assert len(list((tmp_path / "logs").glob("*.jsonl"))) == 2
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+def test_claude_logged_out_auth_preserves_false_status(
+    tmp_path, monkeypatch, exit_code
+):
+    monkeypatch.setenv("FAKE_AUTH_JSON", '{"loggedIn": false}')
+    monkeypatch.setenv("FAKE_AUTH_EXIT", str(exit_code))
+    adapter, _, capture = setup(tmp_path, monkeypatch, "claude")
+    environment = asyncio.run(adapter.check_environment())
+    assert environment.logged_in is False
+    assert environment.cli_version == "fake-claude 1.0"
+    assert environment.models is None and environment.model_efforts is None
+    records = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [record["argv"] for record in records] == [
+        ["--version"],
+        ["auth", "status"],
+    ]
+
+
+@pytest.mark.parametrize("logged_in,exit_code", [(True, 1), (False, 2), (True, 2)])
+def test_claude_auth_rejects_inconsistent_or_abnormal_exit(
+    tmp_path, monkeypatch, logged_in, exit_code
+):
+    monkeypatch.setenv("FAKE_AUTH_JSON", json.dumps({"loggedIn": logged_in}))
+    monkeypatch.setenv("FAKE_AUTH_EXIT", str(exit_code))
+    adapter, _, _ = setup(tmp_path, monkeypatch, "claude")
+    with pytest.raises(RuntimeFailure) as failure:
+        asyncio.run(adapter.check_environment())
+    assert failure.value.event.failure_category is None
+
+
+@pytest.mark.parametrize("exit_code", [0, 1])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "",
+        "not JSON",
+        "null",
+        "[]",
+        "{}",
+        '{"loggedIn": null}',
+        '{"loggedIn": "false"}',
+        '{"loggedIn": 0}',
+    ],
+)
+def test_claude_auth_requires_boolean_json_even_for_normal_exit(
+    tmp_path, monkeypatch, exit_code, payload
+):
+    monkeypatch.setenv("FAKE_AUTH_JSON", payload)
+    monkeypatch.setenv("FAKE_AUTH_EXIT", str(exit_code))
+    adapter, _, _ = setup(tmp_path, monkeypatch, "claude")
+    with pytest.raises(RuntimeFailure) as failure:
+        asyncio.run(adapter.check_environment())
+    assert failure.value.event.failure_category is None
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("exit_code", [1, 2])
+def test_version_exit_remains_strict_before_auth(
+    tmp_path, monkeypatch, provider, exit_code
+):
+    monkeypatch.setenv("FAKE_VERSION_EXIT", str(exit_code))
+    adapter, _, capture = setup(tmp_path, monkeypatch, provider)
+    with pytest.raises(RuntimeFailure) as failure:
+        asyncio.run(adapter.check_environment())
+    assert failure.value.event.failure_category is None
+    records = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [record["argv"] for record in records] == [["--version"]]
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])
@@ -345,6 +415,220 @@ def test_wrong_turn_cannot_supply_final_answer():
     assert decoder.final_text is None
 
 
+def codex_agent_item(text, phase="omitted"):
+    item = {"id": "agent-item", "type": "agentMessage", "text": text}
+    if phase != "omitted":
+        item["phase"] = phase
+    return item
+
+
+def codex_item_notification(item, *, thread="t", turn="u"):
+    return {
+        "method": "item/completed",
+        "params": {
+            "threadId": thread,
+            "turnId": turn,
+            "item": item,
+            "completedAtMs": 1,
+        },
+    }
+
+
+def codex_completed_notification(items=(), *, thread="t", turn="u", status="completed"):
+    value = {"id": turn, "status": status, "items": list(items)}
+    if status == "failed":
+        value["error"] = {"message": "reported failure", "codexErrorInfo": "other"}
+    return {"method": "turn/completed", "params": {"threadId": thread, "turn": value}}
+
+
+def decode_codex_sequence(decoder, items, source):
+    event_count = len(items) if source == "events" else int(source == "mixed")
+    for item in items[:event_count]:
+        events = decoder.decode(codex_item_notification(item))
+        assert len(events) == 1 and isinstance(events[0], Message)
+    return decoder.decode(codex_completed_notification(items[event_count:]))
+
+
+@pytest.mark.parametrize("source", ["events", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None])
+def test_codex_unknown_phase_report_completes_from_each_source(source, phase):
+    decoder = CodexDecoder("t", "u", structured=True)
+    report = {"summary": "compatible report", "findings": []}
+    events = decode_codex_sequence(
+        decoder, [codex_agent_item(json.dumps(report), phase)], source
+    )
+    assert len(events) == 1 and isinstance(events[0], Completed)
+    assert thaw_json(events[0].result) == report
+    assert events[0].reported_model is None
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None])
+def test_codex_last_unknown_phase_wins_in_protocol_order(source, phase):
+    decoder = CodexDecoder("t", "u", structured=True)
+    latest = {"summary": "last report", "findings": []}
+    items = [
+        codex_agent_item('{"summary":"earlier","findings":[]}'),
+        codex_agent_item("earlier malformed JSON", None),
+        codex_agent_item(json.dumps(latest), phase),
+        codex_agent_item("progress after answer", "commentary"),
+        codex_agent_item("partial after answer", "partial_answer"),
+    ]
+    events = decode_codex_sequence(decoder, items, source)
+    assert isinstance(events[0], Completed) and thaw_json(events[0].result) == latest
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None])
+@pytest.mark.parametrize("final_first", [True, False])
+def test_codex_explicit_final_precedes_unknown_phase_candidates(
+    source, phase, final_first
+):
+    decoder = CodexDecoder("t", "u", structured=True)
+    report = {"summary": "explicit final", "findings": []}
+    items = [
+        codex_agent_item(json.dumps(report), "final_answer"),
+        codex_agent_item("unknown phase is not a JSON fallback", phase),
+    ]
+    if not final_first:
+        items.reverse()
+    events = decode_codex_sequence(decoder, items, source)
+    assert isinstance(events[0], Completed) and thaw_json(events[0].result) == report
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None])
+@pytest.mark.parametrize("final_first", [True, False])
+def test_codex_empty_unknown_does_not_override_explicit_final(
+    source, phase, final_first
+):
+    decoder = CodexDecoder("t", "u", structured=True)
+    report = {"summary": "explicit final with empty neighbor", "findings": []}
+    items = [
+        codex_agent_item(json.dumps(report), "final_answer"),
+        codex_agent_item("", phase),
+    ]
+    if not final_first:
+        items.reverse()
+    events = decode_codex_sequence(decoder, items, source)
+    assert isinstance(events[0], Completed) and thaw_json(events[0].result) == report
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None])
+def test_codex_empty_last_unknown_does_not_fall_back_to_earlier_report(source, phase):
+    decoder = CodexDecoder("t", "u", structured=True)
+    items = [
+        codex_agent_item('{"summary":"earlier valid","findings":[]}'),
+        codex_agent_item("", phase),
+    ]
+    with pytest.raises(ValueError, match="completed answer must be a nonempty string"):
+        decode_codex_sequence(decoder, items, source)
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("final_first", [True, False])
+def test_codex_empty_explicit_final_does_not_fall_back_to_unknown(source, final_first):
+    decoder = CodexDecoder("t", "u", structured=True)
+    items = [
+        codex_agent_item("", "final_answer"),
+        codex_agent_item('{"summary":"valid unknown","findings":[]}', None),
+    ]
+    if not final_first:
+        items.reverse()
+    with pytest.raises(ValueError, match="completed answer must be a nonempty string"):
+        decode_codex_sequence(decoder, items, source)
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("text", [None, 0, {}])
+def test_codex_agent_text_requires_string_even_with_explicit_final(source, text):
+    decoder = CodexDecoder("t", "u", structured=True)
+    items = [
+        codex_agent_item('{"summary":"explicit final","findings":[]}', "final_answer"),
+        codex_agent_item(text, None),
+    ]
+    with pytest.raises(TypeError, match="agentMessage.text must be a string"):
+        decode_codex_sequence(decoder, items, source)
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None])
+def test_codex_malformed_last_unknown_never_uses_earlier_valid_report(source, phase):
+    decoder = CodexDecoder("t", "u", structured=True)
+    items = [
+        codex_agent_item('{"summary":"earlier valid","findings":[]}'),
+        codex_agent_item("malformed final report", phase),
+    ]
+    with pytest.raises(json.JSONDecodeError):
+        decode_codex_sequence(decoder, items, source)
+
+
+@pytest.mark.parametrize("source", ["events", "mixed", "turn-items"])
+def test_codex_malformed_explicit_final_never_uses_unknown_candidate(source):
+    decoder = CodexDecoder("t", "u", structured=True)
+    items = [
+        codex_agent_item("malformed explicit final", "final_answer"),
+        codex_agent_item('{"summary":"valid fallback","findings":[]}', None),
+    ]
+    with pytest.raises(json.JSONDecodeError):
+        decode_codex_sequence(decoder, items, source)
+
+
+@pytest.mark.parametrize("source", ["events", "turn-items"])
+@pytest.mark.parametrize("phase", ["commentary", "partial_answer", "future-phase"])
+def test_codex_nonfinal_phases_cannot_supply_report(source, phase):
+    decoder = CodexDecoder("t", "u", structured=True)
+    items = [
+        codex_agent_item('{"summary":"valid JSON but not final","findings":[]}', phase)
+    ]
+    with pytest.raises(ValueError, match="no final answer"):
+        decode_codex_sequence(decoder, items, source)
+
+
+@pytest.mark.parametrize("source", ["events", "turn-items"])
+@pytest.mark.parametrize("phase", ["omitted", None, "final_answer"])
+@pytest.mark.parametrize(
+    "foreign", [{"thread": "other-thread"}, {"turn": "other-turn"}]
+)
+def test_codex_unrelated_ids_cannot_supply_or_replace_report(source, phase, foreign):
+    decoder = CodexDecoder("t", "u", structured=True)
+    unrelated = codex_agent_item("malformed unrelated output", phase)
+    notification = (
+        codex_item_notification(unrelated, **foreign)
+        if source == "events"
+        else codex_completed_notification([unrelated], **foreign)
+    )
+    assert decoder.decode(notification) == ()
+    with pytest.raises(ValueError, match="no final answer"):
+        decoder.decode(codex_completed_notification())
+    report = {"summary": "correct turn", "findings": []}
+    decoder.decode(codex_item_notification(codex_agent_item(json.dumps(report), None)))
+    assert decoder.decode(notification) == ()
+    terminal = decoder.decode(codex_completed_notification())[0]
+    assert isinstance(terminal, Completed) and thaw_json(terminal.result) == report
+
+
+@pytest.mark.parametrize("phase", ["omitted", None])
+@pytest.mark.parametrize("status", ["failed", "interrupted"])
+def test_codex_unsuccessful_turn_never_promotes_unknown_report(phase, status):
+    decoder = CodexDecoder("t", "u", structured=True)
+    decoder.decode(
+        codex_item_notification(
+            codex_agent_item('{"summary":"not success","findings":[]}', phase)
+        )
+    )
+    terminal = decoder.decode(
+        codex_completed_notification(
+            [codex_agent_item("malformed terminal contents", phase)], status=status
+        )
+    )[0]
+    assert isinstance(terminal, Error)
+    assert terminal.failure_category == (
+        FailureCategory.CANCELLED if status == "interrupted" else None
+    )
+
+
 def test_claude_preserves_reported_reset_time(tmp_path, monkeypatch):
     adapter, config, _ = setup(tmp_path, monkeypatch, "claude", "rate-error")
     _, result = asyncio.run(collect(adapter, config))
@@ -522,3 +806,147 @@ def test_cleanup_failure_never_claims_unobserved_process_stop(
         assert isinstance(result.terminal, Error)
         assert result.terminal.failure_category is None
         assert result.terminal.raw_type == "adapter.cleanup_incomplete"
+
+
+def test_cancel_acceptance_callback_precedes_send_and_cleanup_failures(
+    tmp_path, monkeypatch
+):
+    adapter, config, _ = setup(tmp_path, monkeypatch, "claude", "ignore-cancel")
+    original_send = adapter._send_cancel
+    original_terminate = Process.terminate
+    order = []
+    send_error = OSError("injected cancellation send failure")
+    cleanup_error = OSError("injected cancellation cleanup failure")
+
+    async def fail_send(state):
+        assert state.cancelled
+        order.append("send")
+        raise send_error
+
+    async def fail_cleanup(process, grace):
+        assert process.child.returncode is None
+        order.append("cleanup")
+        raise cleanup_error
+
+    async def run():
+        turn = await adapter.submit_turn(await adapter.start_session(config), "wait")
+        state = adapter._turns[turn]
+        stream = adapter.events(turn)
+        try:
+            async with asyncio.timeout(2):
+                async for event in stream:
+                    if isinstance(event, Message) and event.text == "waiting":
+                        break
+            assert state.process is not None and state.process.child.returncode is None
+            monkeypatch.setattr(adapter, "_send_cancel", fail_send)
+            monkeypatch.setattr(Process, "terminate", fail_cleanup)
+
+            def accepted():
+                assert state.cancelled
+                order.append("accepted")
+
+            with pytest.raises(OSError) as failure:
+                await adapter.cancel(turn, on_accepted=accepted)
+            assert failure.value is cleanup_error
+            assert failure.value.__context__ is send_error
+            assert order == ["accepted", "send", "cleanup"]
+            result = await adapter.result(turn)
+            assert result.terminal is None and result.process_exit is None
+            assert state.observed_terminal is None
+            assert state.process.child.returncode is None
+            assert state.queue.empty()
+        finally:
+            # The injected failures intentionally leave the fake process alive.
+            # Restore the real shutdown path before consuming its actual exit.
+            monkeypatch.setattr(adapter, "_send_cancel", original_send)
+            monkeypatch.setattr(Process, "terminate", original_terminate)
+            await original_send(state)
+            async for _ in stream:
+                pass
+        stopped = await adapter.result(turn)
+        assert stopped.process_exit is not None
+
+    asyncio.run(run())
+
+
+def test_cancel_send_failure_recovers_with_real_process_cleanup(tmp_path, monkeypatch):
+    adapter, config, capture = setup(tmp_path, monkeypatch, "claude", "wait")
+    order = []
+
+    async def fail_send(state):
+        assert state.cancelled
+        order.append("send")
+        raise OSError("injected cancellation send failure")
+
+    async def run():
+        turn = await adapter.submit_turn(await adapter.start_session(config), "wait")
+        events = []
+        async for event in adapter.events(turn):
+            events.append(event)
+            if isinstance(event, Message) and event.text == "waiting":
+                monkeypatch.setattr(adapter, "_send_cancel", fail_send)
+                assert (
+                    await adapter.cancel(
+                        turn, on_accepted=lambda: order.append("accepted")
+                    )
+                    is True
+                )
+        return events, await adapter.result(turn)
+
+    events, result = asyncio.run(run())
+    assert order == ["accepted", "send"]
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category == FailureCategory.CANCELLED
+    assert sum(isinstance(event, Error) for event in events) == 1
+    assert not any(isinstance(event, Completed) for event in events)
+    assert result.process_exit is not None and result.process_exit.exit_code != 0
+    assert events[-1] == result.process_exit
+    assert isinstance(events[-1], ProcessExited)
+    pid = json.loads(capture.read_text().splitlines()[0])["pid"]
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_cancel_refuses_observed_os_exit_before_exit_event(
+    tmp_path, monkeypatch, provider
+):
+    adapter, config, _ = setup(tmp_path, monkeypatch, provider, "early-exit")
+    original_terminate = Process.terminate
+
+    async def run():
+        cleaning = asyncio.Event()
+        release = asyncio.Event()
+
+        async def pause_cleanup(process, grace):
+            await process.wait_exited()
+            cleaning.set()
+            await release.wait()
+            await original_terminate(process, grace)
+
+        monkeypatch.setattr(Process, "terminate", pause_cleanup)
+        turn = await adapter.submit_turn(await adapter.start_session(config), "unused")
+        state = adapter._turns[turn]
+        accepted = []
+        try:
+            async with asyncio.timeout(2):
+                await cleaning.wait()
+            assert state.process.child.returncode == 17
+            assert state.exit_event is None and state.terminal is None
+            assert state.observed_terminal is None
+            assert (
+                await adapter.cancel(turn, on_accepted=lambda: accepted.append(True))
+                is False
+            )
+            assert accepted == []
+            assert state.cancelled is False and state.cancel_sent is False
+        finally:
+            release.set()
+            events = [event async for event in adapter.events(turn)]
+        result = await adapter.result(turn)
+        assert isinstance(result.terminal, Error)
+        assert result.terminal.failure_category is None
+        assert result.process_exit.exit_code == 17
+        assert isinstance(events[-1], ProcessExited)
+
+    asyncio.run(run())

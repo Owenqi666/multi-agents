@@ -33,13 +33,18 @@ capture(
 
 if args == ["--version"]:
     print("fake-" + provider + " 1.0")
-    sys.exit(0)
+    sys.exit(int(os.environ.get("FAKE_VERSION_EXIT", "0")))
 if args == ["auth", "status"]:
     assert provider == "claude"
     assert "ANTHROPIC_API_KEY" not in os.environ
     assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
-    print(json.dumps({"loggedIn": True, "authMethod": "claude.ai"}, indent=2))
-    sys.exit(0)
+    print(
+        os.environ.get(
+            "FAKE_AUTH_JSON",
+            json.dumps({"loggedIn": True, "authMethod": "claude.ai"}, indent=2),
+        )
+    )
+    sys.exit(int(os.environ.get("FAKE_AUTH_EXIT", "0")))
 
 if mode == "early-exit":
     sys.exit(17)
@@ -63,6 +68,8 @@ if mode.startswith("grandchild-"):
         time.sleep(60)
 
 report = {"summary": "ok", "findings": []}
+if "FAKE_RUNTIME_REPORT" in os.environ:
+    report = json.loads(os.environ["FAKE_RUNTIME_REPORT"])
 if provider == "claude":
     assert args[0] == "-p"
     assert args[args.index("--effort") + 1] == "high"

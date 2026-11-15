@@ -59,7 +59,7 @@ def test_cancellation_is_a_request_until_exit_is_observed() -> None:
         adapter = ScriptedAdapter([TurnScript((Completed("normal"),), (EXIT,))])
         session = await adapter.start_session(CONFIG)
         turn = await adapter.submit_turn(session, "review")
-        await adapter.cancel(turn)
+        assert await adapter.cancel(turn) is True
         assert await adapter.result(turn) == TurnResult()
         assert [event async for event in adapter.events(turn)] == [EXIT]
         assert await adapter.result(turn) == TurnResult(process_exit=EXIT)
@@ -82,8 +82,14 @@ def test_cancellation_during_stream_keeps_prior_events() -> None:
         stream = adapter.events(turn)
         assert await anext(stream) == initial
         assert await anext(stream) == activity
-        await adapter.cancel(turn)
-        await adapter.cancel(turn)
+        accepted = []
+        assert (
+            await adapter.cancel(turn, on_accepted=lambda: accepted.append(1)) is True
+        )
+        assert (
+            await adapter.cancel(turn, on_accepted=lambda: accepted.append(2)) is False
+        )
+        assert accepted == [1]
         assert await adapter.result(turn) == TurnResult()
         assert [event async for event in stream] == [EXIT]
         assert await adapter.result(turn) == TurnResult(process_exit=EXIT)
@@ -98,7 +104,7 @@ def test_cancellation_may_be_followed_by_a_reported_terminal() -> None:
         adapter = ScriptedAdapter([TurnScript((Completed("normal"),), (completed,))])
         session = await adapter.start_session(CONFIG)
         turn = await adapter.submit_turn(session, "review")
-        await adapter.cancel(turn)
+        assert await adapter.cancel(turn) is True
         assert [event async for event in adapter.events(turn)] == [completed]
         assert await adapter.result(turn) == TurnResult(terminal=completed)
 
@@ -116,7 +122,11 @@ def test_terminal_and_exit_remain_separate_when_cancel_arrives_late() -> None:
         stream = adapter.events(turn)
         assert await anext(stream) == completed
         assert await adapter.result(turn) == TurnResult(terminal=completed)
-        await adapter.cancel(turn)
+        accepted = []
+        assert (
+            await adapter.cancel(turn, on_accepted=lambda: accepted.append(1)) is False
+        )
+        assert accepted == []
         assert [event async for event in stream] == [exited]
         assert await adapter.result(turn) == TurnResult(completed, exited)
 
@@ -157,7 +167,7 @@ def test_turns_are_independent_and_each_stream_has_one_reader() -> None:
         session = await adapter.start_session(CONFIG)
         first_turn = await adapter.submit_turn(session, "first")
         second_turn = await adapter.submit_turn(session, "second")
-        await adapter.cancel(first_turn)
+        assert await adapter.cancel(first_turn) is True
         assert [event async for event in adapter.events(second_turn)] == [second]
         assert [event async for event in adapter.events(first_turn)] == [EXIT]
         assert await adapter.result(second_turn) == TurnResult(terminal=second)

@@ -26,7 +26,7 @@ import math
 import os
 import signal
 from collections import deque
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -504,17 +504,31 @@ class RuntimeAdapter(Adapter):
 
             state.cancel_task = asyncio.create_task(stop_after_grace())
 
-    async def cancel(self, turn: TurnHandle) -> None:
+    async def cancel(
+        self, turn: TurnHandle, *, on_accepted: Callable[[], None] | None = None
+    ) -> bool:
         state = self._turns[turn]
-        if state.terminal is not None or state.observed_terminal is not None:
-            return
+        if (
+            state.terminal is not None
+            or state.observed_terminal is not None
+            or state.exit_event is not None
+            or state.cancelled
+            or state.process is not None
+            and state.process.child.returncode is not None
+        ):
+            return False
+        # Decide before the first await: a subsequent runtime terminal must not
+        # turn an already accepted request into a rejected late cancellation.
         state.cancelled = True
+        if on_accepted is not None:
+            on_accepted()
         try:
             await self._send_cancel(state)
         except (ValueError, OSError):
             # The reader records the exit/failure; cancellation still owns cleanup.
             if state.process is not None:
                 await state.process.terminate(self.grace)
+        return True
 
     async def events(self, turn: TurnHandle) -> AsyncIterator[AdapterEvent]:
         state = self._turns[turn]
@@ -530,15 +544,15 @@ class RuntimeAdapter(Adapter):
         state = self._turns[turn]
         return TurnResult(state.terminal, state.exit_event)
 
-    async def _collect(self, argv: list[str], cwd: Path, recorder: Recorder) -> str:
+    async def _collect(
+        self, argv: list[str], cwd: Path, recorder: Recorder
+    ) -> tuple[str, int]:
         process = await self._spawn(argv, cwd, recorder)
         try:
             lines: list[str] = []
             while (value := await _read(process)) is not None:
                 lines.append(json.dumps(value) if isinstance(value, dict) else value)
-            if await process.wait_exited() != 0:
-                raise ValueError("environment check exited unsuccessfully")
-            return "\n".join(lines)
+            return "\n".join(lines), await process.wait_exited()
         finally:
             await process.terminate(self.grace)
 
@@ -549,28 +563,29 @@ class RuntimeAdapter(Adapter):
                 cwd = Path(directory)
                 with self._recorder("environment-" + uuid4().hex, cwd) as recorder:
                     async with asyncio.timeout(self.timeout):
-                        version = string_value(
-                            (
-                                await self._collect(
-                                    [self.executable, "--version"], cwd, recorder
-                                )
-                            ).strip(),
-                            "CLI version",
+                        version_text, version_exit = await self._collect(
+                            [self.executable, "--version"], cwd, recorder
                         )
+                        if version_exit != 0:
+                            raise ValueError("version check exited unsuccessfully")
+                        version = string_value(version_text.strip(), "CLI version")
                         if self.provider == "claude":
+                            auth_text, auth_exit = await self._collect(
+                                [self.executable, "auth", "status"], cwd, recorder
+                            )
                             auth = object_value(
-                                json.loads(
-                                    await self._collect(
-                                        [self.executable, "auth", "status"],
-                                        cwd,
-                                        recorder,
-                                    )
-                                ),
+                                json.loads(auth_text),
                                 "auth status",
                             )
                             logged_in = auth.get("loggedIn")
                             if not isinstance(logged_in, bool):
                                 raise ValueError("auth loggedIn must be a boolean")
+                            # CLI reference: auth status exits 1 when logged out.
+                            # No other nonzero status is successful preflight.
+                            if auth_exit != 0 and not (
+                                auth_exit == 1 and logged_in is False
+                            ):
+                                raise ValueError("auth status exited unsuccessfully")
                             return EnvironmentInfo(version, logged_in, None)
                         process = await self._spawn(
                             [self.executable, "app-server"], cwd, recorder, pipe=True

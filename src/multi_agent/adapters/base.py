@@ -20,7 +20,7 @@ session single-use. SessionStarted carries only observed runtime metadata;
 result returns the latest normalized terminal and process exit separately.
 """
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -83,6 +83,21 @@ class Adapter(Protocol):
 
     def events(self, turn: TurnHandle) -> AsyncIterator[AdapterEvent]: ...
 
-    async def cancel(self, turn: TurnHandle) -> None: ...
+    async def cancel(
+        self, turn: TurnHandle, *, on_accepted: Callable[[], None] | None = None
+    ) -> bool:
+        """Accept a new cancellation before any observed terminal or exit.
+
+        The decision and optional synchronous on_accepted callback run before
+        yielding to I/O, so callers can persist intent even if later I/O raises.
+        True reports acceptance, not confirmed stopping; False includes repeated
+        or late requests, which never invoke the callback.
+        Callback exceptions and unrecovered I/O failures propagate. Runtime
+        adapters may recover a failed send by terminating the owned process;
+        neither acceptance nor the callback is evidence of that process exit.
+        Callers must await this decision before persisting a terminal, and must
+        still consume the complete event stream and validate the report.
+        """
+        ...
 
     async def result(self, turn: TurnHandle) -> TurnResult: ...

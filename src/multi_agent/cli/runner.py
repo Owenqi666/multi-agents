@@ -443,9 +443,9 @@ async def execute_round(
 
                 async def cancel_when_requested() -> None:
                     await stop_event.wait()
-                    if terminal is None:
-                        emit(CancelRequested())
-                        await adapter.cancel(turn)
+                    await adapter.cancel(
+                        turn, on_accepted=lambda: emit(CancelRequested())
+                    )
 
                 cancelling = asyncio.create_task(cancel_when_requested())
                 stream = adapter.events(turn)
@@ -458,12 +458,18 @@ async def execute_round(
                         else:
                             emit(event)
                 except BaseException:
-                    await adapter.cancel(turn)
+                    await adapter.cancel(
+                        turn, on_accepted=lambda: emit(CancelRequested())
+                    )
                     async for _ in stream:
                         pass
                     raise
                 finally:
-                    cancelling.cancel()
+                    # An accepted cancellation may still be sending/draining
+                    # while the stream ends. Persist its decision before the
+                    # terminal; only cancel a monitor still waiting for SIGINT.
+                    if not stop_event.is_set():
+                        cancelling.cancel()
                     outcomes = await asyncio.gather(cancelling, return_exceptions=True)
                     for outcome in outcomes:
                         if isinstance(outcome, BaseException) and not isinstance(

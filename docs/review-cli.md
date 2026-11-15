@@ -77,7 +77,11 @@ uv run python -m multi_agent confirm ROUND_ID
 
 ## 取消、恢复与限制
 
-Ctrl-C 请求取消，等待运行时终态或进程停止，保留已经完成的席位。数据库级文件锁让本地同一数据目录一次只运行一个控制进程，轮内仍并行；运行期间可 `show`。
+Ctrl-C 请求取消，等待运行时终态或进程停止，保留已经完成的席位。适配器已观察到终态、但进程仍在收尾时，该席位拒绝晚到的取消；报告继续经过结构、矛盾终态和目录完整性检查后才记为成功。双审只取消仍在运行的席位，补跑只重开失败席位。数据库级文件锁让本地同一数据目录一次只运行一个控制进程，轮内仍并行；运行期间可 `show`。
+
+Codex 成功回合优先读取显式 `final_answer`；没有该标记时兼容最后一个省略或为 null 的 phase 消息，仍要求合法 JSON 和完整报告结构。`commentary`、`partial_answer` 不作为最终报告，也不会回退到更早的合法内容掩盖最后候选的错误。
+
+Claude 预检联合检查 `auth status` 的 JSON 与退出码：`loggedIn=false` 且退出码 1 记为 `auth_expired`，不会启动模型回合。其他异常退出仍失败；版本检查始终要求退出码 0。未登录退出码的依据是 [Claude CLI reference](https://code.claude.com/docs/en/cli-reference)，本次仅用假 CLI 验证该分支。
 
 控制进程意外退出后，未完成尝试可在 `show` 中看到。确认先前 CLI 已停止后，`retry ROUND_ID --recover` 可结束遗留 `running` 控制尝试并重新派发；其旧进程退出码仍未知，不伪造取消证据。遗留 `cancelling` 缺终态时拒绝恢复，可开启新审核轮次并保留旧记录。文件锁释放只能证明控制进程不再持锁，不能证明其孤儿子进程已结束。
 
