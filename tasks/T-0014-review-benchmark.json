@@ -16,7 +16,7 @@
   "interface_contracts": [
     {
       "name": "benchmark",
-      "definition": "CLI benchmark subcommand from T13 lazily calls cli.benchmark.main(argv:list[str])->int. Fixed 8 cases with known defects/clean/unilateral, development and held-out sets. Evaluate imported per-mode results for codex-only, claude-only, dual, official-plugin baseline; dedup verified finding matches, missed, false positives, duration and reported usage. Never fabricate real model findings/latency/usage or call models automatically."
+      "definition": "CLI benchmark subcommand from T13 lazily calls cli.benchmark.main(argv:list[str])->int. Fixed 8 cases with known defects/clean/unilateral, development and held-out sets. Evaluate imported per-mode results for codex-only, claude-only, dual, official-plugin baseline; dedup verified finding matches, missed, false positives, duration and reported usage. Never fabricate real model findings/latency/usage or call models automatically. Oracle/held-out答案只供评分器读取，不放入冻结快照、prompt或审核cwd。四模式同样可见输入哈希，记录prompt模板版本。"
     }
   ],
   "deliverables": [

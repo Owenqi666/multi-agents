@@ -8,8 +8,6 @@
     "src/multi_agent/cli/main.py",
     "src/multi_agent/cli/runner.py",
     "src/multi_agent/cli/prompt.py",
-    "src/multi_agent/store/database.py",
-    "src/multi_agent/store/migrations/0002_inputs.sql",
     "tests/unit/test_review_cli.py",
     "tests/replay/test_phase_one.py",
     "tests/replay/scenarios/phase-one/**",
@@ -19,7 +17,8 @@
   "depends_on": [
     "T-0010",
     "T-0011",
-    "T-0012"
+    "T-0012",
+    "T-0015"
   ],
   "interface_contracts": [
     {
@@ -28,7 +27,7 @@
     },
     {
       "name": "persistence",
-      "definition": "ReviewStore existing apply remains only current-attempt writer, same transaction. Add snapshot inputs and round execution/confirmation metadata via 0002 migration, no editing old migrations. No new attempt/round states necessary; assessment derived from frozen input/current successful reports. Interrupted running attempts shown as recoverable; explicit recovery only if no live owner. CLI confirmations validate IDs/round, max one cross-confirmation round, only blockers, completed independent reports required. confirm 用继承席位配置的独立只读运行时会话生成结果，不把手填 JSON 当模型结论。使用现有 RoundState/attempt 机制建立 parent_round_id 关联的唯一子轮次（confirmation prompt/schema），完整记录来源与重试证据；仅在双方原报告齐全后启动，只传 P0/P1。测试输入文件包含 required_commands 和 results，只有声明的全部命令通过才可能 ready；显示 user_supplied 来源。 confirmation 仅限双审父轮次，创建子轮次与 UNIQUE parent 约束同一事务；seat 由执行上下文绑定，目标必须是另一席位阻塞项。Ctrl-C 持久化 CancelRequested，调用 adapter.cancel，等终态/停止，保留成功席位。"
+      "definition": "ReviewStore existing apply remains only current-attempt writer, same transaction. Add snapshot inputs and round execution/confirmation metadata via 0002 migration, no editing old migrations. No new attempt/round states necessary; assessment derived from frozen input/current successful reports. Interrupted running attempts shown as recoverable; explicit recovery only if no live owner. CLI confirmations validate IDs/round, max one cross-confirmation round, only blockers, completed independent reports required. confirm 用继承席位配置的独立只读运行时会话生成结果，不把手填 JSON 当模型结论。使用现有 RoundState/attempt 机制建立 parent_round_id 关联的唯一子轮次（confirmation prompt/schema），完整记录来源与重试证据；仅在双方原报告齐全后启动，只传 P0/P1。测试输入文件包含 required_commands 和 results，只有声明的全部命令通过才可能 ready；显示 user_supplied 来源。 confirmation 仅限双审父轮次，创建子轮次与 UNIQUE parent 约束同一事务；seat 由执行上下文绑定，目标必须是另一席位阻塞项。Ctrl-C 持久化 CancelRequested，调用 adapter.cancel，等终态/停止，保留成功席位。 T-0015 提供存储API和迁移，本卡复用不修改store。CLI进程持有数据库级非阻塞flock串行派发，轮内双审并行；show可并行读。遗留running显式recover后用category=None终止旧控制尝试，进程exit仍未知；遗留cancelling缺终态证据保持未完成。"
     }
   ],
   "deliverables": [

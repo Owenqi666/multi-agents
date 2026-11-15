@@ -50,14 +50,22 @@ def test_migration_runs_once_and_database_reopens(tmp_path: Path) -> None:
         expected = store.load_round("round-1")
         history = store.load_history("round-1")
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone() == (1,)
+        assert connection.execute("PRAGMA user_version").fetchone() == (2,)
         tables = {
             row[0]
             for row in connection.execute(
                 "SELECT name FROM sqlite_master WHERE type = 'table'"
             )
         }
-        assert {"rounds", "seats", "attempts", "history"} <= tables
+        assert {
+            "rounds",
+            "seats",
+            "attempts",
+            "history",
+            "snapshots",
+            "round_inputs",
+            "executions",
+        } <= tables
 
     for _ in range(2):
         with ReviewStore(path) as reopened:

@@ -1,5 +1,6 @@
 """Transactional SQLite storage for review rounds and their ordered histories."""
 
+import json
 import sqlite3
 from importlib.resources import files
 from pathlib import Path
@@ -15,7 +16,7 @@ from multi_agent.core import (
     SeatConfig,
     SeatState,
 )
-from multi_agent.core.events import Envelope, FailureCategory
+from multi_agent.core.events import Envelope, FailureCategory, JSONValue, thaw_json
 
 from .codec import (
     decode_envelope,
@@ -86,24 +87,27 @@ class ReviewStore:
         """Create a round with a caller-supplied identity and immutable state."""
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
+            self._insert_round(round_id, state)
+
+    def _insert_round(self, round_id: str, state: RoundState) -> None:
+        self._connection.execute(
+            "INSERT INTO rounds VALUES (?, ?, ?)",
+            (round_id, state.snapshot_id, state.prompt_template_version),
+        )
+        for position, seat in enumerate(state.seats):
+            config = seat.config
             self._connection.execute(
-                "INSERT INTO rounds VALUES (?, ?, ?)",
-                (round_id, state.snapshot_id, state.prompt_template_version),
+                "INSERT INTO seats VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    round_id,
+                    config.key,
+                    position,
+                    config.provider,
+                    config.model,
+                    config.effort,
+                ),
             )
-            for position, seat in enumerate(state.seats):
-                config = seat.config
-                self._connection.execute(
-                    "INSERT INTO seats VALUES (?, ?, ?, ?, ?, ?)",
-                    (
-                        round_id,
-                        config.key,
-                        position,
-                        config.provider,
-                        config.model,
-                        config.effort,
-                    ),
-                )
-            self._write_attempts(round_id, state)
+        self._write_attempts(round_id, state)
 
     def apply(self, round_id: str, envelope: Envelope) -> Disposition:
         with self._connection:
@@ -139,6 +143,102 @@ class ReviewStore:
                 (decode_envelope(row["envelope"]), Disposition(row["disposition"]))
                 for row in rows
             )
+
+    def save_snapshot(self, snapshot_id: str, payload: JSONValue) -> None:
+        """Insert once; repeated identical input is idempotent."""
+        encoded = _canonical(payload)
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            row = self._connection.execute(
+                "SELECT payload FROM snapshots WHERE snapshot_id = ?", (snapshot_id,)
+            ).fetchone()
+            if row is None:
+                self._connection.execute(
+                    "INSERT INTO snapshots VALUES (?, ?)",
+                    (snapshot_id, encoded),
+                )
+            elif row["payload"] != encoded:
+                raise ValueError("snapshot identity already has different content")
+
+    def load_snapshot(self, snapshot_id: str) -> JSONValue:
+        row = self._connection.execute(
+            "SELECT payload FROM snapshots WHERE snapshot_id = ?", (snapshot_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(snapshot_id)
+        return decode_result(row["payload"])
+
+    def create_review(
+        self,
+        round_id: str,
+        state: RoundState,
+        metadata: JSONValue,
+        parent_round_id: str | None = None,
+    ) -> None:
+        """Persist the round and its frozen-input association in one transaction."""
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._insert_round(round_id, state)
+            self._connection.execute(
+                "INSERT INTO round_inputs VALUES (?, ?, ?, ?)",
+                (round_id, state.snapshot_id, encode_result(metadata), parent_round_id),
+            )
+
+    def load_review(self, round_id: str) -> JSONValue:
+        row = self._connection.execute(
+            "SELECT metadata FROM round_inputs WHERE round_id = ?", (round_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(round_id)
+        return decode_result(row["metadata"])
+
+    def confirmation_for(self, parent_round_id: str) -> str | None:
+        row = self._connection.execute(
+            "SELECT round_id FROM round_inputs WHERE parent_round_id = ?",
+            (parent_round_id,),
+        ).fetchone()
+        return str(row["round_id"]) if row is not None else None
+
+    def list_reviews(self) -> tuple[str, ...]:
+        return tuple(
+            row["round_id"]
+            for row in self._connection.execute(
+                "SELECT round_id FROM round_inputs ORDER BY rowid"
+            )
+        )
+
+    def set_execution(
+        self, round_id: str, seat: str, attempt: int, metadata: JSONValue
+    ) -> None:
+        encoded = _canonical(metadata)
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            key = (round_id, seat, attempt)
+            row = self._connection.execute(
+                "SELECT metadata FROM executions WHERE round_id=? AND seat_key=? AND attempt=?",
+                key,
+            ).fetchone()
+            if row is None:
+                self._connection.execute(
+                    "INSERT INTO executions VALUES (?, ?, ?, ?)",
+                    (*key, encoded),
+                )
+            elif row["metadata"] != encoded:
+                raise ValueError("execution evidence is immutable")
+
+    def load_execution(self, round_id: str) -> JSONValue:
+        result: dict[str, JSONValue] = {}
+        rows = self._connection.execute(
+            "SELECT * FROM executions WHERE round_id = ? ORDER BY seat_key, attempt",
+            (round_id,),
+        ).fetchall()
+        seats: dict[str, dict[str, JSONValue]] = {}
+        for row in rows:
+            seats.setdefault(row["seat_key"], {})[str(row["attempt"])] = decode_result(
+                row["metadata"]
+            )
+        result.update(seats)
+        return result
 
     def _round_row(self, round_id: str) -> sqlite3.Row:
         row = self._connection.execute(
@@ -207,6 +307,10 @@ class ReviewStore:
                         attempt.exit_code,
                     ),
                 )
+
+
+def _canonical(value: JSONValue) -> str:
+    return json.dumps(thaw_json(value), sort_keys=True, separators=(",", ":"))
 
 
 def _read_attempt(row: sqlite3.Row) -> AttemptState:

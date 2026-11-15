@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "T-0015",
+  "goal": "持久化冻结快照、审核元数据和唯一交叉确认关联，复用既有事务状态机。",
+  "baseline_commit": "3615af2725d0afa00de4cb1360306a1601bbf34d",
+  "write_scope": [
+    "src/multi_agent/store/database.py",
+    "src/multi_agent/store/migrations/0002_inputs.sql",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_store_inputs.py",
+    "tests/replay/test_inputs_replay.py",
+    "docs/deliveries/T-0015.md",
+    "tests/replay/scenarios/inputs/**"
+  ],
+  "depends_on": [
+    "T-0009"
+  ],
+  "interface_contracts": [
+    {
+      "name": "store input API",
+      "definition": "ReviewStore.save_snapshot(snapshot_id:str,payload:JSONValue)->None immutable idempotent equal content; load_snapshot(id)->JSONValue; create_review(round_id:str,state:RoundState,metadata:JSONValue,parent_round_id:str|None=None)->None atomic existing round creation plus round_inputs row referencing snapshot; parent unique and must refer to review input. load_review(round_id)->JSONValue metadata; confirmation_for(parent)->str|None; list_reviews()->tuple[str,...]; set_execution(round_id,seat,attempt,metadata:JSONValue)->None / load_execution(round_id)->JSONValue store runtime preflight metadata. Existing create_round/apply/load_history untouched semantics; new private _insert_round helper. Caller validates boundary inputs; SQL constraints enforce referential integrity, store does not swallow exceptions. Execution metadata immutable/idempotent, FK references actual attempt; load_execution returns seat -> attempt number string -> metadata."
+    }
+  ],
+  "deliverables": [
+    "0002 migration、store APIs、unit/replay",
+    "docs/deliveries/T-0015.md"
+  ],
+  "acceptance_criteria": [
+    "unit/replay：快照同ID同内容幂等，不同内容拒绝；重开后快照/轮次/历史保留，新快照不改变旧报告。",
+    "unit：并发连接创建第二个同父确认轮次事务回滚，父不存在拒绝，不留下轮次残片。",
+    "unit：从真实v1 schema及历史升级到v2保留全部内容；原迁移版本断言1更新到2并增加新表断言，保留全部事务断言。",
+    "replay：failed→retry→late old completion仅历史；至少两快照和一确认轮次可重放，最终状态和历史都断言。",
+    "完整verify；没有新增状态/事件/失败类别，转移表无需修改，交付明确说明。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
