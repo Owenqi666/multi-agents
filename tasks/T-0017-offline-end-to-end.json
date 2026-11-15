@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "id": "T-0017",
+  "goal": "用真实CLI入口与假可执行文件贯通冻结、运行时传输和持久化，并统一审核会话的实际工作目录路径。",
+  "baseline_commit": "092ca35191024738ddd50389a1dd0996cf1878e5",
+  "write_scope": [
+    "tests/unit/test_review_end_to_end.py",
+    "docs/deliveries/T-0017.md",
+    "src/multi_agent/adapters/runtime.py"
+  ],
+  "depends_on": [
+    "T-0013"
+  ],
+  "interface_contracts": [
+    {
+      "name": "offline integration",
+      "definition": "复用现有runtime_fakes/fake_cli.py，不改其协议；CLI子进程指定假codex/claude可执行文件，真实入口freeze/run/show不替换工厂；Git只建临时样本仓库。不得调用真实模型CLI。"
+    },
+    {
+      "name": "canonical review cwd",
+      "definition": "端到端测试观察到macOS临时目录/var与子进程getcwd的/private/var别名不一致，假CLI严格cwd断言因此失败；不称真实Codex实机失败。RuntimeAdapter.start_session在适配器边界将SessionConfig.cwd.resolve()，使启动路径与RPC请求为同一规范路径。不改fake断言，不改变真实请求模型/档位证据。"
+    }
+  ],
+  "deliverables": [
+    "端到端单审/双审离线测试",
+    "docs/deliveries/T-0017.md"
+  ],
+  "acceptance_criteria": [
+    "unit：实际python -m multi_agent freeze→run→show完整通过，同一候选测试证据和snapshot_id贯穿，输出ready。",
+    "unit：单审只有一个模型会话，双审两个；检查runtime原始argv/RPC、Claude凭据移除、未知实际模型/档位未回填请求值、history持久化。",
+    "完整verify，测试仅通过外部fake可执行文件验证，不monkeypatch产品adapter工厂；不改任何已有检查或断言。",
+    "unit：保持假CLI严格assert params.cwd==os.getcwd()，单审/双审实际入口通过；只有cwd在边界规范化，无其他产品行为扩展。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

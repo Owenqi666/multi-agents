@@ -213,6 +213,7 @@ class RuntimeAdapter(Adapter):
     async def start_session(self, config: SessionConfig) -> SessionHandle:
         if config.permission != Permission.READ_ONLY:
             raise ValueError("review adapters only support read-only sessions")
+        config = replace(config, cwd=config.cwd.resolve())
         if not config.cwd.is_dir():
             raise ValueError("review working directory does not exist")
         if self.log_dir.is_relative_to(config.cwd.resolve()):
