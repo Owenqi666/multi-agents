@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "T-0023",
+  "goal": "保留环境预检的退出与清理未知证据，避免取消或预检失败把尚未确认停止的尝试错误结束并开放补跑。",
+  "baseline_commit": "2afd09dd13e5e6fbe9f504925c45f3b7f8a74e7b",
+  "write_scope": [
+    "src/multi_agent/cli/runner.py",
+    "tests/unit/test_review_cli.py",
+    "tests/unit/test_review_end_to_end.py",
+    "docs/review-cli.md",
+    "docs/deliveries/T-0023.md"
+  ],
+  "depends_on": [
+    "T-0021"
+  ],
+  "interface_contracts": [
+    {
+      "name": "original request and discovered gap",
+      "definition": "原始用户需求：把 Codex 上下文隔离和测试启动同步问题分别建卡，发给阶段1窗口修复，补齐回归测试，完整运行 verify 后各自提交；再补跑受影响的实机验收，结果交回本窗口审核。T22准备期间发现runner环境预检取消分支gather(return_exceptions=True)丢弃清理失败，随后无条件写cli.before_session/CANCELLED；正常预检RuntimeFailure分支也可能直接写adapter.cleanup_incomplete为可retry失败。本卡为T21认证资源生命周期与既有终态证据契约的补充修复，不扩展阶段功能。"
+    },
+    {
+      "name": "environment preflight completion evidence",
+      "definition": "沿用Adapter.check_environment()和RuntimeFailure/Error接口。只有环境预检已确认收尾时，才能把取消或普通失败写为可补跑终态。adapter.cleanup_incomplete必须作为未确认收尾保留，不能因尚无review session/turn或OS退出事件而视为无自有进程。取消分支不得丢弃预检任务异常/返回结果，正常失败路径同样检查；未经分类的异常不能被替换为已确认取消。不得伪造ProcessExited、session或模型/effort。"
+    },
+    {
+      "name": "existing state and recovery semantics",
+      "definition": "复用当前状态/事件/执行证据语义，不加core/store状态、表或迁移。已接受取消但停止未知时保留CANCELLING与completion_unconfirmed；没有取消且预检未知收尾时保留RUNNING，写明completion_unconfirmed。普通retry及retry --recover均不得为存在此未知收尾证据的席位新建attempt。保留现有控制器中断、没有completion_unconfirmed证据的RUNNING显式--recover行为；不把两个情形混为一谈。已有成功席/报告/历史保留，其他席按现有调度/清理处理。完整退出/清理后才结束的普通取消、普通归类失败、成功预检行为保持。"
+    },
+    {
+      "name": "bounded implementation and verification",
+      "definition": "只修改runner边界与列明回归/说明，复用现有adapter停止证据而不引入新接口或全局检查配置。不运行真实codex/claude、不故障注入真实进程；回归仅假Adapter/假CLI和可控事件门闩，不以固定sleep命中取消。实现方先证明缺陷再最小修复，完整verify后独立提交；提交后的完整verify绑定精确候选。T22暂停模型请求，修复提交并由原窗口复核后另行重定T22基线再继续。"
+    }
+  ],
+  "deliverables": [
+    "环境预检取消和普通失败的未知停止证据处理及回归。",
+    "docs/deliveries/T-0023.md列出开工HEAD、验收映射、原有测试修改原因、实际路径和验证记录。",
+    "独立修复提交及完整verify结果；交原窗口复核后恢复T22。"
+  ],
+  "acceptance_criteria": [
+    "命名unit：环境预检取消触发RuntimeFailure(adapter.cleanup_incomplete)时，不写已确认取消/失败终态，不伪造ProcessExited；attempt保留CANCELLING、执行证据保留具体completion_unconfirmed，日志位置可定位。",
+    "命名unit：未取消的环境预检RuntimeFailure(adapter.cleanup_incomplete)同样保留未完成状态和completion_unconfirmed，不能被普通错误分支结束。",
+    "命名unit：取消时预检产生未经分类异常，不丢弃或替换为cli.before_session已确认取消；保留失败原因与未知完成证据。",
+    "命名unit：正常预检取消且任务确认清理后取消退出、普通归类预检失败、正常预检成功各有回归，仍不会误发模型请求或错误阻止合法运行。",
+    "命名unit/CLI集成：上述未知停止场景的普通retry与retry --recover均拒绝且attempt数量不增加，查看/恢复证据显示不完整；无取消保持RUNNING，有取消保持CANCELLING；已有无completion_unconfirmed的控制器中断--recover仍可用，双席已有成功报告和历史不被覆盖。取消和返回同时就绪的可控时序不吞未知结果。",
+    "diff与已有回归：T18晚取消、T20启动同步、T21隔离认证/取消/脱敏和所有单/双审契约保留；没有改core/store/protocol/schema/检查配置，不新增事件或失败分类。",
+    "完整scripts/verify.sh五步通过，记录计数、退出码和日志；独立提交后再完整运行绑定候选。测试仅假CLI/可控门闩，旧检查不削弱，原有测试修改逐项解释。",
+    "独立提交只含write_scope，交付逐条结果、开工HEAD、候选完整SHA和实际路径；真实模型复验仍由重定基线后的T22负责。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
