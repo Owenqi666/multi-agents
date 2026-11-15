@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0011",
   "goal": "结构化审核报告能核对冻结引用并保留原始意见，按证据汇总验收结论。",
-  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "baseline_commit": "f38a32c0ad3d009a1538944ee535c76e50f93075",
   "write_scope": [
     "src/multi_agent/core/reports.py",
     "src/multi_agent/adapters/report_validation.py",
