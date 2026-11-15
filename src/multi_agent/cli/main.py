@@ -137,6 +137,11 @@ def parser() -> argparse.ArgumentParser:
         "confirm", help="one cross-confirmation round for blocking findings"
     )
     confirm.add_argument("round_id")
+    benchmark = commands.add_parser(
+        "benchmark", help="prepare fixed samples or score imported human judgments"
+    )
+    benchmark.add_argument("operation", choices=("prepare", "template", "score"))
+    benchmark.add_argument("arguments", nargs=argparse.REMAINDER)
     return result
 
 
@@ -254,6 +259,12 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "benchmark":
+        from .benchmark import main as benchmark_main
+
+        return benchmark_main(
+            ["--data-dir", str(args.data_dir), args.operation, *args.arguments]
+        )
     try:
         output = dispatch(args)
     except (

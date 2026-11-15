@@ -1,0 +1,248 @@
+{
+  "schema_version": 1,
+  "dataset_version": "review-benchmark-v1",
+  "cases": {
+    "B01": {
+      "truths": [
+        {
+          "issue_id": "D01",
+          "description": "The new stop excludes one requested item."
+        }
+      ],
+      "checks": [
+        {
+          "args": [
+            [
+              1,
+              2,
+              3
+            ],
+            2
+          ],
+          "expected": [
+            1,
+            2
+          ]
+        },
+        {
+          "args": [
+            [
+              1
+            ],
+            0
+          ],
+          "expected": []
+        }
+      ],
+      "possible_unilateral": false
+    },
+    "B02": {
+      "truths": [
+        {
+          "issue_id": "D02",
+          "description": "The default list leaks prior calls into later calls."
+        }
+      ],
+      "checks": [
+        {
+          "args": [
+            "a"
+          ],
+          "expected": [
+            "a"
+          ]
+        },
+        {
+          "args": [
+            "b"
+          ],
+          "expected": [
+            "b"
+          ]
+        }
+      ],
+      "possible_unilateral": true
+    },
+    "B03": {
+      "truths": [
+        {
+          "issue_id": "D03",
+          "description": "Set conversion discards duplicate values."
+        }
+      ],
+      "checks": [
+        {
+          "args": [
+            [
+              2,
+              1,
+              2
+            ]
+          ],
+          "expected": [
+            1,
+            2,
+            2
+          ]
+        }
+      ],
+      "possible_unilateral": false
+    },
+    "B04": {
+      "truths": [
+        {
+          "issue_id": "D04",
+          "description": "Removing the empty guard makes empty input divide by zero."
+        }
+      ],
+      "checks": [
+        {
+          "args": [
+            []
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            [
+              2,
+              4
+            ]
+          ],
+          "expected": 3
+        }
+      ],
+      "possible_unilateral": false
+    },
+    "B05": {
+      "truths": [],
+      "checks": [
+        {
+          "args": [
+            -1,
+            0,
+            5
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            0,
+            0,
+            5
+          ],
+          "expected": 0
+        },
+        {
+          "args": [
+            3,
+            0,
+            5
+          ],
+          "expected": 3
+        },
+        {
+          "args": [
+            5,
+            0,
+            5
+          ],
+          "expected": 5
+        },
+        {
+          "args": [
+            8,
+            0,
+            5
+          ],
+          "expected": 5
+        }
+      ],
+      "possible_unilateral": false
+    },
+    "B06": {
+      "truths": [],
+      "checks": [
+        {
+          "args": [
+            []
+          ],
+          "expected": false
+        },
+        {
+          "args": [
+            [
+              0,
+              1
+            ]
+          ],
+          "expected": false
+        },
+        {
+          "args": [
+            [
+              1,
+              -1
+            ]
+          ],
+          "expected": true
+        }
+      ],
+      "possible_unilateral": false
+    },
+    "B07": {
+      "truths": [
+        {
+          "issue_id": "D07",
+          "description": "Textual prefixes wrongly include sibling paths."
+        }
+      ],
+      "checks": [
+        {
+          "args": [
+            "/app/data",
+            "/app/database/x"
+          ],
+          "expected": false
+        },
+        {
+          "args": [
+            "/app/data",
+            "/app/data/x"
+          ],
+          "expected": true
+        }
+      ],
+      "possible_unilateral": true
+    },
+    "B08": {
+      "truths": [
+        {
+          "issue_id": "D08",
+          "description": "Signed decoding makes high-bit values negative."
+        }
+      ],
+      "checks": [
+        {
+          "args": [
+            [
+              128,
+              0
+            ]
+          ],
+          "expected": 32768
+        },
+        {
+          "args": [
+            [
+              0,
+              1
+            ]
+          ],
+          "expected": 1
+        }
+      ],
+      "possible_unilateral": true
+    }
+  }
+}
