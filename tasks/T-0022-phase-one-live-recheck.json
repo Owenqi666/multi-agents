@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "id": "T-0022",
+  "goal": "在测试同步与Codex隔离修复独立提交后，补跑受影响的阶段1真实验收，并将可复核证据交原窗口审核。",
+  "baseline_commit": "875e17da3888deb388ae3ad316e5baffa843f4de",
+  "write_scope": [
+    "docs/acceptance/phase-one-live-recheck.md",
+    "docs/deliveries/T-0022.md",
+    "docs/review-benchmark.md",
+    "PROJECT_PLAN.md",
+    ".agents/skills/runtime-protocols/SKILL.md",
+    ".agents/skills/runtime-protocols/references/codex-app-server.md"
+  ],
+  "depends_on": [
+    "T-0020",
+    "T-0021"
+  ],
+  "interface_contracts": [
+    {
+      "name": "authorization and dispatch",
+      "definition": "用户原文：把 Codex 上下文隔离和测试启动同步问题分别建卡，发给阶段1窗口修复，补齐回归测试，完整运行 verify 后各自提交；再补跑受影响的实机验收，结果交回本窗口审核。用户已授权阶段1窗口真实请求与回报，无需再次确认旧的本人终端限制。两个修复已独立提交并经原窗口复核：T20=97aa33586215180bad948667b308c4053a8a69a9，T21=875e17da3888deb388ae3ad316e5baffa843f4de；各自完整verify与全新检出检查通过。本卡基线已重定到实际修复HEAD，可正式派发。"
+    },
+    {
+      "name": "preserved evidence and fixed candidate",
+      "definition": "固定修复后的完整产品SHA，保存CLI版本、请求配置、实际报告值和权限配置来源。使用新的仓库外持久验收根 /Users/owen/Desktop/Multi-agent-acceptance/T-0022/，不改写T-0019已封存的389文件与原报告。可从T19稳定DB复制冻结快照到新数据库或以已有正式接口导入，保留原snapshot/manifest/prompt与可见输入绑定；新轮次用新ID，不把旧报告替换成新结果。源码不改；发现缺陷回原窗口另行处理。"
+    },
+    {
+      "name": "isolation gate",
+      "definition": "先以修复产品的真实原生权限策略做无模型canary：冻结文件读成功，真实用户目录内临时哨兵、相邻/其他席位日志与DB/答案哨兵、隔离认证材料、父路径及越界symlink读取被拒绝。仅用合成哨兵验证，不打印真实秘密；记录配置、请求、返回及退出码。然后做最少B01 Codex单审与双审冒烟，核对instructionSources/有效配置/MCP或skills启动等，不能仅以没观察到读取就认定权限拒读。隔离不满足时立即停止依赖模式，不扩大权限或回退旧参数来完成矩阵。"
+    },
+    {
+      "name": "affected native benchmark",
+      "definition": "T19 Codex参与的B01结果均受污染限制，不能只补14格未运行项。本次在同一冻结提示词及八个固定样本上重跑 codex-only 与 dual 各8例，共16主回合/24席位；先通过隔离门槛才扩展。Claude-only八例可复用T19原报告，前提为冻结输入/提示词/配置与Claude调用行为保持不变，导入明确保留其旧产品SHA、日期和来源；条件不满足则重跑Claude-only，不重新绑定或伪造相同快照。首轮数据与确认/重试分开，不调提示词、不向模型提供oracle，不使用heldout调参。系统性运行阻塞连续两次后停止受影响模式并逐格标注。 固定沿用T19请求配置 Codex gpt-6.1-sol/high 与 Claude claude-opus-5-5/high。CLI/schema漂移或模型不可用时停止交回，不静默换版本、模型或档位。"
+    },
+    {
+      "name": "real functional rechecks",
+      "definition": "补做双席真实取消场景：等待一席成功而另一席仍运行，向自有控制器SIGINT，已成功报告保留，仅失败席同快照同模型/档位/提示词补跑，旧attempt/history保持；最多两次有界场景尝试，若未命中时序如实not_run不伪造事件。用真实双审的合格P0/P1执行一次confirm，检查父子绑定、双方只收到需确认的对方阻塞项、原报告不覆盖、禁止第二轮确认；失败仅重试失败子席，最多一次。未触发条件如实说明。保留真实回合重叠、齐全前incomplete、只读目录完整性、实际证据unknown与终态/exit分别记录的核对。 成功、取消与重试后核对T21新增隔离HOME/CODEX_HOME及认证副本生命周期和清理，仅记录路径/权限/存在性，不记录内容；退出或清理未知明确保留cleanup_incomplete，不能以模型终态替代。"
+    },
+    {
+      "name": "remaining unrelated boundaries",
+      "definition": "官方插件未安装和缺人工质量标签不是这两项修复引起，本次不安装插件、不改用户永久设置、不把agent判断标user_supplied；只读复查可用性，无变化则原8个plugin格仍blocked。若现有插件后来已可用，原窗口另明确安排其受控执行，不能自行扩大工具权限。空judgments保留原生评分行为：有finding待人工判定，空报告可能自动计数scored，但不等于人工质量确认，不给优胜模式结论。"
+    },
+    {
+      "name": "delivery and verification",
+      "definition": "完整scripts/verify.sh在固定修复候选运行并记录新计数/退出码，T20慢启动与错误PID回归必须实际执行。收集argv/原始事件/DB/输入/脚本/时间/用量/取消与退出/哈希清单，秘密不进仓库。仅文档更新当前结论与有证据支持的协议事实，保留T19历史。任务完成与阶段1整体通过区分；文档单独提交后阶段1窗口向原窗口回报接受独立审查。"
+    }
+  ],
+  "deliverables": [
+    "新的真实复验矩阵、权限拒读证据、16格受影响原生基准、双席取消补跑与交叉确认记录。",
+    "外部持久证据目录与哈希清单，绑定固定产品SHA，保留旧证据不变。",
+    "docs/acceptance/phase-one-live-recheck.md、docs/deliveries/T-0022.md及计划/基准进度/有实证的协议事实更新。"
+  ],
+  "acceptance_criteria": [
+    "对照Git、执行日志：T20/T21各自独立修复提交已存在且其完整verify通过；本卡基线重定为实际候选，产品路径在复验期未变化。",
+    "对照真实原生权限canary与冒烟：冻结文件可读，指定外部/认证/其他席位/越界路径拒读；自动用户指令/记忆/MCP等无注入，权限失败时停止而不回退；证据不能只来源于fake或模型自述。",
+    "对照矩阵：codex-only/dual各八例包含重新采集的B01，或逐格记录失败/停止理由；旧Claude复用条件和来源明确，全部输入/提示词绑定可审计。",
+    "对照真实双席取消/补跑DB与原始流：成功席位的attempt/报告未增加或改变，失败席新attempt同配置同快照，旧历史保留；未命中时序不得标通过。",
+    "对照confirm：有真实阻塞项时完成一轮父子绑定与原报告保持核对，再次confirm被既有契约拒绝；未执行/失败原因有证据，不用离线结论替代。",
+    "对照全部结果：模型/effort只记运行时报告值、用量无重复累计，时间口径一致，plugin和人工质量边界未被虚报，阶段1总体结论符合真实完成范围。",
+    "完整verify五步通过并记录命名回归/计数/日志/退出码；原有失败记录仍保留，未修改或削弱检查。",
+    "对照scope与证据：新证据可定位且哈希匹配，T19封存文件未被修改；仅授权文档提交，交付开工HEAD、被测产品与文档SHA、逐条状态及真实改动路径，回原窗口审核。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
