@@ -1,0 +1,82 @@
+{
+  "schema_version": 1,
+  "id": "T-0019",
+  "goal": "对阶段 1 当前候选执行真实 CLI 验收，保留可复核证据并报告通过项、失败项和未完成项，供原审核窗口独立复核。",
+  "baseline_commit": "87045fc6c138566d86d11b46e3b2744caf97b9b8",
+  "write_scope": [
+    "docs/deliveries/T-0019.md",
+    "docs/acceptance/phase-one-live.md",
+    "docs/review-benchmark.md",
+    "PROJECT_PLAN.md"
+  ],
+  "depends_on": [
+    "T-0018"
+  ],
+  "interface_contracts": [
+    {
+      "name": "original user request and authorization",
+      "definition": "用户原文：接下来进行阶段1的实机验收，由阶段1窗口执行测试验收，报告结果给本窗口做审核。用户已经授权阶段 1 窗口执行本次真实 codex/claude 请求和向原窗口报告；本次授权优先于旧任务卡禁止运行真实 CLI、计划/skill 中由用户本人终端运行的历史限制。不要求再次确认，不更改永久权限或登录配置。仅阶段 1，不实现阶段 2/3。"
+    },
+    {
+      "name": "fixed candidate and evidence",
+      "definition": "测试代码固定为 baseline_commit 的产品代码；任务卡和本卡文档提交不得混作产品修复。记录完整 Git SHA、实际 CLI 版本、请求模型/档位、快照/回合/席位/尝试 ID、argv、时间、退出码、事件和报告。原始 SQLite、JSONL、stdout/stderr、导入结果留在仓库外独立且持久的验收目录，文档列绝对路径与关键文件 SHA-256；入库仅脱敏摘要，不提交个人配置、密钥或完整敏感日志。真实结果不可用假 CLI 或手工拼写事件代替。"
+    },
+    {
+      "name": "live execution boundary",
+      "definition": "先只读确认版本、登录与可用模型/档位，按本机 protocol 快照执行。优先既有请求配置 Codex gpt-6.1-sol/high 和 Claude claude-opus-5-5/high；目录不支持时报告事实，不擅自用请求值伪造实际模型。Claude 清除 ANTHROPIC_API_KEY/ANTHROPIC_AUTH_TOKEN，复用订阅登录。版本漂移需按 skill 处理；本卡不授权改 protocol/、skills 或安装/升级 CLI/plugin，如必须刷新则交回规划方缩小处理。所有工作台子进程使用 argv，不经 shell。使用独立数据目录与一次性样本仓库，不以用户业务仓库做写入攻击或破坏性试验。"
+    },
+    {
+      "name": "functional live coverage",
+      "definition": "使用实际模块 CLI 完成 freeze、snapshot、单审、双审、show/history，并核对持久化事件、进程退出、只读视图和引用核对。双审必须相同快照独立会话，不能看对方报告；并行时间区间和整体评估等待两席都要有证据。执行一轮真实取消/失败席位补跑，尽量在双审一席成功后取消另一席，核对成功席未重开、失败席新尝试仍用原配置/快照、历史保留；若时序无法稳定命中如实记未实测，不伪造。补跑最多两次，不能为凑通过无限重复。旧尝试迟到等非确定竞态可引用精确离线测试并明确其非实机性质。真实报告有合格 P0/P1 时执行一次 confirm，验证一轮限制与原报告保留；没有该触发条件则说明而不篡改报告。"
+    },
+    {
+      "name": "snapshot and test evidence",
+      "definition": "用一次性样本的真实不同候选创建第二快照，确认旧报告仍绑定旧快照。验证无测试证据状态；另对一个样本实际执行其声明的测试，保存原始退出码/输出并绑定正确候选，验证匹配测试证据的状态；不得为演示 ready 伪造测试或声称工作台自动执行了阶段 2 测试。引用用冻结两侧原文判定。只读/隔离证据区分实际文件完整性、沙箱/工具配置与用户全局 MCP/skills 隔离未知，不能把目录没变当完整隔离证明。"
+    },
+    {
+      "name": "eight-case benchmark",
+      "definition": "复用一次 benchmark prepare 的八样本 manifest 和冻结提示词，六个 development、两个 heldout；先封存提示词及哈希再运行，不把 oracle 送入模型，不用 heldout 调提示词。对 codex-only、claude-only、dual 各运行八例（共 24 个主回合、32 个席位），保存首轮独立原报告及可用用量/墙钟时间。若发现同一系统性阻塞连续两例重现，停止受影响模式，保留未运行格子及理由，避免无效耗用。已完成真实功能回合仅在完全相同 manifest/配置/首轮条件下可复用。不得为分数修改提示词、生产代码或样本。"
+    },
+    {
+      "name": "plugin and adjudication limits",
+      "definition": "只读检查现有 Claude Code + 官方 Codex 插件是否能使用；可用时以相同八样本可见输入/提示词执行官方插件基准，记录插件版本/调用证据及隐藏上下文差异；不可用就明确标 not_run/blocked，不安装插件，不以原生双审替代。工具目前要求 user_supplied 人工 judgment，模型分析不能冒充用户人工标签；可以生成独立标为 agent_reviewed 的建议和绑定信息供原窗口复核，但不得导入成 user_supplied。无人工 judgment 时使用空 judgments，保留评分器原输出；有 finding 缺标签时为 pending，零 finding 格可能被工具自动计数为 scored，但不得将其当成人工质量确认，已采集真实结果与尚缺质量评分分开报告，不宣称四模式质量基准全部验收或推荐优胜模式。 官方插件模式不能沿用会禁用已安装插件的 --safe-mode；记录真实启动方式、工具/权限、文件完整性，不继承原生适配器的只读/隔离结论。"
+    },
+    {
+      "name": "bounded failures and scope",
+      "definition": "每次真实回合显式超时，保存失败/取消结果与清理证据，避免遗留本次启动的进程；不要终止用户其他会话。认证/额度/模型不可用、schema 失配或生产缺陷须报告精确失败步骤，保存证据，停止依赖它的重复测试。任务目标是验收，不修产品代码、改变检查或扩大写入范围；缺陷交原窗口另卡处理。新测试脚本可在外部验收目录作为可审计临时执行记录，但不替换 verify 或引入永久检查入口。"
+    },
+    {
+      "name": "planner baseline check observation",
+      "definition": "规划方 2026-11-15 同一产品 HEAD 的完整 verify 出现两次 test_cancellation_during_termination_still_kills_and_reaps 失败（一次没有抛 CancelledError，一次 fake 的 pid 文件未生成），中间一次完整通过 543 unit/16 replay。第二次发生于任务卡提交 hook，提交被拦住。本卡因此从工作区读取（规划方创建的卡不属于实现修改范围），不绕过 hook；实机验收仍执行并如实记录不稳定基线。验收报告可交付未提交文档，若 verify 持续失败不要重复直到变绿或强行提交，原窗口另行处理。证据在 /Users/owen/Desktop/Multi-agent-acceptance/T-0019/。"
+    }
+  ],
+  "deliverables": [
+    "docs/acceptance/phase-one-live.md：实机验收矩阵、步骤与证据索引、实测结果、失败/未完成项、八样本四模式状态及证据边界。",
+    "docs/deliveries/T-0019.md：开工 HEAD、被测产品 SHA、文档候选提交、逐条验收对应、完整 verify 结果、实际改动路径。",
+    "仓库外持久验收目录：固定输入/manifest/提示词、真实原始日志与 DB、回合导出、测量值、哈希清单、verify 日志，供原审核窗口读取。",
+    "按事实更新 PROJECT_PLAN.md 与 docs/review-benchmark.md 的当前实机进度，保留历史结论；执行完在阶段 1 聊天汇报供原窗口读取。"
+  ],
+  "acceptance_criteria": [
+    "对照文档与证据：记录开工 HEAD、固定被测产品 SHA、当前 CLI 版本/登录检查、实际请求配置；验证任务基线及 scope，不使用未经说明的新产品代码。",
+    "对照实机输出：正式 freeze/snapshot、Codex 单审和 Claude 单审各有真实回合；单审只启动所选席位，输入与报告绑定、引用核对、终态与进程退出证据可复核，失败如实报告。",
+    "对照 DB/事件/时间：至少一组真实双审使用同一快照的新独立会话，并行区间可核对，初审不泄漏对方报告，仅在报告齐全后整体评估；不齐时不得伪报 ready。",
+    "对照真实取消/补跑证据：记录取消结果与停止证据；新尝试保留原配置/快照，成功席不重开，历史不覆盖。未命中的竞态和旧尝试迟到只引用命名离线测试，明确未实测，不计为真实通过。",
+    "对照实机 confirm：有合格阻塞项则记录一轮交叉确认及其结果/原报告绑定；没有触发条件或执行失败时给出可复核原因，不把离线结果记为实机通过。",
+    "对照两个冻结快照与测试记录：代码更新生成新快照，旧报告绑定不变；无测试证据与真实匹配测试证据均有观察结果，测试输出绑定实际候选，不伪造 ready。",
+    "对照配置和实测文件摘要：只读输入/输出、启动前后文件完整性、隔离目录和会话身份有证据；MCP/全局配置等未证实隔离逐项说明，不夸大沙箱保障。",
+    "对照 manifest 与运行矩阵：同一冻结提示词的八样本三种原生模式已执行或逐格标失败/未运行及原因，heldout 未用于调参，原始首轮报告未被后续 confirm 覆盖。",
+    "对照官方插件证据：现有插件可用则运行第四模式；不可用/阻塞如实记 not_run/blocked 与原因；没有安装、改永久设置或拿原生双审冒充插件。",
+    "对照结果/评分文件：请求模型/档位独立保存；实际模型/生效档位/用量证据字段只写运行时报告值，缺失为未确认/null；时间为实测墙钟；没有把 agent 判断导入 user_supplied，有 finding 缺人工标签的质量分数保持 pending；零 finding 的自动计数如实保留并说明非人工确认，整体人工质量验收仍未完成。",
+    "对照证据索引：原始日志、DB、manifest、报告、失败记录、执行脚本与哈希清单位于仓库外，关键结论能定位至文件；提交内无凭证/敏感日志，不隐瞒失败。",
+    "完整 scripts/verify.sh 五步运行并记录日志/退出码/测试数；既有检查失败如实记录并交回，不削弱检查。实机验收与离线 verify 结论分开。",
+    "对照开工 HEAD 至候选提交：仅 write_scope 文档改动，逐条给出 passed/failed/not_run/blocked/conditional_not_triggered 等明确状态；不把报告提交完成称作阶段 1 全部通过，报告回原窗口审核。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "T-0021",
+  "goal": "为 Codex 审核会话建立可验证的上下文隔离，阻止用户记忆、指令、skills/MCP 和其他审核证据污染冻结输入，同时保留既有登录、审核、取消和证据语义。",
+  "baseline_commit": "c8322b857e38355ae7704cd0dde92ee059f2de55",
+  "write_scope": [
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/codex_isolation.py",
+    "src/multi_agent/adapters/runtime_decode.py",
+    "src/multi_agent/adapters/probe/recording.py",
+    "src/multi_agent/cli/runner.py",
+    "tests/unit/test_runtime.py",
+    "tests/unit/test_codex_isolation.py",
+    "tests/unit/runtime_fakes/**",
+    "tests/unit/test_review_cli.py",
+    "tests/unit/test_review_end_to_end.py",
+    "docs/review-cli.md",
+    "docs/deliveries/T-0021.md",
+    ".agents/skills/runtime-protocols/SKILL.md",
+    ".agents/skills/runtime-protocols/references/codex-app-server.md",
+    "protocol/codex/config.schema.json",
+    "protocol/codex/config-schema-source.json"
+  ],
+  "depends_on": [
+    "T-0020"
+  ],
+  "interface_contracts": [
+    {
+      "name": "original request and live defect",
+      "definition": "用户原文：把 Codex 上下文隔离和测试启动同步问题分别建卡，发给阶段1窗口修复，补齐回归测试，完整运行 verify 后各自提交；再补跑受影响的实机验收，结果交回本窗口审核。T-0019 的 B01 Codex 单审与双审真实读取 ~/.codex/memories/MEMORY.md 并启动用户 MCP；精确日志和行号见 docs/acceptance/phase-one-live.md。本卡修隔离，T-0020 先修检查可靠性；真实复验另卡在两个修复提交后执行。"
+    },
+    {
+      "name": "isolation contract",
+      "definition": "新审核会话只能把冻结输入以及应用固定的审核/输出格式指令作为任务上下文，不自动注入用户或项目 AGENTS、记忆、skills、MCP、插件或其他会话/报告。真实能力边界必须限制模型读取冻结输入以外的用户文件、其他席位日志/DB/答案文件；只提示模型不读、只更换 cwd、只清空一个目录或只观察没有发生读取，均不能作为修复。允许明确列举的系统/CLI执行依赖与官方登录读取，由可信运行时使用，不把凭据或整个用户目录暴露给模型工具。不得承诺未经证明的整机隔离。"
+    },
+    {
+      "name": "supported capability and fail closed",
+      "definition": "先逐项对照本机0.169.0协议/帮助与官方来源，记录选用的每个字段/选项/配置键的出处和本机适用性。现有 turn/start readOnly 快照只有 networkAccess，不能臆造 readableRoots/readOnlyAccess 等字段；泛型 config 的存在不证明任意键有效。选择不改变用户永久配置的进程/会话级隔离策略，若本机不支持所需保障则明确失败并阻止模型回合启动，不能悄悄回退到旧的全局配置。支持正常冻结审核是本卡目标，拒绝全部审核只能作为明确失败分支，不能宣称完整修复。若可靠方案需要扩大范围/升级CLI/变更协议快照，交规划方处理，不自行越界。 同版本官方依据为 https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/config.schema.json，原件下载至列明路径，另存来源URL/tag/hash元数据，不手改schema。可行方向：仅对受控子进程使用干净 HOME/CODEX_HOME，最小继承 auth.json；default_permissions 选择 named profile，filesystem 仅 :minimal 与冻结cwd可读，不 extends :read-only，不给auth/日志/真实HOME读取权，network=false。移除 thread/start.sandbox 和 turn/start.sandboxPolicy 的旧覆盖，避免覆盖named policy。具体键仍逐项对照同tag。project_doc_max_bytes=0 不关全局指令，空mcp_servers overlay不清除低层server；必须检查有效配置与instructionSources等证据，禁用或拒绝不可控的系统/MDM/cloud/MCP/skills/plugin入口。此策略尚未本机实测，不能先宣称通过。"
+    },
+    {
+      "name": "credentials and ownership",
+      "definition": "继续复用官方已有订阅登录，不要求重新登录、不登出，不改真实用户HOME/CODEX_HOME下的任何永久配置。隔离目录/临时文件在审核输入和日志之外，以最小权限创建，只携带必要官方认证材料；不复制记忆、项目状态或整份用户配置。凭据不进入argv、JSONL、测试夹具、交付文档或模型输入。临时资源的生命周期必须覆盖进程退出/取消/失败清理，不能删早导致运行中认证失效，正常成功、已确认停止后的失败/取消均应清除凭据；若进程退出或资源清理本身失败/未知，保留最小访问权限和资源所有权定位，记录 cleanup_incomplete，不伪造已退出/已清理，也不把临时目录释放成功当作当然事实。环境检查与实际运行使用一致的隔离/认证策略，目录检查不泄漏内容。 不使用 LoginAccountParams 中明确 FOR OPENAI INTERNAL USE ONLY 的 chatgptAuthTokens 分支；不把用户token提取到RPC/argv来替代官方登录。"
+    },
+    {
+      "name": "preserved interfaces",
+      "definition": "保留单审/双审、同快照重试、确认子轮次、终态与退出分离、仅当前尝试推进状态、晚取消不覆盖已观察成功、未知模型/effort不回填等契约。隔离失败使用现有边界 Error 分类和清楚 detail/raw_type，不新增 core 状态/事件/表迁移。必要新辅助模块放在 adapters/；runner 仅为隔离所需资源/冻结输入传递做最小改动。所有 spawn 使用 argv，无shell拼接。Claude原有safe-mode行为不回退。"
+    },
+    {
+      "name": "regression and evidence",
+      "definition": "假 CLI/临时假用户目录覆盖恶意用户配置/AGENTS/记忆/skills/MCP、隔离参数缺失/畸形/运行时忽略、路径穿越或符号链接外读、认证失败、启动/中途/取消清理失败；证明受支持策略的结构与失败封闭。不得靠假 CLI 一律回success或删除原有检查让测试变绿。OS权限保障由独立无模型子进程/后续实机 canary 验证，unit不冒称真实模型已隔离。原始真实T19证据不改写；事实表仅将有新实测证据的条目标已验证，其余标快照/文档/未确认。 有效配置/认证响应的原始日志必须脱敏，必要时只保存可审计的非敏感摘要和来源；新增redactor回归放 test_codex_isolation.py，不扩大到T-0020测试文件。使用合成凭据哨兵扫描全部输出，证明不会把配置层的token/env秘密写入持久记录。"
+    },
+    {
+      "name": "execution and delivery",
+      "definition": "本卡实现/自动测试使用假 CLI；允许只读查询真实CLI版本、帮助、schema与官方配置校验以确认能力（不发模型请求、不改登录）；另明确允许真实原生 App Server 的无模型权限canary：initialize、配置读取及 command/exec 等快照已有方法，只执行临时文件的允许/拒绝读取和状态查询，不发 turn/start、不注销/重登录，原始argv/请求/退出码脱敏留在仓库外。canary必须使用产品实际相同named profile和调用路径；不得以自行重写的Seatbelt规则或fake成功输出代替原生policy生效证明。两个修复独立完整verify后单独提交，本卡在候选全新检出再完整verify，之后由阶段1窗口按后续验收卡执行用户已授权真实请求。交付列出开工HEAD、完整候选SHA、逐条测试、每个协议配置出处、修改的原有测试及原因、实际路径、权限保障和仍未知边界。受保护写入仅限列明的runtime-protocols两份文档，不改检查或全局权限。"
+    }
+  ],
+  "deliverables": [
+    "最小 Codex 审核隔离实现、对应边界回归与必要runner同步。",
+    "docs/deliveries/T-0021.md 与更新的 review-cli/协议事实：来源、权限边界、测试映射与实际变更路径。",
+    "独立修复提交与全新检出完整verify记录；随后实机复验所需的精确执行说明。"
+  ],
+  "acceptance_criteria": [
+    "unit/diff：隔离策略有可核实的本机协议/官方配置出处；未加入快照不存在或适用性未经验证的字段，文档区分配置意图与实际保障。",
+    "unit：假用户目录含记忆/AGENTS/skills/MCP/插件哨兵时，所有Codex审核（初审、重试、确认）从隔离策略启动，不继承这些任务上下文；请求输入仍为同一冻结快照和固定模板。",
+    "unit及本地权限回归：冻结文件可读，外部用户哨兵、其他席位报告/日志/DB、相邻答案文件以及越界符号链接/父路径读取被策略拒绝；不得仅检查没有调用读取。实现不把系统依赖允许目录扩大成整个用户目录。",
+    "unit：隔离不支持、无法创建、配置不被接受或关键隔离证据不符合预期时明确失败；不发模型回合或不接受污染结果，不回退原全局环境。",
+    "unit：既有登录材料最小继承，缺失/无效登录有准确失败路径；真实凭据不入模型/日志；正常成功及已确认停止的异常/超时/取消/启动失败完成所属临时资源清理；清理失败或退出未知则保留明确证据和最小权限，不假称无残留，未改用户永久配置。",
+    "unit：T-0018 晚取消、未知phase、认证分类回归，以及单/双审、同配置重试、确认、证据unknown与进程退出分别记录全部保留；未改core/store/schema/检查配置。",
+    "完整 scripts/verify.sh 五步与候选全新检出完整检查通过；实际测试计数、退出码、日志与候选绑定，不靠重复碰运气。",
+    "独立提交只含write_scope；交付逐项列测试名、原有测试修改原因、配置来源、保障边界与未确认项；真实质量/隔离通过仅由后续实机证据判定，不能由fake测试推导。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
