@@ -153,7 +153,7 @@
 | `thread/start` 响应里的 `instructionSources` 是该线程当前加载的指令文件路径，可用来记录会话实际加载了什么。工作目录里有 `AGENTS.md` 时是它的绝对路径，没有时是空数组 | `已验证` 2026-11-15，0.169.0 | `v2/ThreadStartResponse.json` 的字段说明；夹具 `codex-readonly`、`codex-turn` |
 | 工作目录里的 `AGENTS.md` 会被当作指令加载，模型照做。以候选检出为工作目录的审核会话，会执行候选提交里的 `AGENTS.md` | `已验证` 2026-11-15，0.169.0 | 夹具 `codex-readonly`（最终回答里带着 `AGENTS.md` 要求的暗号） |
 | 每个线程都会启动用户配置的 MCP 服务器，只读线程也一样。本机有 5 个，约 1 秒内就绪，其中 1 个启动失败 | `已验证` 2026-11-15，0.169.0 | 夹具 `codex-turn` |
-| 隔离审核线程的配置与权限方案 | `文档`；共同产品路径无模型命令 `已验证` 2026-11-15，完整审核回合尚未验证 | 见下节 T21；不能由 `thread/start.config`、空 MCP overlay 或 cwd 单独推出隔离成立 |
+| 隔离审核线程的配置与权限方案 | `已验证` 2026-11-15，0.169.0；覆盖 T22 固定产品的原生权限 case 与真实审核、取消、补跑、确认路径 | 见下节 T21 和 T22；不能由 `thread/start.config`、空 MCP overlay 或 cwd 单独推出隔离成立；保留系统运行时例外及客户端 RPC 边界 |
 | 候选提交里新增的 `.agents/skills/` 会被以该检出为工作目录的会话加载 | `未确认` | 由前两条推出，没有实测 |
 
 ## T21 审核隔离（0.169.0）
@@ -170,7 +170,17 @@
 
 **最终验收记录**是 `/Users/owen/Desktop/Multi-agent-acceptance/T-0021/native-policy-accepted/{raw.jsonl,summary.json,metadata.json}`，脚本为上级目录的 `native-policy-accepted.py`，记录时间为 2026-11-15 22:00 UTC。它通过完整字段存在性核对，`isolation_verified` 实际保存 `effective_config`（含官方序列化 null）、真实来源 `["user","system"]` 和 `requirements:null`；`account/read` 实际报告 `type:"chatgpt"`。10/10 case 符合预期，两个进程退出码均为 0，资源清理确认，模型请求为 0。metadata 绑定当次 `runtime.py`、`codex_isolation.py`、`probe/recording.py` 的 SHA256；验收对 32 个输出文件进行实际认证串扫描，未发现泄漏。旧记录保持原貌，不把新日志字段倒填进早期证据。
 
-这些证据覆盖当次共同实现的配置/requirements 审计、原生命令读取和资源生命周期，不扩张到客户端 `fs/readFile`，不证明所有模型工具或完整模型上下文已隔离。真实审核回合仍待 T22。
+这些 T21 证据覆盖当次共同实现的配置/requirements 审计、原生命令读取和资源生命周期，不扩张到客户端 `fs/readFile`，不证明所有模型工具或完整模型上下文已隔离。后续 T22 的真实审核回合证据单列在下节，不能追溯改写这些无模型记录的范围。
+
+### T22 修复后真实复验
+
+`已验证` 2026-11-15，Codex CLI 0.169.0。最终产品为 `adbf4928b057769bc62b7b0a51c5a248e0e236b7`，证据根 `/Users/owen/Desktop/Multi-agent-acceptance/T-0022/candidate-adbf4928/`。`isolation-gate/` 重新绑定 374 个产品/协议/依赖文件，前后 hash 一致；14/14 原生读取 case 符合预期：冻结目录及改 cwd 后的绝对路径冻结输入可读，指定用户哨兵、相邻/其他席报告与日志、DB/答案、认证、父路径及越界 symlink 被实际操作系统权限拒读。三个 CLI 进程退出 0，临时隔离资源、用户哨兵及合成 fixture 清除。实际认证串扫描未发现泄漏。此 gate 没有模型请求。
+
+`run-index.json` 记录重新采集的 codex-only/dual 各八例，16 主回合、24 席全部成功；`functional-index.json` 另记录真实双席取消、仅失败席补跑及一轮交叉确认。共有 19 个新 Codex attempt，其中 18 成功、1 取消；每个 attempt 的预检与模型进程各有一个隔离 owner，共 38 个。`analysis/runtime-audit.json` 对 19 份导出全部判为 pass（导出包括同一取消回合补跑前后两份，不是 19 个不同回合）。38 个 owner 都有目录 0700、认证/配置文件 0600 的 stat 观察，实际清理事件与最终不存在观察。workspace 前后保持不变。
+
+实际有效配置与 gate 相同（仅归一化各次 cwd/临时路径）；来源、严格 `requirements:null`、`account.type=chatgpt` 及线程响应顶层 `instructionSources=[]` 均有原始证据，未出现 Codex MCP 启动。与 gate 的权限拒读证据共同支持当前受控路径的隔离验收，不能把空指令数组单独当作完整上下文证明，也不覆盖宿主客户端 `fs/readFile` 或取消系统运行时 `:minimal` 例外。Claude 初始化仍报告内置 skills/plugins，这项 Codex 结论不适用于 Claude 全部上下文。
+
+取消原始流实际记录 `CancelRequested` 和 `turn/completed` 的 `interrupted`，对应进程退出 0；产品 attempt 为 failed/cancelled。终态、退出和资源清理三者分别核对，不能凭退出 0 判成功。Codex 的实际模型、实际 effort 仍未确认；`thread/start` 请求回显不替代实际报告。用量只取每个 attempt 的最后一份累计 Usage，不把重复通知相加。完整输入、提示词、父子绑定及证据边界见仓库 `docs/acceptance/phase-one-live-recheck.md`。
 
 ### Named permissions 与实际执行路径
 

@@ -65,7 +65,7 @@ description: Codex App Server（JSON-RPC）和 Claude Code 无头模式（claude
 - **事件流不是完整的操作记录。** Codex 回合里被沙箱拒绝的写入没有 item。只读靠沙箱和工具范围保证，不靠检查事件。
 - **回显不是证据。** Codex 的 `thread/start` 和 Claude 的 `system/init` 都只回显请求的模型名。Claude 的实际模型看结果的 `modelUsage`，Codex 没有对应的报告。两边都不报告实际生效的档位。
 - **启动 Claude 时去掉环境里的 `ANTHROPIC_API_KEY` 和 `ANTHROPIC_AUTH_TOKEN`。** 否则它不用订阅登录。
-- **默认 Codex 会加载工作目录里的 `AGENTS.md`，并启动用户配置的 MCP 服务器。** T21 的审核隔离使用临时 HOME/CODEX_HOME、最小官方 ChatGPT 认证、固定配置和 named permissions；最终路线不设置 `forced_login_method`，另查实际 `account.type=chatgpt`，要求 `configRequirements/read.requirements` 严格为 null。2026-11-15 最终 `native-policy-accepted` 无模型 canary 通过完整字段存在性审计及 10 项读权限 case，记录实际有效配置、来源、requirements、ChatGPT 登录类型和退出清理；metadata 绑定产品文件 hash。真实模型回合仍待 T22。具体证据和审计覆盖范围见事实表「T21 审核隔离」。旧的宽泛 `read-only` 不能证明外部读取被禁止。
+- **默认 Codex 会加载工作目录里的 `AGENTS.md`，并启动用户配置的 MCP 服务器。** T21 的审核隔离使用临时 HOME/CODEX_HOME、最小官方 ChatGPT 认证、固定配置和 named permissions；最终路线不设置 `forced_login_method`，另查实际 `account.type=chatgpt`，要求 `configRequirements/read.requirements` 严格为 null。T21 的最终 10 项无模型 canary 保留原绑定。2026-11-15 T22 在最终产品 `adbf4928b057769bc62b7b0a51c5a248e0e236b7` 上重新通过 14 项原生权限 case，并完成 codex-only/dual 各八例及取消、失败席补跑、交叉确认。全部 19 个新 Codex attempt 的 38 个预检/运行隔离 owner 有实际配置、来源、requirements、ChatGPT 登录及清理证据；模型线程顶层 `instructionSources=[]`，原始流未出现 MCP 启动。拒读结论仍来自权限 case，不能由空数组或未观察到读取单独推出。具体范围见事实表「T21 审核隔离」及「T22 修复后真实复验」。旧的宽泛 `read-only` 不能证明外部读取被禁止。
 
 审核隔离还要区分两条边界：模型命令及文件工具的沙箱权限，与宿主加载配置、指令、技能和远端工具的能力。`instructionSources=[]` 只说明列出的文件指令为空，不证明全部上下文为空；`command/exec` 拒读也不证明具有客户端权限的 `fs/readFile` RPC 会拒读。原生系统运行时目录是 `:minimal` 的显式例外，不能把它描述为“只能读冻结目录”。
 

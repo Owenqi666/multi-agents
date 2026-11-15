@@ -2,7 +2,22 @@
 
 最初 T-0014 交付固定样本、准备工具和导入评分器时没有运行真实模型基准。2026-11-15 的 T-0019 已在用户明确授权下采集部分真实结果，**四模式质量基准仍未验收，没有推荐模式结论**：32 格采集 10、因 Codex 两次实际读取外部用户记忆停止 14、官方插件未安装阻塞 8。完整记录见 `docs/acceptance/phase-one-live.md`，原始证据位于 `/Users/owen/Desktop/Multi-agent-acceptance/T-0019/`。
 
-本轮 Claude-only 八例、Codex-only B01、dual B01 使用同一次封存 manifest/prompt。空人工 judgments 下，8 个有发现项的格保持 pending，B05/B06 Claude 空报告被工具自动 scored，但这不构成人工质量确认；22 格 not_run。实际用量与墙钟从真实记录导入，未知实际模型/档位保持 null，没有把代理判断冒充 `user_supplied` 人工标签。产品导入格式仍固定使用 `user_supplied`，该标签本身不能证明人类判断或真实运行。
+T19 的 Claude-only 八例、Codex-only B01、dual B01 使用同一次封存 manifest/prompt。空人工 judgments 下，8 个有发现项的格保持 pending，B05/B06 Claude 空报告被工具自动 scored，但这不构成人工质量确认；22 格 not_run。实际用量与墙钟从真实记录导入，未知实际模型/档位保持 null，没有把代理判断冒充 `user_supplied` 人工标签。产品导入格式仍固定使用 `user_supplied`，该标签本身不能证明人类判断或真实运行。
+
+2026-11-15 的 T-0022 在 T20/T21/T23 修复后的固定产品 `adbf4928b057769bc62b7b0a51c5a248e0e236b7` 上完成复验。新候选先通过 14 项原生权限检查和 B01 冒烟，再重新执行包括 B01 在内的全部受影响格；T19 的受污染 Codex 结果没有进入本次评分。当前首轮矩阵如下：
+
+| 模式 | 首轮执行来源 | 当前状态 | 八例命令墙钟合计 |
+| --- | --- | --- | --- |
+| codex-only | T22 新采集，产品 adbf4928 | 8/8 成功 | 133.852 秒 |
+| claude-only | T19 原产品 87045fc6 的八份成功报告，经新候选成功路径兼容审计后复用 | 8/8 复用，保留原日期、round ID 和来源 | 91.741 秒 |
+| dual | T22 新采集，产品 adbf4928 | 8/8 成功，共 16 席 | 127.382 秒 |
+| official-plugin | 只读复查安装列表仍为空 | 8 格 blocked；原生评分格式记 not_run | 未运行 |
+
+首轮仍使用原 manifest、`review-v1` 提示词及固定请求 Codex `gpt-6.1-sol/high`、Claude `claude-opus-5-5/high`。16 个新主回合的 24 席均成功；取消、补跑与交叉确认独立记录，不混入首轮。新旧 32 个已收集席位中，16 个 Codex 实际模型为 null，16 个 Claude 报告 `claude-opus-5-5`，全部实际 effort 为 null。用量只取每次尝试的最后一份累计 Usage；墙钟按整次命令计算，双席耗时不相加，也不混合提供方费用口径。
+
+当前原生输入为 24 completed / 8 not_run，空 judgments 为零条，评分为 **18 pending / 6 scored / 8 not_run**。六个 scored 只是 B05/B06 在三个原生模式下的空报告自动计数，三个模式整体质量均待人工判断，`recommendation=null`。Claude 内置 skills/plugins 仍会在初始化中报告，不能把 Codex 的上下文隔离结论推广到 Claude。
+
+完整执行证据与限制见 [T22 复验报告](acceptance/phase-one-live-recheck.md)。外部证据位于 `/Users/owen/Desktop/Multi-agent-acceptance/T-0022/candidate-adbf4928/`：`run-index.json` 对应新首轮，`preparation/source-audit.json` 保留旧 Claude 复用条件，`analysis/export-001/` 包含结果、provenance、空 judgments、原生评分及 hash。导入器的 `executed_models=false` 表示它自身不执行模型；真实执行由这些独立命令、原始流及数据库证据支持，不能仅靠导入标签证明。
 
 工具不把位置匹配当作有效发现证明，不自行发模型请求，不执行样本代码或测试。下面保留通用操作方式；本轮真实执行来自用户对阶段 1 验收窗口的单独授权，不改变以后任务的权限。
 
