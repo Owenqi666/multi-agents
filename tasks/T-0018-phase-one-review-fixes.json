@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "T-0018",
+  "goal": "修复阶段 1 审核确认的三个 P2：取消竞态丢失已完成报告、Codex 未知 phase 的合法报告被拒绝、Claude 未登录被归为未知错误；补齐离线回归并完整验证提交。",
+  "baseline_commit": "8597538dc6fbb91a23aa2eb511aa366032716c35",
+  "write_scope": [
+    "src/multi_agent/cli/runner.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/runtime_decode.py",
+    "src/multi_agent/adapters/base.py",
+    "src/multi_agent/adapters/scripted.py",
+    "src/multi_agent/adapters/validation.py",
+    "tests/unit/test_runtime.py",
+    "tests/unit/test_review_cli.py",
+    "tests/unit/test_adapters_interface.py",
+    "tests/unit/test_review_end_to_end.py",
+    "tests/unit/runtime_fakes/**",
+    "docs/review-cli.md",
+    "docs/deliveries/T-0018.md"
+  ],
+  "depends_on": ["T-0012", "T-0013", "T-0017"],
+  "interface_contracts": [
+    {
+      "name": "original request and reviewed defects",
+      "definition": "用户原始要求：将这三个 P2 问题建卡发送至阶段1窗口完成修复，补齐回归测试，完整运行 verify 后提交，完成后逐项说明修复和验证结果。审核基线为本卡 baseline_commit。P2-1：runner.py 的 cancel_when_requested 在 RuntimeAdapter 已缓存 Completed、尚在清理进程时写入 CancelRequested，随后真实 Completed 被状态机记为 cancelled，result=None；实际适配器加 hang-after-result 假 CLI 已复现。P2-2：runtime_decode.py 仅接受 phase=final_answer，拒绝省略/null phase 的合法成功报告；ItemCompletedNotification.json 的 MessagePhase 明确要求兼容未知阶段。P2-3：runtime.py 的 _collect 在解析 auth status 前拒绝 exit 1，使 loggedIn=false 不能进入 AUTH_EXPIRED。"
+    },
+    {
+      "name": "cancel and terminal coordination",
+      "definition": "区分运行时已观察到终态与完成收尾后交付终态。取消不得把调用取消之前已经观察到的终态改写为取消，成功报告仍须经过既有结构、矛盾终态和工作目录检查再入库。runner 不再仅以局部 terminal is None 决定写入 CancelRequested。允许在列明范围内调整适配器取消/结果协调接口，但必须同步 Adapter 协议、RuntimeAdapter、ScriptedAdapter、conformance 校验及相关测试，交付文档注明接口变化；不新增 core 状态/事件/失败枚举或表迁移。不改变尚未收到终态时的有效取消和未知清理证据规则。"
+    },
+    {
+      "name": "Codex unknown-phase compatibility",
+      "definition": "只处理匹配本线程和本回合的 agentMessage。显式 final_answer 优先；确认 turn.status=completed 且没有显式 final_answer 时，以最后一个 phase 省略或 null 的 agentMessage 作为兼容候选，保持事件/turn.items 的协议顺序。明确标为 commentary 或 partial_answer 的消息不能被当成最终报告。未知 phase 候选仍须通过原有 JSON 解析和 runner 的完整报告 schema 校验；不得回退到更早的合法片段掩盖最后候选的畸形内容。failed/interrupted、其他线程/回合及无可用报告继续按原有失败路径处理。"
+    },
+    {
+      "name": "Claude authentication preflight",
+      "definition": "auth status 的退出码与 JSON 必须一起校验：退出码 0 配合合法 loggedIn 布尔值保留原行为；退出码 1 且 loggedIn=false 表示未登录，返回登录状态或归类为 AUTH_EXPIRED，并由 runner 阻止模型回合启动。退出码 1 配合 loggedIn=true、其他非零退出码、缺失/畸形 JSON 或非布尔 loggedIn 不得被当成成功登录。只针对 auth status 放行该正常未登录情况，版本检查及其他子进程的异常退出不能一并放宽。来源：官方 https://code.claude.com/docs/en/cli-reference 的 auth status 命令说明。"
+    },
+    {
+      "name": "scope and execution constraints",
+      "definition": "本卡只修上述问题及必要接口一致性，不扩展阶段 2/3。实现和测试只用假 CLI、已入库夹具、临时样本，不运行真实 codex 或 claude（包括版本/环境检查），不刷新 protocol/。不改检查配置、依赖、现有实机夹具或受保护配置。检查入口仅 scripts/verify.sh。原有测试不删除或削弱；接口契约导致必须修改的原有测试需在交付文档逐个说明原因。"
+    }
+  ],
+  "deliverables": [
+    "三个 P2 的最小修复及必要适配器接口同步",
+    "能够拦住原始缺陷的命名离线回归测试，包含真实 RuntimeAdapter 加假可执行文件的取消时序覆盖",
+    "docs/deliveries/T-0018.md：开工 HEAD、逐项修复/测试名/结果、旧测试改动原因、实际路径、接口变化与真实运行限制；最终聊天另报候选提交完整哈希"
+  ],
+  "acceptance_criteria": [
+    "unit：用实际 RuntimeAdapter 和假 CLI 在观察到 Completed 后、进程清理结束前触发取消，最终保留 succeeded 和完整报告，不因该取消记为 cancelled；不能只用跳过实际适配器终态缓存的 scripted 测试代替。",
+    "unit：双审中一席处于已观察成功终态但仍清理的窗口，另一席仍运行，此时取消保留前者报告并取消后者；补跑只重开失败席位，成功报告不重新请求。",
+    "unit：真正先取消后终态的流程仍记录有效取消；畸形报告、矛盾终态以及没有真实终态/exit 的清理失败均不因竞态修复而变成成功或伪造停止。复用现有命名测试并补足受影响分支。",
+    "unit：Codex 的 phase 省略和 null 各自覆盖 item/completed 消息及 turn/completed.items 来源，合法报告完成；显式 final_answer 优先，只有 commentary/partial_answer 或最后未知候选畸形时失败，其他线程/回合不污染结果。",
+    "unit：假 Claude auth status 输出 loggedIn=false、exit 1 时归类 AUTH_EXPIRED，持久化的失败原因明确，且不发 -p 模型请求；正常登录 exit 0 继续通过。",
+    "unit：认证 JSON 畸形、loggedIn 类型错误、exit 1 却 loggedIn=true、其他异常退出码以及版本检查非零退出仍拒绝；不能通过忽略所有退出码使检查变绿。",
+    "审核 diff 及 unit：若适配器接口改变，所有实现者和 conformance 检查同步，既有单审/双审、补跑、未知清理、证据不回填及终态/进程退出分离检查保留。未新增状态或修改 store/、protocol/、依赖及检查配置。",
+    "提交前完整 scripts/verify.sh 五步通过；候选提交全新检出再次完整通过；全部验证只执行假 CLI，交付说明列出三个 P2 对应测试名、实际计数和限制。",
+    "从开工 HEAD 到候选提交的 diff 只包含 write_scope 内路径；文档逐项说明修复、接口改动、被修改旧测试及原因，交付候选提交完整 SHA，工作区干净。"
+  ],
+  "test_refs": ["lint", "format", "typecheck", "unit", "replay"],
+  "open_questions": []
+}
