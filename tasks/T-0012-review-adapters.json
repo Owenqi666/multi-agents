@@ -9,7 +9,8 @@
     "src/multi_agent/adapters/base.py",
     "tests/unit/test_runtime.py",
     "tests/unit/runtime_fakes/**",
-    "docs/deliveries/T-0012.md"
+    "docs/deliveries/T-0012.md",
+    "src/multi_agent/adapters/probe/process.py"
   ],
   "depends_on": [
     "T-0009"
@@ -21,7 +22,7 @@
     },
     {
       "name": "boundary",
-      "definition": "Use runtime-protocols and local snapshots, no real CLI calls during implementation/tests (version/help allowed only to check protocol version). Claude removes ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN, safe-mode+Read,Grep,Glob+no persistence. Codex read-only sandbox never approvals, ephemeral, new temp cwd supplied by caller; application/user custom instruction/MCP isolation limitations documented, never claim more than verified. Handle errors timeout/auth/model/rate/cancel, malformed JSON/early exit Error(category=None). Preserve raw events. Terminal and process exit separate; no synthetic reported metadata. Cancellation cleanup after bounded grace."
+      "definition": "Use runtime-protocols and local snapshots, no real CLI calls during implementation/tests (version/help allowed only to check protocol version). Claude removes ANTHROPIC_API_KEY and ANTHROPIC_AUTH_TOKEN, safe-mode+Read,Grep,Glob+no persistence. Codex read-only sandbox never approvals, ephemeral, new temp cwd supplied by caller; application/user custom instruction/MCP isolation limitations documented, never claim more than verified. Handle errors timeout/auth/model/rate/cancel, malformed JSON/early exit Error(category=None). Preserve raw events. Terminal and process exit separate; no synthetic reported metadata. Cancellation cleanup after bounded grace. 独立复核指出只杀主CLI可能留下普通孙进程：允许给共享Process增加opt-in start_new_session参数（默认False保持probe行为），RuntimeAdapter启用进程组并在正常/取消/超时后有界清理组中后代；fake孙进程测试验证，不承诺清理主动逃逸会话的外部进程。"
     }
   ],
   "deliverables": [
@@ -32,7 +33,8 @@
     "unit：fake executables assert exact argv/RPC structure and readonly, environment sanitization, fresh sessions, explicit requested effort. Tests never call real binaries.",
     "unit：fixtures prove Claude is_error/terminal_reason and modelUsage, Codex turn.status, echoed model ignored, reported effort None; malformed/timeout/early exit normalized to Error, process exit retained.",
     "unit：cancel stops or interrupts and cleans child processes; result terminal and exit distinct; stderr/unknown events logged outside repository.",
-    "runtime-protocol names checked against snapshots; complete verify; outdated base.py evidence prose corrected with fixture references."
+    "runtime-protocol names checked against snapshots; complete verify; outdated base.py evidence prose corrected with fixture references.",
+    "unit：假CLI生成普通孙进程，主CLI终态/退出/取消后进程组清理不留运行后代；probe默认行为/旧检查不变。"
   ],
   "test_refs": [
     "lint",

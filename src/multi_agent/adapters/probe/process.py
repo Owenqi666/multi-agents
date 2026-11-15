@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import signal
 from collections.abc import Mapping
 from pathlib import Path
@@ -23,7 +24,10 @@ class Process:
         child: asyncio.subprocess.Process,
         recorder: Recorder,
         grace: float,
+        start_new_session: bool = False,
     ) -> None:
+        self._owns_group = start_new_session
+        self._group_stopped = False
         self.name = name
         self.child = child
         self.first_stdout = asyncio.Event()
@@ -50,6 +54,7 @@ class Process:
         piped_stdin: bool = False,
         grace: float = 15,
         env: Mapping[str, str] | None = None,
+        start_new_session: bool = False,
     ) -> Process:
         # Record the launch attempt before acquiring an OS process, so a failed
         # recording cannot leave an unregistered child behind.
@@ -64,6 +69,7 @@ class Process:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 env=env,
+                start_new_session=start_new_session,
             )
         )
         try:
@@ -77,7 +83,7 @@ class Process:
                     child = await creation
                 except OSError:
                     return
-                process = cls(name, child, recorder, grace)
+                process = cls(name, child, recorder, grace, start_new_session)
                 await process.terminate(grace)
 
             cleanup = asyncio.create_task(finish_creation())
@@ -88,7 +94,7 @@ class Process:
                     continue
             cleanup.result()
             raise
-        process = cls(name, child, recorder, grace)
+        process = cls(name, child, recorder, grace, start_new_session)
         return process
 
     def _line(self, data: bytes, stream: str) -> None:
@@ -242,14 +248,55 @@ class Process:
             self._recorder.emit("stdin_closed", proc=self.name)
 
     def signal(self, sig: signal.Signals) -> bool:
-        if self.child.returncode is not None:
+        if self._group_stopped or (
+            not self._owns_group and self.child.returncode is not None
+        ):
             return False
         try:
-            self.child.send_signal(sig)
+            if self._owns_group:
+                os.killpg(self.child.pid, sig)
+            else:
+                self.child.send_signal(sig)
         except ProcessLookupError:
             return False
         self._recorder.emit("signal", proc=self.name, name=sig.name)
         return True
+
+    def _group_exists(self) -> bool:
+        try:
+            os.killpg(self.child.pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            # macOS reports EPERM for an unreaped zombie-only group. Treat it
+            # as present, yield to the child watcher, and retry within grace.
+            # This never treats an inaccessible live group as already stopped.
+            return True
+        return True
+
+    async def _stop_group(self, grace: float) -> None:
+        """Stop ordinary descendants even if the immediate child has exited.
+
+        Only enabled for a process created with start_new_session. Descendants
+        that deliberately leave this group are outside this ownership boundary.
+        """
+        recording_error: OSError | None = None
+        try:
+            self.signal(signal.SIGTERM)
+        except OSError as error:
+            recording_error = error
+        deadline = asyncio.get_running_loop().time() + grace
+        while self._group_exists() and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(0.005)
+        if self._group_exists():
+            try:
+                self.signal(signal.SIGKILL)
+            except OSError as error:
+                recording_error = recording_error or error
+        await asyncio.shield(self._exit)
+        self._group_stopped = True
+        if recording_error is not None:
+            raise recording_error
 
     async def wait_for_exit(self, seconds: float) -> bool:
         if self.child.returncode is not None:
@@ -261,6 +308,9 @@ class Process:
         return True
 
     async def _stop_child(self, grace: float) -> None:
+        if self._owns_group:
+            await self._stop_group(grace)
+            return
         recording_error: OSError | None = None
         try:
             self.signal(signal.SIGTERM)
