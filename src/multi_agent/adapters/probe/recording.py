@@ -9,21 +9,45 @@ from typing import Self
 
 _PRIVATE_KEYS = {
     "email",
-    "userid",
-    "accountid",
-    "orgid",
-    "organizationid",
     "orgname",
     "organizationname",
     "workspacename",
     "plantype",
+    "plantier",
     "subscriptiontype",
+    "servername",
+    "balance",
 }
-_PRIVATE_SUFFIXES = ("token", "secret", "password", "apikey")
+_PRIVATE_SUFFIXES = (
+    "userid",
+    "accountid",
+    "orgid",
+    "organizationid",
+    "installationid",
+    "token",
+    "secret",
+    "password",
+    "apikey",
+)
 _EMAIL = re.compile(
     r"(?<![\w.!#$%&'*+=?^`{|}~+-])"
     r"[\w.!#$%&'*+=?^`{|}~+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"
 )
+_JSON_STRING = r'"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"'
+_TEXT_FIELD = re.compile(
+    rf"(?P<key>{_JSON_STRING})(?P<separator>\s*:\s*)(?P<value>{_JSON_STRING})"
+)
+
+
+def _private(key: str) -> bool:
+    normalized = key.lower().replace("_", "").replace("-", "")
+    return normalized in _PRIVATE_KEYS or normalized.endswith(_PRIVATE_SUFFIXES)
+
+
+def _redact_field(match: re.Match[str]) -> str:
+    if _private(json.loads(match["key"])):
+        return match["key"] + match["separator"] + '"<REDACTED>"'
+    return match[0]
 
 
 class Redactor:
@@ -43,7 +67,8 @@ class Redactor:
     def _text(self, text: str) -> str:
         for path in sorted(self._paths, key=len, reverse=True):
             text = text.replace(path, self._paths[path])
-        return _EMAIL.sub("<EMAIL>", text) if "@" in text else text
+        text = _EMAIL.sub("<EMAIL>", text) if "@" in text else text
+        return _TEXT_FIELD.sub(_redact_field, text)
 
     def redact(self, value: object) -> object:
         if isinstance(value, str):
@@ -52,13 +77,9 @@ class Redactor:
             result = {}
             for key, child in value.items():
                 if isinstance(key, str):
-                    normalized = key.lower().replace("_", "").replace("-", "")
-                    private = normalized in _PRIVATE_KEYS or normalized.endswith(
-                        _PRIVATE_SUFFIXES
-                    )
                     result[self._text(key)] = (
                         "<REDACTED>"
-                        if private and isinstance(child, str)
+                        if _private(key) and isinstance(child, str)
                         else self.redact(child)
                     )
                 else:

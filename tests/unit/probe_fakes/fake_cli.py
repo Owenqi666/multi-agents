@@ -31,6 +31,12 @@ PROMPTS = {
 THREAD = "thread-from-server"
 TURN = "turn-from-server"
 BAD_MODEL = "multi-agent-probe-nonexistent-model"
+PROVIDER = "codex" if Path(sys.argv[0]).name.endswith("codex") else "claude"
+EXPECTED_STEP = SETTINGS.get(
+    "expected_step",
+    SETTINGS.get("expected_by_provider", {}).get(PROVIDER, f"{PROVIDER}-turn"),
+)
+EXPECTED_KIND = EXPECTED_STEP.removeprefix(f"{PROVIDER}-")
 
 
 def emit(value):
@@ -64,6 +70,16 @@ def inspect_workdir(kind):
     assert not (cwd / ".git").exists()
     if SETTINGS.get("workdir_report"):
         Path(SETTINGS["workdir_report"]).write_text(str(cwd))
+    if SETTINGS.get("contents_report"):
+        Path(SETTINGS["contents_report"]).write_text(
+            json.dumps(
+                {
+                    path.name: path.read_text()
+                    for path in cwd.iterdir()
+                    if path.is_file()
+                }
+            )
+        )
     if SETTINGS.get("change_files"):
         (cwd / "README.md").write_text("changed by fake")
         (cwd / "AGENTS.md").unlink()
@@ -95,6 +111,100 @@ def payloads():
         )
 
 
+def items():
+    for cursor, following in ((None, "items-page-two"), ("items-page-two", None)):
+        request = receive()
+        assert request["method"] == "thread/items/list"
+        expected = {"threadId": THREAD}
+        if cursor is not None:
+            expected["cursor"] = cursor
+        assert request["params"] == expected
+        if SETTINGS.get("items_hang"):
+            wait_forever()
+        if cursor is None and SETTINGS.get("items_delay"):
+            time.sleep(SETTINGS["items_delay"])
+        if SETTINGS.get("items_error"):
+            emit(
+                {
+                    "id": request["id"],
+                    "error": {"code": -1, "message": "fake items error"},
+                }
+            )
+            return
+        respond(request, {"data": [], "nextCursor": following})
+
+
+def late_activity():
+    if SETTINGS.get("settle_request"):
+        emit(
+            {
+                "id": "server-settle",
+                "method": "item/fileChange/requestApproval",
+                "params": {},
+            }
+        )
+        assert receive() == {"id": "server-settle", "result": {"decision": "decline"}}
+    if SETTINGS.get("late_notifications"):
+        emit(
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": THREAD,
+                    "turnId": TURN,
+                    "tokenUsage": {"total": {"inputTokens": 12}},
+                },
+            }
+        )
+        emit(
+            {
+                "method": "model/rerouted",
+                "params": {
+                    "threadId": THREAD,
+                    "turnId": TURN,
+                    "fromModel": "one",
+                    "toModel": "two",
+                    "reason": "synthetic",
+                },
+            }
+        )
+
+
+def sandbox(first):
+    for index, (command, policy) in enumerate(
+        (
+            (["cat", "README.md"], {"type": "readOnly"}),
+            (["touch", "probe-write-check.txt"], {"type": "readOnly"}),
+            (
+                ["touch", "probe-write-control.txt"],
+                {"type": "workspaceWrite", "writableRoots": [str(Path.cwd())]},
+            ),
+        )
+    ):
+        request = first if index == 0 else receive()
+        assert request["method"] == "command/exec"
+        params = request["params"]
+        assert params["command"] == command
+        assert Path(params["cwd"]).resolve() == Path.cwd().resolve()
+        actual_policy = dict(params["sandboxPolicy"])
+        if "writableRoots" in actual_policy:
+            actual_policy["writableRoots"] = [
+                str(Path(path).resolve()) for path in actual_policy["writableRoots"]
+            ]
+        assert actual_policy == policy
+        if index == SETTINGS.get("sandbox_error_at"):
+            emit(
+                {
+                    "id": request["id"],
+                    "error": {"code": -1, "message": "fake sandbox error"},
+                }
+            )
+        else:
+            respond(
+                request, {"stdout": "fake command output", "stderr": "", "exitCode": 0}
+            )
+    checked()
+
+
 def codex():
     assert sys.argv[1:] in (["--version"], ["app-server"])
     if sys.argv[1:] == ["--version"]:
@@ -116,7 +226,11 @@ def codex():
     assert initialized["method"] == "initialized"
     assert "id" not in initialized
     request = receive()
-    if request["method"] == "account/read":
+    if EXPECTED_KIND == "sandbox":
+        inspect_workdir("sandbox")
+        sandbox(request)
+    elif EXPECTED_KIND == "env":
+        assert request["method"] == "account/read"
         assert request["params"]["refreshToken"] is False
         if SETTINGS.get("env_error"):
             emit(
@@ -173,9 +287,8 @@ def codex():
         assert len(params["input"]) == 1
         assert params["input"][0]["type"] == "text"
         prompt = params["input"][0]["text"]
-        kind = next(key for key, value in PROMPTS.items() if value == prompt)
-        if params["model"] == BAD_MODEL:
-            kind = "bad-model"
+        kind = EXPECTED_KIND
+        assert prompt == PROMPTS[kind]
         expected_model = BAD_MODEL if kind == "bad-model" else SETTINGS["codex_model"]
         assert params["model"] == thread_params["model"] == expected_model
         assert params["effort"] == SETTINGS["codex_effort"]
@@ -204,12 +317,27 @@ def codex():
                 }
             )
             respond(request, {"turn": {"id": TURN}})
+            items()
+            late_activity()
             checked()
             assert sys.stdin.read() == ""
             return
         respond(request, {"turn": {"id": TURN}})
         if SETTINGS.get("exit_at") == "turn/start":
             return
+        if SETTINGS.get("foreign_completion"):
+            emit(
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": "other-thread",
+                        "turn": {"id": "other-turn", "status": "completed"},
+                    },
+                }
+            )
+            emit({"id": "after-foreign", "method": "fake/after-foreign", "params": {}})
+            answer = receive()
+            assert answer["id"] == "after-foreign" and answer["error"]["code"] == -32601
         if SETTINGS.get("approvals"):
             for index, method in enumerate(
                 (
@@ -247,29 +375,8 @@ def codex():
                 },
             }
         )
-        if SETTINGS.get("late_notifications"):
-            emit(
-                {
-                    "method": "thread/tokenUsage/updated",
-                    "params": {
-                        "threadId": THREAD,
-                        "turnId": TURN,
-                        "tokenUsage": {"total": {"inputTokens": 12}},
-                    },
-                }
-            )
-            emit(
-                {
-                    "method": "model/rerouted",
-                    "params": {
-                        "threadId": THREAD,
-                        "turnId": TURN,
-                        "fromModel": "one",
-                        "toModel": "two",
-                        "reason": "synthetic",
-                    },
-                }
-            )
+        items()
+        late_activity()
         checked()
     assert sys.stdin.read() == "", "unexpected request after conversation ended"
     if SETTINGS.get("ignore_eof"):
@@ -282,17 +389,38 @@ def claude():
         print("fake-claude 0.0", flush=True)
         return
     if argv == ["auth", "status"]:
-        emit({"loggedIn": False, "email": "probe@example.test"})
+        if SETTINGS.get("multiline_auth"):
+            print(
+                json.dumps(
+                    {
+                        "email": "probe@example.test",
+                        "orgId": "private-org-id",
+                        "orgName": 'private org "quoted" \\ path',
+                        "subscriptionType": "private-subscription",
+                        "planTier": "private-tier",
+                        "loggedIn": False,
+                        "authMethod": "oauth",
+                        "apiKeySource": "none",
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            print(
+                '  "orgName": "private first", "planTier": "private second", "authMethod": "oauth"',
+                flush=True,
+            )
+        else:
+            emit({"loggedIn": False, "email": "probe@example.test"})
+        checked()
         sys.exit(1)
     assert argv[0] == "-p"
     prompt = argv[1]
     if "special_prompt" in SETTINGS:
         assert prompt == SETTINGS["special_prompt"]
-        kind = "turn"
     else:
-        kind = next(key for key, value in PROMPTS.items() if value == prompt)
-    if argv[3] == BAD_MODEL:
-        kind = "bad-model"
+        assert prompt == PROMPTS[EXPECTED_KIND]
+    kind = EXPECTED_KIND
     expected_model = BAD_MODEL if kind == "bad-model" else SETTINGS["claude_model"]
     expected = [
         "-p",
@@ -333,6 +461,19 @@ def claude():
     if kind == "cancel":
         wait_forever()
     checked()
+    if SETTINGS.get("hold_output"):
+        child_pid = os.fork()
+        if child_pid == 0:
+            time.sleep(30)
+            os._exit(0)
+        Path(SETTINGS["holder_report"]).write_text(
+            json.dumps({"pid": child_pid, "parent_exits_at": time.monotonic()})
+        )
+        sys.stdout.write("stdout held tail without newline")
+        sys.stdout.flush()
+        sys.stderr.write("stderr held tail without newline")
+        sys.stderr.flush()
+        return
     if SETTINGS.get("unterminated_tail"):
         sys.stdout.write("stdout tail without newline")
         sys.stdout.flush()
@@ -353,6 +494,15 @@ else:
     signal.signal(signal.SIGINT, received_interrupt)
 if SETTINGS.get("pid_file"):
     Path(SETTINGS["pid_file"]).write_text(str(os.getpid()))
+
+for env_name, expected_value in SETTINGS.get("check_environment", {}).items():
+    if PROVIDER == "claude" and env_name in {
+        "ANTHROPIC_API_KEY",
+        "ANTHROPIC_AUTH_TOKEN",
+    }:
+        assert env_name not in os.environ
+    else:
+        assert os.environ.get(env_name) == expected_value
 
 if Path(sys.argv[0]).name.endswith("codex"):
     codex()

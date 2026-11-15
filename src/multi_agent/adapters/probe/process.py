@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import signal
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .recording import Recorder
 
@@ -35,7 +36,7 @@ class Process:
             asyncio.create_task(self._read_stream(child.stdout, "stdout")),
             asyncio.create_task(self._read_stream(child.stderr, "stderr")),
         ]
-        self._exit = asyncio.create_task(child.wait())
+        self._exit = asyncio.create_task(self._observe_exit())
         self._watcher = asyncio.create_task(self._watch())
 
     @classmethod
@@ -48,6 +49,7 @@ class Process:
         *,
         piped_stdin: bool = False,
         grace: float = 15,
+        env: Mapping[str, str] | None = None,
     ) -> Process:
         # Record the launch attempt before acquiring an OS process, so a failed
         # recording cannot leave an unregistered child behind.
@@ -61,6 +63,7 @@ class Process:
                 else asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=env,
             )
         )
         try:
@@ -106,40 +109,114 @@ class Process:
 
     async def _read_stream(self, reader: asyncio.StreamReader, stream: str) -> None:
         buffered = bytearray()
-        while chunk := await reader.read(65536):
-            parts = chunk.split(b"\n")
-            buffered.extend(parts[0])
-            if len(parts) > 1:
-                self._line(bytes(buffered), stream)
-                buffered.clear()
-                for line in parts[1:-1]:
+        try:
+            while chunk := await reader.read(65536):
+                parts = chunk.split(b"\n")
+                buffered.extend(parts[0])
+                if len(parts) > 1:
+                    line = bytes(buffered)
+                    buffered.clear()
                     self._line(line, stream)
-                buffered.extend(parts[-1])
-        if buffered:
-            self._line(bytes(buffered), stream)
+                    for line in parts[1:-1]:
+                        self._line(line, stream)
+                    buffered.extend(parts[-1])
+        finally:
+            # A drain deadline is not EOF, but bytes already read remain evidence.
+            if buffered:
+                self._line(bytes(buffered), stream)
+
+    async def _observe_exit(self) -> int:
+        # asyncio Process.wait() can wait for pipe EOF even after OS exit. The
+        # returncode is set by the child watcher independently of inherited pipes.
+        while self.child.returncode is None:
+            await asyncio.sleep(0.005)
+        return self.child.returncode
+
+    def _close_output_pipes(self) -> None:
+        # High-level Process exposes no pipe-close operation. Keep this CPython
+        # bridge local; closing the public transports releases inherited pipes.
+        transport = cast(asyncio.SubprocessTransport, vars(self.child)["_transport"])
+        for descriptor in (1, 2):
+            pipe = transport.get_pipe_transport(descriptor)
+            if pipe is not None:
+                pipe.close()
+
+    async def _stop_readers(self) -> None:
+        for reader in self._readers:
+            reader.cancel()
+        try:
+            results = await asyncio.gather(*self._readers, return_exceptions=True)
+            for result in results:
+                if isinstance(result, BaseException) and not isinstance(
+                    result, asyncio.CancelledError
+                ):
+                    raise result
+        finally:
+            self._close_output_pipes()
+
+    def observe(self, name: str, value: object) -> None:
+        self._recorder.emit("observation", name=name, value=value)
 
     async def _watch(self) -> int:
+        output = asyncio.gather(*self._readers)
         try:
             try:
-                await asyncio.gather(self._exit, *self._readers)
+                await asyncio.wait(
+                    (self._exit, output), return_when=asyncio.FIRST_COMPLETED
+                )
+                if output.done():
+                    await output
+                returncode = await self.wait_exited()
+                _, pending = await asyncio.wait((output,), timeout=self._grace)
+                if pending:
+                    await self._stop_readers()
+                    self.observe("output_not_closed", self.name)
+                else:
+                    await output
             except Exception:
                 # A failed reader must wake consumers and still release the child.
                 try:
                     await self._stop_child(self._grace)
                 finally:
-                    await asyncio.gather(*self._readers, return_exceptions=True)
+                    await self._stop_readers()
                 raise
-            returncode = self._exit.result()
             self._recorder.emit("exit", proc=self.name, returncode=returncode)
             return returncode
         finally:
+            await asyncio.gather(output, return_exceptions=True)
             self._stdout.put_nowait(None)
 
     async def read(self) -> dict[str, Any] | str | None:
-        value = await self._stdout.get()
+        if not self._stdout.empty():
+            value = self._stdout.get_nowait()
+        elif self._watcher.done():
+            await self.wait()
+            return None
+        elif self.child.returncode is not None:
+            return None
+        else:
+            incoming = asyncio.create_task(self._stdout.get())
+            try:
+                done, _ = await asyncio.wait(
+                    (incoming, self._exit, self._watcher),
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if incoming in done:
+                    value = incoming.result()
+                else:
+                    if self._watcher in done:
+                        await self.wait()
+                    return None
+            finally:
+                incoming.cancel()
+                await asyncio.gather(incoming, return_exceptions=True)
         if value is None:
             await self.wait()
         return value
+
+    async def wait_exited(self) -> int:
+        """Wait for the OS child only; bounded output draining continues separately."""
+        return await asyncio.shield(self._exit)
 
     async def wait(self) -> int:
         return await asyncio.shield(self._watcher)
@@ -175,11 +252,10 @@ class Process:
         return True
 
     async def wait_for_exit(self, seconds: float) -> bool:
-        if self._watcher.done():
-            await self.wait()
+        if self.child.returncode is not None:
             return True
         try:
-            await asyncio.wait_for(self.wait(), seconds)
+            await asyncio.wait_for(self.wait_exited(), seconds)
         except TimeoutError:
             return False
         return True

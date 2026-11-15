@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import json
+import os
 import signal
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -14,6 +15,8 @@ from .codex import Conversation
 from .config import Options, claude_argv
 from .process import Process, SpawnFailed
 from .recording import Recorder, Redactor
+
+CLAUDE_CREDENTIAL_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
 
 
 def _snapshot(directory: Path) -> dict[str, str]:
@@ -28,7 +31,7 @@ async def _claude_cancel(process: Process, options: Options) -> bool:
     first_line = await process.read()
     if first_line is None:
         return False
-    waiting = asyncio.create_task(process.wait())
+    waiting = asyncio.create_task(process.wait_exited())
     try:
         done, _ = await asyncio.wait({waiting}, timeout=options.cancel_after)
         if done or process.child.returncode is not None:
@@ -50,6 +53,13 @@ async def run_step(
         cwd = Path(temporary)
         redactor.add_workdir(cwd)
         with Recorder(output_dir / filename, redactor) as recorder:
+            environment: dict[str, str] | None = None
+            if name.startswith("claude-"):
+                environment = dict(os.environ)
+                removed = [key for key in CLAUDE_CREDENTIAL_VARS if key in environment]
+                for key in removed:
+                    del environment[key]
+                recorder.emit("observation", name="env_removed", value=removed)
             marker = uuid4().hex
             (cwd / "README.md").write_text(f"Read marker: {marker}\n", encoding="utf-8")
             recorder.emit("observation", name="read_marker", value=marker)
@@ -69,7 +79,13 @@ async def run_step(
                 proc: str, argv: list[str], *, pipe: bool = False
             ) -> Process:
                 process = await Process.start(
-                    proc, argv, cwd, recorder, piped_stdin=pipe, grace=options.grace
+                    proc,
+                    argv,
+                    cwd,
+                    recorder,
+                    piped_stdin=pipe,
+                    grace=options.grace,
+                    env=environment,
                 )
                 processes.append(process)
                 return process
@@ -77,12 +93,26 @@ async def run_step(
             outcome = "finished"
             try:
                 # Preparation above is filesystem-only; this clock starts at launch.
-                async with asyncio.timeout(options.step_timeout):
+                async with asyncio.timeout(options.step_timeout) as deadline:
+
+                    async def drain_exited(process: Process) -> None:
+                        await process.wait_exited()
+                        when = deadline.when()
+                        deadline.reschedule(None)
+                        started = asyncio.get_running_loop().time()
+                        try:
+                            await process.wait()
+                        finally:
+                            if when is not None:
+                                deadline.reschedule(
+                                    when + asyncio.get_running_loop().time() - started
+                                )
+
                     if name == "codex-env":
                         version_process = await spawn(
                             "version", [options.codex_bin, "--version"]
                         )
-                        await version_process.wait()
+                        await drain_exited(version_process)
                         processes.clear()
                     if name.startswith("codex-"):
                         process = await spawn(
@@ -96,7 +126,7 @@ async def run_step(
                             ("auth-status", ["auth", "status"]),
                         ):
                             process = await spawn(proc, [options.claude_bin, *args])
-                            await process.wait()
+                            await drain_exited(process)
                             processes.clear()
                         cancelled = False
                     else:
@@ -104,9 +134,9 @@ async def run_step(
                         if name == "claude-cancel":
                             cancelled = await _claude_cancel(process, options)
                         else:
-                            await process.wait()
+                            await process.wait_exited()
                             cancelled = False
-                    if name.endswith("-cancel") and not cancelled:
+                    if name == "claude-cancel" and not cancelled:
                         recorder.emit("observation", name="cancel_skipped", value=True)
             except TimeoutError:
                 outcome = "timed_out"

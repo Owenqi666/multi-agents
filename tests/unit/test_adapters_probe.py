@@ -3,11 +3,13 @@ import json
 import os
 import signal
 import sys
-from dataclasses import replace
+import time
+from dataclasses import asdict, replace
 from pathlib import Path
 
 import pytest
 
+from multi_agent.adapters.probe import cli
 from multi_agent.adapters.probe.cli import main
 from multi_agent.adapters.probe.config import Options, claude_argv
 from multi_agent.adapters.probe.recording import Recorder, Redactor
@@ -16,7 +18,7 @@ from multi_agent.adapters.probe.runner import run_step
 KINDS = ("env", "turn", "structured", "readonly", "cancel", "bad-model")
 STEPS = tuple(
     f"{provider}-{kind}" for provider in ("codex", "claude") for kind in KINDS
-)
+) + ("codex-sandbox",)
 FAKE_SOURCE = Path(__file__).parent / "probe_fakes" / "fake_cli.py"
 
 
@@ -79,7 +81,14 @@ def read_records(path):
 def run_one(tmp_path, options, step):
     directory = tmp_path / step
     directory.mkdir()
-    result = asyncio.run(run_step(step, options, directory, Redactor()))
+    previous = os.environ["MULTI_AGENT_PROBE_FAKE"]
+    settings = json.loads(previous)
+    settings["expected_step"] = step
+    os.environ["MULTI_AGENT_PROBE_FAKE"] = json.dumps(settings)
+    try:
+        result = asyncio.run(run_step(step, options, directory, Redactor()))
+    finally:
+        os.environ["MULTI_AGENT_PROBE_FAKE"] = previous
     records = read_records(directory / f"{step}.jsonl")
     assert result["name"] == step
     assert result["file"] == f"{step}.jsonl"
@@ -162,7 +171,7 @@ def test_cli_validation_precedes_all_side_effects(
         for name in STEPS:
             assert sum(name in line for line in lines) == 1
         assert len([line for line in lines if "requests_model=yes" in line]) == 10
-        assert len([line for line in lines if "requests_model=no" in line]) == 2
+        assert len([line for line in lines if "requests_model=no" in line]) == 3
 
 
 @pytest.mark.parametrize("step", STEPS)
@@ -536,7 +545,12 @@ def test_signal_recording_error_still_reaps_and_drains(
     setup_fake, tmp_path, monkeypatch
 ):
     pid_file = tmp_path / "pid"
-    options = setup_fake(ignore_int=True, ignore_term=True, pid_file=str(pid_file))
+    options = setup_fake(
+        ignore_int=True,
+        ignore_term=True,
+        pid_file=str(pid_file),
+        expected_step="claude-cancel",
+    )
     directory = tmp_path / "records"
     directory.mkdir()
     emit = Recorder.emit
@@ -673,3 +687,388 @@ def test_summary_and_recordings_are_redacted_before_delivery(setup_fake, tmp_pat
     assert report["outputTokens"] == 5
     assert report["threadId"] == "thread-from-server"
     assert report["session_id"] == "session-from-fake"
+
+
+def test_output_drain_has_its_own_deadline_and_preserves_unterminated_tails(
+    setup_fake, tmp_path
+):
+    holder_report = tmp_path / "holder.json"
+    options = replace(
+        setup_fake(hold_output=True, holder_report=str(holder_report)),
+        step_timeout=1,
+        grace=1.5,
+    )
+    directory = tmp_path / "records"
+    directory.mkdir()
+
+    def kill_holder():
+        if holder_report.exists():
+            try:
+                os.kill(json.loads(holder_report.read_text())["pid"], signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
+    async def run():
+        task = asyncio.create_task(
+            run_step("claude-turn", options, directory, Redactor())
+        )
+        try:
+            async with asyncio.timeout(4):
+                return await asyncio.shield(task)
+        finally:
+            if not task.done():
+                kill_holder()
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+    try:
+        result = asyncio.run(run())
+        holder = json.loads(holder_report.read_text())
+        elapsed = time.monotonic() - holder["parent_exits_at"]
+        assert options.grace * 0.8 <= elapsed < options.grace + 1.5
+        os.kill(holder["pid"], 0)
+        records = read_records(directory / "claude-turn.jsonl")
+        assert result["outcome"] == "finished"
+        assert not any(record["kind"] == "timeout" for record in records)
+        tails = [
+            record
+            for record in records
+            if "held tail without newline" in record.get("text", "")
+        ]
+        assert {record["text"] for record in tails} == {
+            "stdout held tail without newline",
+            "stderr held tail without newline",
+        }
+        (cutoff,) = [
+            record for record in records if record.get("name") == "output_not_closed"
+        ]
+        (exited,) = [record for record in records if record["kind"] == "exit"]
+        assert cutoff["value"] == "claude"
+        assert max(record["seq"] for record in tails) < cutoff["seq"] < exited["seq"]
+        assert exited["returncode"] == 0
+    finally:
+        kill_holder()
+
+
+def test_multiline_auth_json_redacts_whole_escaped_values(setup_fake, tmp_path):
+    result, records = run_one(tmp_path, setup_fake(multiline_auth=True), "claude-env")
+    assert result["outcome"] == "finished"
+    lines = [
+        record["text"]
+        for record in records
+        if record.get("proc") == "auth-status" and "text" in record
+    ]
+    text = "\n".join(lines)
+    for key in ("email", "orgId", "orgName", "subscriptionType", "planTier"):
+        assert f'"{key}": "<REDACTED>"' in text
+    assert "private" not in text
+    assert "probe@example.test" not in text
+    assert '"loggedIn": false' in text
+    assert '"authMethod": "oauth"' in text
+    assert '"apiKeySource": "none"' in text
+    assert (
+        '  "orgName": "<REDACTED>", "planTier": "<REDACTED>", "authMethod": "oauth"'
+        in lines
+    )
+
+
+@pytest.mark.parametrize(
+    "present",
+    [
+        (),
+        ("ANTHROPIC_API_KEY",),
+        ("ANTHROPIC_AUTH_TOKEN",),
+        ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
+    ],
+)
+def test_claude_removes_only_auth_overrides_and_codex_preserves_them(
+    present, setup_fake, monkeypatch
+):
+    values = {name: f"private-{name.lower()}-value" for name in present}
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("MULTI_AGENT_PROBE_KEEP", "keep-me")
+    options = setup_fake(
+        check_environment=values | {"MULTI_AGENT_PROBE_KEEP": "keep-me"},
+        expected_by_provider={"claude": "claude-env", "codex": "codex-env"},
+    )
+    assert invoke(cli_args(options, ["claude-env", "codex-env"])) == 0
+    (directory,) = options.out.iterdir()
+    claude_records = read_records(directory / "claude-env.jsonl")
+    codex_records = read_records(directory / "codex-env.jsonl")
+    removed = [
+        record["value"]
+        for record in claude_records
+        if record.get("name") == "env_removed"
+    ]
+    assert len(removed) == 1 and set(removed[0]) == set(present)
+    assert not any(record.get("name") == "env_removed" for record in codex_records)
+    checked(claude_records)
+    checked(codex_records)
+    assert [
+        record["returncode"] for record in claude_records if record["kind"] == "exit"
+    ] == [0, 1]
+    recorded = "".join(path.read_text() for path in directory.iterdir())
+    for value in values.values():
+        assert value not in recorded
+
+
+@pytest.mark.parametrize("error_at", [None, 0, 1])
+def test_codex_sandbox_sends_all_three_commands_without_a_turn(
+    error_at, setup_fake, tmp_path
+):
+    result, records = run_one(
+        tmp_path, setup_fake(sandbox_error_at=error_at), "codex-sandbox"
+    )
+    assert result["outcome"] == "finished"
+    checked(records)
+    requests = messages(records, "send")
+    assert [request["method"] for request in requests] == [
+        "initialize",
+        "initialized",
+        "command/exec",
+        "command/exec",
+        "command/exec",
+    ]
+    commands = [
+        request["params"] for request in requests if request["method"] == "command/exec"
+    ]
+    assert [command["command"] for command in commands] == [
+        ["cat", "README.md"],
+        ["touch", "probe-write-check.txt"],
+        ["touch", "probe-write-control.txt"],
+    ]
+    assert (
+        commands[0]["sandboxPolicy"]
+        == commands[1]["sandboxPolicy"]
+        == {"type": "readOnly"}
+    )
+    assert commands[2]["sandboxPolicy"] == {
+        "type": "workspaceWrite",
+        "writableRoots": ["<WORKDIR>"],
+    }
+
+
+@pytest.mark.parametrize("items_error", [False, True])
+def test_codex_items_pages_finish_before_settle_and_stdin_close(
+    items_error, setup_fake, tmp_path
+):
+    options = replace(setup_fake(items_error=items_error, items_delay=0.15), settle=0.1)
+    result, records = run_one(tmp_path, options, "codex-turn")
+    assert result["outcome"] == "finished"
+    checked(records)
+    requests = [
+        record
+        for record in records
+        if record.get("message", {}).get("method") == "thread/items/list"
+    ]
+    assert [record["message"]["params"] for record in requests] == (
+        [{"threadId": "thread-from-server"}]
+        if items_error
+        else [
+            {"threadId": "thread-from-server"},
+            {"threadId": "thread-from-server", "cursor": "items-page-two"},
+        ]
+    )
+    completed = next(
+        record
+        for record in records
+        if record.get("message", {}).get("method") == "turn/completed"
+    )
+    response = next(
+        record
+        for record in records
+        if record["kind"] == "recv"
+        and record.get("message", {}).get("id") == requests[-1]["message"]["id"]
+    )
+    closed = next(record for record in records if record["kind"] == "stdin_closed")
+    assert completed["seq"] < requests[0]["seq"] < response["seq"] < closed["seq"]
+    assert closed["t"] - response["t"] >= options.settle * 0.8
+
+
+@pytest.mark.parametrize("early", [False, True])
+def test_items_delay_does_not_extend_cancellation_wait(early, setup_fake, tmp_path):
+    options = replace(
+        setup_fake(items_delay=0.4, complete_before_response=early), grace=0.15
+    )
+    result, records = run_one(tmp_path, options, "codex-cancel")
+    assert result["outcome"] == "finished"
+    checked(records)
+    assert not any(record["kind"] == "timeout" for record in records)
+    assert sum(
+        message.get("method") == "turn/interrupt"
+        for message in messages(records, "send")
+    ) == (0 if early else 1)
+    assert any(record.get("name") == "cancel_skipped" for record in records) is early
+
+
+def test_items_without_response_use_step_timeout(setup_fake, tmp_path):
+    options = replace(
+        setup_fake(items_hang=True, complete_before_response=True),
+        step_timeout=0.8,
+        grace=0.1,
+    )
+    result, records = run_one(tmp_path, options, "codex-cancel")
+    assert result["outcome"] == "timed_out"
+    (timeout,) = [record for record in records if record["kind"] == "timeout"]
+    spawned = next(record for record in records if record["kind"] == "spawn")
+    assert 0.7 <= timeout["t"] - spawned["t"] < 1.8
+    assert any(
+        message.get("method") == "thread/items/list"
+        for message in messages(records, "send")
+    )
+    assert not any(
+        message.get("method") == "turn/interrupt"
+        for message in messages(records, "send")
+    )
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_bad_model_is_checked_against_independent_step_expectation(
+    provider, setup_fake, tmp_path
+):
+    result, records = run_one(tmp_path, setup_fake(), f"{provider}-bad-model")
+    assert result["outcome"] == "finished"
+    checked(records)
+    assert all(
+        record["returncode"] == 0 for record in records if record["kind"] == "exit"
+    )
+
+
+def test_foreign_thread_completion_does_not_end_turn(setup_fake, tmp_path):
+    result, records = run_one(
+        tmp_path, setup_fake(foreign_completion=True), "codex-turn"
+    )
+    assert result["outcome"] == "finished"
+    checked(records)
+    foreign = next(
+        record
+        for record in records
+        if record.get("message", {}).get("method") == "turn/completed"
+        and record["message"]["params"]["threadId"] == "other-thread"
+    )
+    own = next(
+        record
+        for record in records
+        if record.get("message", {}).get("method") == "turn/completed"
+        and record["message"]["params"]["threadId"] == "thread-from-server"
+    )
+    item_request = next(
+        record
+        for record in records
+        if record.get("message", {}).get("method") == "thread/items/list"
+    )
+    assert foreign["seq"] < own["seq"] < item_request["seq"]
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_cancel_timeout_uses_grace_instead_of_step_timeout(
+    provider, setup_fake, tmp_path
+):
+    options = replace(
+        setup_fake(cancel_mode="hang", ignore_int=True), step_timeout=4, grace=0.15
+    )
+    result, records = run_one(tmp_path, options, f"{provider}-cancel")
+    assert result["outcome"] == "timed_out"
+    cancellation = next(
+        record
+        for record in records
+        if record.get("name") == "SIGINT"
+        or record.get("message", {}).get("method") == "turn/interrupt"
+    )
+    (timeout,) = [record for record in records if record["kind"] == "timeout"]
+    elapsed = timeout["t"] - cancellation["t"]
+    assert options.grace * 0.8 <= elapsed < options.grace + 0.75
+
+
+def test_settle_records_notifications_and_answers_server_requests_before_close(
+    setup_fake, tmp_path
+):
+    result, records = run_one(
+        tmp_path, setup_fake(settle_request=True, late_notifications=True), "codex-turn"
+    )
+    assert result["outcome"] == "finished"
+    checked(records)
+    closed = next(
+        record["seq"] for record in records if record["kind"] == "stdin_closed"
+    )
+    answer = next(
+        record
+        for record in records
+        if record["kind"] == "send"
+        and record.get("message", {}).get("id") == "server-settle"
+    )
+    assert answer["message"]["result"] == {"decision": "decline"}
+    for method in ("thread/tokenUsage/updated", "model/rerouted"):
+        notice = next(
+            record
+            for record in records
+            if record.get("message", {}).get("method") == method
+        )
+        assert answer["seq"] < notice["seq"] < closed
+
+
+def test_recorded_markers_match_actual_workdir_file_contents(setup_fake, tmp_path):
+    contents = tmp_path / "contents.json"
+    result, records = run_one(
+        tmp_path, setup_fake(contents_report=str(contents)), "codex-readonly"
+    )
+    assert result["outcome"] == "finished"
+    checked(records)
+    files = json.loads(contents.read_text())
+    marker = next(
+        record["value"] for record in records if record.get("name") == "read_marker"
+    )
+    canary = next(
+        record["value"] for record in records if record.get("name") == "canary"
+    )
+    assert marker in files["README.md"]
+    assert canary in files["AGENTS.md"] and canary in files["CLAUDE.md"]
+
+
+def test_codex_env_runs_version_before_app_server(setup_fake, tmp_path):
+    result, records = run_one(tmp_path, setup_fake(), "codex-env")
+    assert result["outcome"] == "finished"
+    checked(records)
+    launches = [record for record in records if record["kind"] == "spawn"]
+    assert [record["proc"] for record in launches] == ["version", "app-server"]
+    assert launches[0]["argv"][1:] == ["--version"]
+    version_exit = next(
+        record
+        for record in records
+        if record["kind"] == "exit" and record["proc"] == "version"
+    )
+    assert version_exit["seq"] < launches[1]["seq"]
+    assert any(record.get("text") == "fake-codex 0.0" for record in records)
+
+
+def test_cli_passes_the_documented_defaults_to_runner(monkeypatch):
+    captured = []
+
+    async def capture(steps, options):
+        captured.append((steps, asdict(options)))
+        return 0
+
+    monkeypatch.setattr(cli, "run", capture)
+    assert main(["codex-turn"]) == 0
+    assert captured == [
+        (
+            ["codex-turn"],
+            {
+                "out": Path("probe-runs"),
+                "codex_bin": "codex",
+                "claude_bin": "claude",
+                "codex_model": "gpt-6.1-sol",
+                "codex_effort": "high",
+                "claude_model": "claude-opus-5-5",
+                "claude_effort": "high",
+                "claude_session_args": None,
+                "step_timeout": 180,
+                "cancel_after": 3,
+                "settle": 1,
+                "grace": 15,
+            },
+        )
+    ]

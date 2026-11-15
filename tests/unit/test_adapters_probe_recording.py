@@ -53,6 +53,55 @@ def test_redaction_preserves_counters_identifiers_and_unknown_fields(
     assert Redactor(home=tmp_path / "home").redact(data) == data
 
 
+@pytest.mark.parametrize(
+    "key",
+    ["chatgptAccountId", "installationId", "serverName", "planTier", "balance"],
+)
+def test_redaction_masks_live_identifiers_without_changing_numbers(key: str) -> None:
+    redactor = Redactor()
+    assert redactor.redact({key: "private-value"}) == {key: "<REDACTED>"}
+    assert redactor.redact({key: 42}) == {key: 42}
+
+
+def test_redaction_preserves_probe_correlation_ids() -> None:
+    data = {
+        key: f"value-{key}"
+        for key in (
+            "tool_use_id",
+            "session_id",
+            "threadId",
+            "turnId",
+            "request_id",
+            "environmentId",
+        )
+    }
+    data.update({"inputTokens": 5, "outputTokens": 3})
+    assert Redactor().redact(data) == data
+
+
+@pytest.mark.parametrize(
+    "private_value", ['quote: " then tail', r"path\and\tail", 'both \\" tail']
+)
+def test_text_redaction_handles_json_escapes_and_multiple_fields(
+    private_value: str,
+) -> None:
+    value = json.dumps(private_value)
+    text = f'  "orgName" : {value}, "planTier": "private-tier", "authMethod":"oauth",'
+    assert Redactor().redact(text) == (
+        '  "orgName" : "<REDACTED>", "planTier": "<REDACTED>", "authMethod":"oauth",'
+    )
+
+
+def test_text_redaction_keeps_unmatched_values_and_non_strings() -> None:
+    line = (
+        '"balance": 12, "loggedIn": true, "apiKeySource": "none", "request_id": "req-1"'
+    )
+    assert Redactor().redact(line) == line
+    assert (
+        Redactor().redact(r'"org\u0049d": "private"') == r'"org\u0049d": "<REDACTED>"'
+    )
+
+
 def test_redaction_replaces_path_aliases_and_emails_in_keys_and_values(
     tmp_path: Path,
 ) -> None:

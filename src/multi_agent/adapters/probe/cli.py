@@ -5,7 +5,7 @@ import asyncio
 import math
 from pathlib import Path
 
-from .config import STEPS, Options
+from .config import NON_MODEL_STEPS, STEPS, Options
 from .runner import run
 
 
@@ -43,7 +43,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_steps:
         for name in STEPS:
             print(
-                f"{name} provider={name.split('-', 1)[0]} requests_model={'no' if name.endswith('-env') else 'yes'}"
+                f"{name} provider={name.split('-', 1)[0]} requests_model={'no' if name in NON_MODEL_STEPS else 'yes'}"
             )
         return 0
     if not args.steps:

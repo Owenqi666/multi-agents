@@ -4,11 +4,13 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-STEPS = tuple(
+STEPS = ("codex-env", "codex-sandbox") + tuple(
     f"{provider}-{step}"
     for provider in ("codex", "claude")
     for step in ("env", "turn", "structured", "readonly", "cancel", "bad-model")
+    if (provider, step) != ("codex", "env")
 )
+NON_MODEL_STEPS = frozenset(("codex-env", "codex-sandbox", "claude-env"))
 PROMPTS = {
     "turn": "Reply with exactly: OK",
     "bad-model": "Reply with exactly: OK",
