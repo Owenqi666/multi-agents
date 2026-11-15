@@ -12,6 +12,7 @@ import pytest
 from multi_agent.adapters.probe import cli
 from multi_agent.adapters.probe.cli import main
 from multi_agent.adapters.probe.config import Options, claude_argv
+from multi_agent.adapters.probe.process import Process
 from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.probe.runner import run_step
 
@@ -613,11 +614,20 @@ def test_cancellation_during_spawn_reaps_created_child(
     asyncio.run(run())
 
 
-def test_cancellation_during_termination_still_kills_and_reaps(setup_fake, tmp_path):
+def assert_cancellation_during_termination(
+    setup_fake, tmp_path, monkeypatch, *, startup_delay
+):
     pid_file = tmp_path / "pid"
     options = replace(
-        setup_fake(hang_at="claude", ignore_term=True, pid_file=str(pid_file)),
-        step_timeout=0.3,
+        setup_fake(
+            hang_at="claude",
+            ignore_term=True,
+            pid_file=str(pid_file),
+            startup_delay=startup_delay,
+        ),
+        # The outer synchronization budget expires first. Cleanup is triggered
+        # by readiness below, never by a deadline racing interpreter startup.
+        step_timeout=30,
         grace=0.3,
     )
     directory = tmp_path / "records"
@@ -625,42 +635,159 @@ def test_cancellation_during_termination_still_kills_and_reaps(setup_fake, tmp_p
     log = directory / "claude-turn.jsonl"
 
     async def run():
+        ready = asyncio.Event()
+        validated_ready = asyncio.Event()
+        owned = []
+        cancellations = []
+        fallback_kills = []
+        original_start = Process.start
+        original_wait_exited = Process.wait_exited
+        original_signal = Process.signal
+        original_emit = Recorder.emit
+
+        async def capture_start(cls, *args, **kwargs):
+            process = await original_start(*args, **kwargs)
+            owned.append(process)
+            return process
+
+        def observe_ready(recorder, kind, **fields):
+            original_emit(recorder, kind, **fields)
+            if kind == "recv" and fields.get("message") == {"fake": "ready"}:
+                ready.set()
+
+        async def trigger_cleanup_after_ready(process):
+            if asyncio.current_task() is task:
+                # Only replace run_step's initial wait with a controlled trigger.
+                # Watchers and termination still await the actual OS process.
+                await ready.wait()
+                assert owned == [process]
+                assert int(pid_file.read_text()) == process.child.pid, (
+                    "PID file does not identify the owned child"
+                )
+                assert process.child.returncode is None
+                validated_ready.set()
+                raise TimeoutError("test cleanup trigger after fake ready")
+            return await original_wait_exited(process)
+
+        def cancel_after_term(process, signum):
+            sent = original_signal(process, signum)
+            if (
+                sent
+                and signum == signal.SIGTERM
+                and validated_ready.is_set()
+                and process in owned
+                and not cancellations
+            ):
+                # signal() has already sent and recorded SIGTERM. The cleanup
+                # task now owns the grace/KILL path; cancel its waiting caller
+                # synchronously rather than racing a polling coroutine.
+                cancellations.append(task.cancel())
+            return sent
+
+        monkeypatch.setattr(Process, "start", classmethod(capture_start))
+        monkeypatch.setattr(Recorder, "emit", observe_ready)
+        monkeypatch.setattr(Process, "wait_exited", trigger_cleanup_after_ready)
+        monkeypatch.setattr(Process, "signal", cancel_after_term)
         task = asyncio.create_task(
             run_step("claude-turn", options, directory, Redactor())
         )
         try:
-            async with asyncio.timeout(3):
-                while not log.exists() or not any(
-                    record.get("name") == "SIGTERM" for record in read_records(log)
-                ):
-                    await asyncio.sleep(0.01)
-                task.cancel()
+            async with asyncio.timeout(5):
                 with pytest.raises(asyncio.CancelledError):
-                    await task
+                    await asyncio.shield(task)
+            assert cancellations == [True]
+            assert validated_ready.is_set()
+            assert len(owned) == 1
+            assert owned[0].child.returncode == -signal.SIGKILL
         finally:
+            # Restore real waits/signals before failure cleanup. A missing ready
+            # or PID file must not prevent us from killing/reaping our own child.
+            monkeypatch.setattr(Process, "wait_exited", original_wait_exited)
+            monkeypatch.setattr(Process, "signal", original_signal)
+            monkeypatch.setattr(Recorder, "emit", original_emit)
             if not task.done():
                 task.cancel()
+            for process in owned:
+                if process.child.returncode is None:
+                    try:
+                        process.child.kill()
+                        fallback_kills.append(process.child.pid)
+                    except ProcessLookupError:
+                        pass
+            async with asyncio.timeout(3):
                 await asyncio.gather(task, return_exceptions=True)
+                await asyncio.gather(
+                    *(process.wait() for process in owned), return_exceptions=True
+                )
+        assert not fallback_kills, "emergency cleanup must not count as test success"
 
-    try:
-        asyncio.run(run())
-        with pytest.raises(ProcessLookupError):
-            os.kill(int(pid_file.read_text()), 0)
-        records = read_records(log)
-        assert [record["name"] for record in records if record["kind"] == "signal"] == [
-            "SIGTERM",
-            "SIGKILL",
-        ]
-        assert any(
-            record["kind"] == "exit" and record["returncode"] == -signal.SIGKILL
-            for record in records
+    asyncio.run(run())
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
+    records = read_records(log)
+    (ready_record,) = [
+        record for record in records if record.get("message") == {"fake": "ready"}
+    ]
+    (timeout_record,) = [record for record in records if record["kind"] == "timeout"]
+    signals = [record for record in records if record["kind"] == "signal"]
+    assert [record["name"] for record in signals] == ["SIGTERM", "SIGKILL"]
+    (exited,) = [record for record in records if record["kind"] == "exit"]
+    assert exited["returncode"] == -signal.SIGKILL
+    assert ready_record["t"] >= startup_delay
+    assert (
+        ready_record["seq"]
+        < timeout_record["seq"]
+        < signals[0]["seq"]
+        < signals[1]["seq"]
+        < exited["seq"]
+    )
+
+
+def test_cancellation_during_termination_still_kills_and_reaps(
+    setup_fake, tmp_path, monkeypatch
+):
+    assert_cancellation_during_termination(
+        setup_fake, tmp_path, monkeypatch, startup_delay=0
+    )
+
+
+def test_cancellation_during_termination_after_slow_start_still_kills_and_reaps(
+    setup_fake, tmp_path, monkeypatch
+):
+    assert_cancellation_during_termination(
+        setup_fake, tmp_path, monkeypatch, startup_delay=0.5
+    )
+
+
+def test_invalid_ready_pid_is_not_masked_by_cleanup_cancellation(
+    setup_fake, tmp_path, monkeypatch
+):
+    original_read = Path.read_text
+    pid_file = tmp_path / "pid"
+
+    def wrong_pid(path, *args, **kwargs):
+        if path == pid_file:
+            return "0"
+        return original_read(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "read_text", wrong_pid)
+    with pytest.raises(AssertionError, match="PID file does not identify"):
+        assert_cancellation_during_termination(
+            setup_fake, tmp_path, monkeypatch, startup_delay=0
         )
-    finally:
-        if pid_file.exists():
-            try:
-                os.kill(int(pid_file.read_text()), signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+    # A readiness validation failure stays visible and cleanup still targets
+    # the actual child handle, never the deliberately incorrect PID read.
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(original_read(pid_file)), 0)
+    records = read_records(tmp_path / "records" / "claude-turn.jsonl")
+    assert [record["name"] for record in records if record["kind"] == "signal"] == [
+        "SIGTERM",
+        "SIGKILL",
+    ]
+    assert any(
+        record["kind"] == "exit" and record["returncode"] == -signal.SIGKILL
+        for record in records
+    )
 
 
 def test_summary_and_recordings_are_redacted_before_delivery(setup_fake, tmp_path):

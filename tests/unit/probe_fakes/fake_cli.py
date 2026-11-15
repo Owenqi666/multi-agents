@@ -486,6 +486,12 @@ def received_interrupt(signum, frame):
     sys.exit(0)
 
 
+# Reproduce slow interpreter startup before signal handlers, PID evidence, or
+# readiness exist; tests must synchronize on readiness instead of spawn time.
+startup_delay = SETTINGS.get("startup_delay", 0)
+if startup_delay:
+    time.sleep(startup_delay)
+
 if SETTINGS.get("ignore_term"):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
 if SETTINGS.get("ignore_int"):
