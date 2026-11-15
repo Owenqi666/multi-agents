@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0022",
   "goal": "在测试同步与Codex隔离修复独立提交后，补跑受影响的阶段1真实验收，并将可复核证据交原窗口审核。",
-  "baseline_commit": "875e17da3888deb388ae3ad316e5baffa843f4de",
+  "baseline_commit": "adbf4928b057769bc62b7b0a51c5a248e0e236b7",
   "write_scope": [
     "docs/acceptance/phase-one-live-recheck.md",
     "docs/deliveries/T-0022.md",
@@ -13,16 +13,17 @@
   ],
   "depends_on": [
     "T-0020",
-    "T-0021"
+    "T-0021",
+    "T-0023"
   ],
   "interface_contracts": [
     {
       "name": "authorization and dispatch",
-      "definition": "用户原文：把 Codex 上下文隔离和测试启动同步问题分别建卡，发给阶段1窗口修复，补齐回归测试，完整运行 verify 后各自提交；再补跑受影响的实机验收，结果交回本窗口审核。用户已授权阶段1窗口真实请求与回报，无需再次确认旧的本人终端限制。两个修复已独立提交并经原窗口复核：T20=97aa33586215180bad948667b308c4053a8a69a9，T21=875e17da3888deb388ae3ad316e5baffa843f4de；各自完整verify与全新检出检查通过。本卡基线已重定到实际修复HEAD，可正式派发。"
+      "definition": "用户原文：把 Codex 上下文隔离和测试启动同步问题分别建卡，发给阶段1窗口修复，补齐回归测试，完整运行 verify 后各自提交；再补跑受影响的实机验收，结果交回本窗口审核。用户已授权阶段1窗口真实请求与回报，无需再次确认旧的本人终端限制。T20=97aa33586215180bad948667b308c4053a8a69a9、T21=875e17da3888deb388ae3ad316e5baffa843f4de已独立提交并通过原窗口复核；T22准备中发现预检清理证据缺口，按补充卡T23修复，提交adbf4928b057769bc62b7b0a51c5a248e0e236b7。本卡已重定到该最终产品基线，待原窗口核验T23精确候选完整verify后正式恢复。"
     },
     {
       "name": "preserved evidence and fixed candidate",
-      "definition": "固定修复后的完整产品SHA，保存CLI版本、请求配置、实际报告值和权限配置来源。使用新的仓库外持久验收根 /Users/owen/Desktop/Multi-agent-acceptance/T-0022/，不改写T-0019已封存的389文件与原报告。可从T19稳定DB复制冻结快照到新数据库或以已有正式接口导入，保留原snapshot/manifest/prompt与可见输入绑定；新轮次用新ID，不把旧报告替换成新结果。源码不改；发现缺陷回原窗口另行处理。"
+      "definition": "固定修复后的完整产品SHA，保存CLI版本、请求配置、实际报告值和权限配置来源。使用新的仓库外持久验收根 /Users/owen/Desktop/Multi-agent-acceptance/T-0022/，不改写T-0019已封存的389文件与原报告。可从T19稳定DB复制冻结快照到新数据库或以已有正式接口导入，保留原snapshot/manifest/prompt与可见输入绑定；新轮次用新ID，不把旧报告替换成新结果。源码不改；发现缺陷回原窗口另行处理。 T22先前准备绑定875e17da，模型请求为0；其gate/source-audit保留原SHA与记录，不改写。最终候选在新子目录重新执行无模型gate并核对源码绑定；刷新Claude旧成功报告复用审计，逐项说明T23只改变异常启动/收尾分支而未改变这八份成功运行的请求、上下文和报告处理。最终模型复验期间产品路径固定不变。"
     },
     {
       "name": "isolation gate",
@@ -42,7 +43,7 @@
     },
     {
       "name": "delivery and verification",
-      "definition": "完整scripts/verify.sh在固定修复候选运行并记录新计数/退出码，T20慢启动与错误PID回归必须实际执行。收集argv/原始事件/DB/输入/脚本/时间/用量/取消与退出/哈希清单，秘密不进仓库。仅文档更新当前结论与有证据支持的协议事实，保留T19历史。任务完成与阶段1整体通过区分；文档单独提交后阶段1窗口向原窗口回报接受独立审查。"
+      "definition": "完整scripts/verify.sh在固定修复候选运行并记录新计数/退出码，T20慢启动与错误PID回归必须实际执行。收集argv/原始事件/DB/输入/脚本/时间/用量/取消与退出/哈希清单，秘密不进仓库。仅文档更新当前结论与有证据支持的协议事实，保留T19历史。任务完成与阶段1整体通过区分；文档单独提交后阶段1窗口向原窗口回报接受独立审查。 最终验证必须包括T23预检创建/取消/未知清理、普通retry与--recover拒绝的新增回归；这些异常分支以假CLI测试为证，不对真实进程注入故障。"
     }
   ],
   "deliverables": [
@@ -51,7 +52,7 @@
     "docs/acceptance/phase-one-live-recheck.md、docs/deliveries/T-0022.md及计划/基准进度/有实证的协议事实更新。"
   ],
   "acceptance_criteria": [
-    "对照Git、执行日志：T20/T21各自独立修复提交已存在且其完整verify通过；本卡基线重定为实际候选，产品路径在复验期未变化。",
+    "对照Git、执行日志：T20/T21各自独立修复提交及补充T23提交已存在，各自完整verify通过；本卡基线重定为adbf4928b057769bc62b7b0a51c5a248e0e236b7，最终模型复验期产品路径未变化；旧875e准备证据与新候选gate严格分别绑定。",
     "对照真实原生权限canary与冒烟：冻结文件可读，指定外部/认证/其他席位/越界路径拒读；自动用户指令/记忆/MCP等无注入，权限失败时停止而不回退；证据不能只来源于fake或模型自述。",
     "对照矩阵：codex-only/dual各八例包含重新采集的B01，或逐格记录失败/停止理由；旧Claude复用条件和来源明确，全部输入/提示词绑定可审计。",
     "对照真实双席取消/补跑DB与原始流：成功席位的attempt/报告未增加或改变，失败席新attempt同配置同快照，旧历史保留；未命中时序不得标通过。",
