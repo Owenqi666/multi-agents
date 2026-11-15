@@ -1,0 +1,93 @@
+{
+  "cli": "codex",
+  "version": "0.169.0",
+  "runs": [
+    {
+      "run_id": "20261115T171610Z",
+      "started_at": "2026-11-15T17:16:10.798573+00:00",
+      "probe_commit": "a097fc3830bea8080dfbf9826fb934941e348786",
+      "options": {
+        "codex_bin": "codex",
+        "claude_bin": "claude",
+        "codex_model": "gpt-6.1-sol",
+        "codex_effort": "high",
+        "claude_model": "claude-opus-5-5",
+        "claude_effort": "high",
+        "claude_session_args": null,
+        "step_timeout": 180,
+        "cancel_after": 3,
+        "settle": 1,
+        "grace": 15
+      }
+    },
+    {
+      "run_id": "20261115T171614Z",
+      "started_at": "2026-11-15T17:16:14.344722+00:00",
+      "probe_commit": "a097fc3830bea8080dfbf9826fb934941e348786",
+      "options": {
+        "codex_bin": "codex",
+        "claude_bin": "claude",
+        "codex_model": "gpt-6.1-sol",
+        "codex_effort": "high",
+        "claude_model": "claude-opus-5-5",
+        "claude_effort": "high",
+        "claude_session_args": null,
+        "step_timeout": 180,
+        "cancel_after": 3,
+        "settle": 1,
+        "grace": 15
+      }
+    }
+  ],
+  "steps": [
+    {
+      "name": "codex-bad-model",
+      "step": "codex-bad-model",
+      "run_id": "20261115T171614Z",
+      "outcome": "finished",
+      "records": 38
+    },
+    {
+      "name": "codex-cancel",
+      "step": "codex-cancel",
+      "run_id": "20261115T171614Z",
+      "outcome": "finished",
+      "records": 39
+    },
+    {
+      "name": "codex-env",
+      "step": "codex-env",
+      "run_id": "20261115T171610Z",
+      "outcome": "finished",
+      "records": 21
+    },
+    {
+      "name": "codex-readonly",
+      "step": "codex-readonly",
+      "run_id": "20261115T171614Z",
+      "outcome": "finished",
+      "records": 133
+    },
+    {
+      "name": "codex-sandbox",
+      "step": "codex-sandbox",
+      "run_id": "20261115T171610Z",
+      "outcome": "finished",
+      "records": 16
+    },
+    {
+      "name": "codex-structured",
+      "step": "codex-structured",
+      "run_id": "20261115T171614Z",
+      "outcome": "finished",
+      "records": 48
+    },
+    {
+      "name": "codex-turn",
+      "step": "codex-turn",
+      "run_id": "20261115T171614Z",
+      "outcome": "finished",
+      "records": 43
+    }
+  ]
+}

@@ -124,7 +124,7 @@ implementation:
 - Codex 升级前使用 0.145.0，模型目录里没有 GPT‑6.x。调用 Sol 和 Terra 返回「ChatGPT 账号不支持该模型」，Astra 返回「需要更新版本的 Codex」。升级到 0.169.0 后，上表的短任务均收到回包，`codex debug models` 列出 `gpt-6-astra`、`gpt-6-luna`、`gpt-6-sol`、`gpt-6.1-sol`、`gpt-6.1-terra`。本机 Codex 由官方安装脚本安装，升级命令为 `curl -fsSL https://chatgpt.com/codex/install.sh | sh`。
 - 官方文档明确列出 GPT‑6.1 Terra 需要 Codex CLI **0.159.0 或以上**，本次记录的 **0.169.0** 满足该要求。 [Codex CLI 模型要求](https://learn.chatgpt.com/docs/models#choose-a-model)
 - Luna `medium` 的一次短任务记录了 9,024 token。后续基准单独记录每次用量及统计口径。
-- **暂缓实机验证。** 官方文档给出了 `model/list`、`turn/start.params.effort`、`sandboxPolicy` 和相关事件。待验证的是本机的目录返回、配置生效、只读权限、取消、用量及模型报告。App Server 检查和两边实际事件流录制继续暂缓。四模型流程尚待实现和联调。 [Codex 模型目录](https://learn.chatgpt.com/docs/app-server#models) · [Codex 回合参数](https://learn.chatgpt.com/docs/app-server#turns)
+- **实机验证（2026 年 11 月 15 日）。** 用探测工具在本机录制了两边的真实事件流，录制在 `tests/fixtures/runtime/`，逐项结论和证据在 runtime-protocols skill 的两张事实表里。阶段 1 所选审核会话的五项都有了结论。模型目录：Codex 的 `model/list` 返回 8 个可见模型，默认 `gpt-6.1-sol`；Claude 没有目录接口，不存在的模型在运行时返回 404。档位：两边都接受 `high`，实际生效的档位都观察不到。只读权限：Codex 的只读沙箱拒绝写入；Claude 在 `--safe-mode` 加 `--tools Read,Grep,Glob` 下没有写入手段。终态：两边的完成、取消和模型错误都能区分。实际模型：Claude 可以从 `modelUsage` 看到；Codex 不报告，只回显请求值。四模型流程尚待实现和联调。 [Codex 模型目录](https://learn.chatgpt.com/docs/app-server#models) · [Codex 回合参数](https://learn.chatgpt.com/docs/app-server#turns)
 
 ## 已完成任务
 
@@ -136,3 +136,8 @@ implementation:
 ### 2026 年 11 月 14 日
 
 - **更新项目计划。** 将采纳的审阅建议和六项决定并入正文，修正 Codex 参数及 Terra 最低版本要求。App Server 实机检查和两边事件流录制继续暂缓。
+- **阶段 0 离线部分。** 完成最小数据模型、审核状态机、SQLite 存储、适配器统一接口和合成事件回放（任务卡 T-0001 到 T-0006）。
+
+### 2026 年 11 月 15 日
+
+- **实机验证。** 写了探测工具（任务卡 T-0007、T-0008），在本机录制两边的事件流，录制入库为 `tests/fixtures/runtime/` 下的夹具，结论见「本机接入待验证项」。Claude 改为复用订阅登录：启动时去掉环境里的 `ANTHROPIC_API_KEY`。

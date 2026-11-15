@@ -38,9 +38,13 @@ description: Codex App Server（JSON-RPC）和 Claude Code 无头模式（claude
 
 只有实测才能把一条改成 `已验证`：录制的事件流（放在 `tests/fixtures/runtime/<cli>-<版本>/`），或计划里的实测记录。读文档、读 schema 都不算。计划要求"缺少证据的字段标为未确认"，事实表自己也守这条规矩。
 
-## 实机验证目前暂缓
+## 实机验证
 
-启动 app-server、发真实请求、录制事件流会消耗用户的额度，计划把它们列为暂缓。没有用户明确同意，不做这些事。刷新脚本不在此列，它只调用版本、帮助和 schema 导出这类本地命令。
+2026-11-15 做过一轮实机验证。录制在 `tests/fixtures/runtime/`，结论写进了两张事实表，标 `已验证` 2026-11-15 的条目都指向具体的夹具文件。
+
+再验证一次用探测工具：`python -m multi_agent.adapters.probe`，用法见 `src/multi_agent/adapters/probe/` 的模块文档。它启动真实的 CLI、发真实的请求，会消耗用户的额度，所以每次都要先得到用户的明确同意，并且由用户在自己的终端里运行。刷新脚本不在此列，它只调用版本、帮助和 schema 导出这类本地命令。
+
+新录制入库之前要检查脱敏，新版本的录制放进新的 `<cli>-<版本>/` 目录。步骤和已知问题见 `tests/fixtures/runtime/README.md`。
 
 ## 适配器怎么写
 
@@ -51,6 +55,15 @@ description: Codex App Server（JSON-RPC）和 Claude Code 无头模式（claude
 - 终态结果和进程退出分别记录。取消以回合终态或进程停止为依据。
 - 请求的模型和档位、运行时报告的值分开存。运行时没报告的字段记"未确认"。
 - Codex 的协议类型从 `protocol/codex/schema/` 生成或逐项对照，不手写。
+
+实机验证里和直觉不一样的几件事，细节和证据在事实表里：
+
+- **Claude 的成败看结果行的 `is_error` 和 `terminal_reason`。** API 报错时 `subtype` 仍然是 `success`，取消之后退出码是 0。
+- **Codex 的终态看 `turn/completed` 的 `turn.status`。** 模型不存在时，`thread/start` 和 `turn/start` 都照常返回，到回合里才失败。
+- **事件流不是完整的操作记录。** Codex 回合里被沙箱拒绝的写入没有 item。只读靠沙箱和工具范围保证，不靠检查事件。
+- **回显不是证据。** Codex 的 `thread/start` 和 Claude 的 `system/init` 都只回显请求的模型名。Claude 的实际模型看结果的 `modelUsage`，Codex 没有对应的报告。两边都不报告实际生效的档位。
+- **启动 Claude 时去掉环境里的 `ANTHROPIC_API_KEY` 和 `ANTHROPIC_AUTH_TOKEN`。** 否则它不用订阅登录。
+- **Codex 会加载工作目录里的 `AGENTS.md`，并启动用户配置的 MCP 服务器。** 审核会话要不要隔离它们、怎么隔离，还没有定。
 
 ## 升级 CLI 之后
 
@@ -63,7 +76,7 @@ description: Codex App Server（JSON-RPC）和 Claude Code 无头模式（claude
 然后：
 
 1. 看 `git diff protocol/`。变化的方法、字段和选项，就是需要复查的适配器代码。
-2. 按新快照核对事实表：`快照` 条目更新到新版本，受影响的 `已验证` 条目降回 `快照` 或 `文档`，直到重新验证。
+2. 按新快照核对事实表：`快照` 条目更新到新版本，受影响的 `已验证` 条目降回 `快照` 或 `文档`，直到重新验证（见「实机验证」）。
 3. `protocol/` 的变化和事实表的修改放进同一次提交。
 
 ## 参考文件

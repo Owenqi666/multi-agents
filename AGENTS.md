@@ -17,7 +17,7 @@ Mac 上的个人开发工作台：复用已登录的 Codex 和 Claude Code，跨
 
 ## 目录约定
 
-仓库还没有代码，按下表创建。要调整布局，就同时改这里和引用它的 skill。
+代码按下表组织。要调整布局，就同时改这里和引用它的 skill。
 
 | 路径 | 内容 |
 | --- | --- |
@@ -26,6 +26,7 @@ Mac 上的个人开发工作台：复用已登录的 Codex 和 Claude Code，跨
 | `src/multi_agent/store/` | SQLite 持久化，迁移在 `store/migrations/` |
 | `tests/unit/` | 单元测试 |
 | `tests/replay/` | 合成事件回放，场景在 `tests/replay/scenarios/` |
+| `tests/fixtures/runtime/` | 两边 CLI 的实机录制，按 `<cli>-<版本>/` 分目录。探测工具录制，不手改 |
 | `protocol/` | 本机 CLI 的版本、帮助输出和 Codex schema 快照。脚本生成，不手改 |
 | `schemas/` | 任务卡等结构化产物的 JSON Schema |
 | `tasks/` | 开发期任务卡 |

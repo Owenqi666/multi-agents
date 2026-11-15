@@ -1,0 +1,24 @@
+{"name": "env_removed", "value": ["ANTHROPIC_API_KEY"], "seq": 1, "t": 0.0003179159975843504, "kind": "observation"}
+{"name": "read_marker", "value": "e9e1b8723e254f33bd6b948c0f825610", "seq": 2, "t": 0.0007053749868646264, "kind": "observation"}
+{"proc": "version", "argv": ["claude", "--version"], "cwd": "<WORKDIR>", "seq": 3, "t": 0.0011238329898333177, "kind": "spawn"}
+{"proc": "version", "stream": "stdout", "text": "2.1.325 (Claude Code)", "seq": 4, "t": 0.03621158299210947, "kind": "recv"}
+{"proc": "version", "returncode": 0, "seq": 5, "t": 0.0419899159896886, "kind": "exit"}
+{"proc": "auth-status", "argv": ["claude", "auth", "status"], "cwd": "<WORKDIR>", "seq": 6, "t": 0.04211783299979288, "kind": "spawn"}
+{"proc": "auth-status", "stream": "stdout", "text": "{", "seq": 7, "t": 0.12477629099157639, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"loggedIn\": true,", "seq": 8, "t": 0.1248442910000449, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"authMethod\": \"claude.ai\",", "seq": 9, "t": 0.1248699999996461, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"apiProvider\": \"firstParty\",", "seq": 10, "t": 0.12489029098651372, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"analyticsDisabled\": false,", "seq": 11, "t": 0.12491054099518806, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"projectsDirectory\": \"~/.claude/projects\",", "seq": 12, "t": 0.12492262499290518, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"configDirectory\": \"~/.claude\",", "seq": 13, "t": 0.12493979099963326, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"loginExpiresAt\": \"2026-12-13T02:54:37.122Z\",", "seq": 14, "t": 0.12495379098982085, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"consoleProfileSignInOffered\": true,", "seq": 15, "t": 0.1249660409957869, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"email\": \"<REDACTED>\",", "seq": 16, "t": 0.12497712498588953, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"orgId\": \"<REDACTED>\",", "seq": 17, "t": 0.12499349999416154, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"orgName\": \"<REDACTED>\",", "seq": 18, "t": 0.12500566599192098, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"subscriptionType\": \"<REDACTED>\",", "seq": 19, "t": 0.12501854098809417, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"storedClaudeAiLogin\": true,", "seq": 20, "t": 0.1250333329953719, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "  \"planTier\": \"<REDACTED>\"", "seq": 21, "t": 0.1250435409892816, "kind": "recv"}
+{"proc": "auth-status", "stream": "stdout", "text": "}", "seq": 22, "t": 0.14338224999664817, "kind": "recv"}
+{"proc": "auth-status", "returncode": 0, "seq": 23, "t": 0.14879554099752568, "kind": "exit"}
+{"name": "workdir_changes", "value": {"added": [], "removed": [], "changed": []}, "seq": 24, "t": 0.14906791599059943, "kind": "observation"}

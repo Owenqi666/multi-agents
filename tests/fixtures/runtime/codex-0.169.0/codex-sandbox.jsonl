@@ -1,0 +1,16 @@
+{"name": "read_marker", "value": "b8825436e37f4f079d7bb428fd5999a6", "seq": 1, "t": 0.00039770800503902137, "kind": "observation"}
+{"proc": "app-server", "argv": ["codex", "app-server"], "cwd": "<WORKDIR>", "seq": 2, "t": 0.000764833006542176, "kind": "spawn"}
+{"proc": "app-server", "message": {"id": 1, "method": "initialize", "params": {"clientInfo": {"name": "multi-agent-probe", "version": "0.1.0"}}}, "seq": 3, "t": 0.009153999999398366, "kind": "send"}
+{"proc": "app-server", "stream": "stdout", "message": {"id": 1, "result": {"userAgent": "multi-agent-probe/0.169.0 (Mac OS 26.6.2; arm64) Apple_Terminal/470.2 (multi-agent-probe; 0.1.0)", "codexHome": "~/.codex", "platformFamily": "unix", "platformOs": "macos"}}, "seq": 4, "t": 0.08200141599809285, "kind": "recv"}
+{"proc": "app-server", "stream": "stdout", "message": {"method": "remoteControl/status/changed", "params": {"status": "disabled", "serverName": "<REDACTED>", "installationId": "<REDACTED>", "environmentId": null}, "emittedAtMs": 1794762973091}, "seq": 5, "t": 0.08207874999789055, "kind": "recv"}
+{"proc": "app-server", "message": {"method": "initialized"}, "seq": 6, "t": 0.08217354099906515, "kind": "send"}
+{"proc": "app-server", "message": {"id": 2, "method": "command/exec", "params": {"command": ["cat", "README.md"], "cwd": "<WORKDIR>", "sandboxPolicy": {"type": "readOnly"}}}, "seq": 7, "t": 0.0821964159986237, "kind": "send"}
+{"proc": "app-server", "stream": "stdout", "message": {"id": 2, "result": {"exitCode": 0, "stdout": "Read marker: b8825436e37f4f079d7bb428fd5999a6\n", "stderr": ""}}, "seq": 8, "t": 0.09727587499946821, "kind": "recv"}
+{"proc": "app-server", "message": {"id": 3, "method": "command/exec", "params": {"command": ["touch", "probe-write-check.txt"], "cwd": "<WORKDIR>", "sandboxPolicy": {"type": "readOnly"}}}, "seq": 9, "t": 0.09739362500840798, "kind": "send"}
+{"proc": "app-server", "stream": "stdout", "message": {"id": 3, "result": {"exitCode": 1, "stdout": "", "stderr": "touch: probe-write-check.txt: Operation not permitted\n"}}, "seq": 10, "t": 0.1042952910065651, "kind": "recv"}
+{"proc": "app-server", "message": {"id": 4, "method": "command/exec", "params": {"command": ["touch", "probe-write-control.txt"], "cwd": "<WORKDIR>", "sandboxPolicy": {"type": "workspaceWrite", "writableRoots": ["<WORKDIR>"]}}}, "seq": 11, "t": 0.10438779099786188, "kind": "send"}
+{"proc": "app-server", "stream": "stdout", "message": {"id": 4, "result": {"exitCode": 0, "stdout": "", "stderr": ""}}, "seq": 12, "t": 0.11521229099889752, "kind": "recv"}
+{"proc": "app-server", "stream": "stdout", "message": {"method": "account/updated", "params": {"authMode": "chatgpt", "planType": "<REDACTED>"}, "emittedAtMs": 1794762973430}, "seq": 13, "t": 0.4210986249963753, "kind": "recv"}
+{"proc": "app-server", "seq": 14, "t": 1.1162109160068212, "kind": "stdin_closed"}
+{"proc": "app-server", "returncode": 0, "seq": 15, "t": 1.1269954580056947, "kind": "exit"}
+{"name": "workdir_changes", "value": {"added": ["probe-write-control.txt"], "removed": [], "changed": []}, "seq": 16, "t": 1.1282072080066428, "kind": "observation"}
