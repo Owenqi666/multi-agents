@@ -12,11 +12,11 @@
   "interface_contracts": [
     {
       "name": "probe-steps",
-      "definition": "沿用 T-0007 的同名契约，修改四处。【新增步骤】codex-sandbox，不发模型请求。握手之后依次发三个 command/exec 请求，cwd 都是本步骤的工作目录：第一个的 command 是 [\"cat\", \"README.md\"]，sandboxPolicy 的 type 是 readOnly；第二个的 command 是 [\"touch\", \"probe-write-check.txt\"]，sandboxPolicy 的 type 是 readOnly；第三个的 command 是 [\"touch\", \"probe-write-control.txt\"]，sandboxPolicy 的 type 是 workspaceWrite，writableRoots 只含工作目录。请求得到错误响应时照常录制，继续下一个。三个请求都得到响应时对话结束。不发 thread/start 和 turn/start。步骤总数变成十三个，不发模型请求的有三个：codex-env、codex-sandbox、claude-env。【回合后的条目列表】Codex 带回合的五个步骤（turn、structured、readonly、cancel、bad-model），在收到本线程的 turn/completed 之后、开始 --settle 之前，请求 thread/items/list（只带 threadId），按 nextCursor 翻到没有下一页。请求得到错误响应时照常录制，不再翻页。这些请求都得到响应才算对话结束。thread/start 或 turn/start 得到错误响应时不发。【Claude 的环境变量】启动 claude 的子进程时，从环境里去掉 ANTHROPIC_API_KEY 和 ANTHROPIC_AUTH_TOKEN，其余变量照旧。Claude 的每个步骤开始时记一条 observation（env_removed），值是实际去掉的变量名列表，没有可去掉的变量时是空列表，不记变量的值。codex 子进程的环境不变。【输出流的读取时限】子进程退出之后，它的标准输出或标准错误在 --grace 内还没有读到结束的，停止读取，记一条 observation（output_not_closed，值是 proc 短名），然后照常记 exit，步骤继续。这不改变步骤的结果。"
+      "definition": "沿用 T-0007 的同名契约，修改四处。【新增步骤】codex-sandbox，不发模型请求。握手之后依次发三个 command/exec 请求，cwd 都是本步骤的工作目录：第一个的 command 是 [\"cat\", \"README.md\"]，sandboxPolicy 的 type 是 readOnly；第二个的 command 是 [\"touch\", \"probe-write-check.txt\"]，sandboxPolicy 的 type 是 readOnly；第三个的 command 是 [\"touch\", \"probe-write-control.txt\"]，sandboxPolicy 的 type 是 workspaceWrite，writableRoots 只含工作目录。请求得到错误响应时照常录制，继续下一个。三个请求都得到响应时对话结束。不发 thread/start 和 turn/start。步骤总数变成十三个，不发模型请求的有三个：codex-env、codex-sandbox、claude-env。【回合后的条目列表】Codex 带回合的五个步骤（turn、structured、readonly、cancel、bad-model），在收到本线程的 turn/completed 之后、开始 --settle 之前，请求 thread/items/list，按 nextCursor 翻到没有下一页：第一个请求只带 threadId，后面的请求带 threadId 和 cursor，cursor 取上一页响应里的 nextCursor。请求得到错误响应时照常录制，不再翻页。thread/start 或 turn/start 得到错误响应时不发。为此，T-0007 的“对话结束”在这五个步骤里拆成两步。回合结束：收到本线程的 turn/completed，或者 thread/start、turn/start 得到错误响应，或者 app-server 自己退出。对话结束：回合结束，并且条目列表的请求都已得到响应；不需要发这个请求时，回合结束就是对话结束。取消的两处判断都按回合结束算：回合结束时取消还没有发出就不再发、记 cancel_skipped；取消发出之后 --grace 内回合没有结束才是 timed_out。--step-timeout 按对话结束算，--settle 和关闭标准输入在对话结束之后。其他步骤没有这个区别。【Claude 的环境变量】启动 claude 的子进程时，从环境里去掉 ANTHROPIC_API_KEY 和 ANTHROPIC_AUTH_TOKEN，其余变量照旧。Claude 的每个步骤开始时记一条 observation（env_removed），值是实际去掉的变量名列表，没有可去掉的变量时是空列表，不记变量的值。codex 子进程的环境不变。【输出流的读取时限】从子进程本身退出的时刻起算，它的标准输出或标准错误在 --grace 内还没有读到结束的，停止读取：先把已经读到、还没有以换行结束的内容按原来的规则记成 recv，再记一条 observation（output_not_closed，值是 proc 短名），然后记 exit，步骤继续。判断对话结束、取消是否生效和步骤结果时，进程退出以子进程本身退出为准，不等输出流读完；这段等待不计入 --step-timeout，也不改变步骤的结果。"
     },
     {
       "name": "probe-recording",
-      "definition": "沿用 T-0007 的同名契约，修改三处。1. observation 增加两种：env_removed 和 output_not_closed，含义见 probe-steps。2. 脱敏规则 3 的键名名单改为：键名在忽略大小写、下划线和连字符之后，等于 email、orgname、organizationname、workspacename、plantype、plantier、subscriptiontype、servername、balance，或者以 userid、accountid、orgid、organizationid、installationid 结尾，或者以 token、secret、password、apikey 结尾。命中时它的字符串值换成 <REDACTED>。3. 规则 3 也适用于文本行：text 里形如 \"键\": \"值\" 的片段，键名命中名单时把值换成 <REDACTED>，其余部分不动。多行输出的 JSON（例如 claude auth status）每行都是文本，原来的规则管不到。"
+      "definition": "沿用 T-0007 的同名契约，修改三处。1. observation 增加两种：env_removed 和 output_not_closed，含义见 probe-steps。2. 脱敏规则 3 的键名名单改为：键名在忽略大小写、下划线和连字符之后，等于 email、orgname、organizationname、workspacename、plantype、plantier、subscriptiontype、servername、balance，或者以 userid、accountid、orgid、organizationid、installationid 结尾，或者以 token、secret、password、apikey 结尾。命中时它的字符串值换成 <REDACTED>。3. 规则 3 也适用于文本行：text 里形如 \"键\": \"值\" 的片段，键名命中名单时把值换成 <REDACTED>，其余部分不动。值按 JSON 字符串的写法读到结束的引号为止，转义的引号和反斜杠不算结束；同一行里有多个命中的片段时都处理。多行输出的 JSON（例如 claude auth status）每行都是文本，原来的规则管不到。"
     },
     {
       "name": "probe-cli",
@@ -29,12 +29,13 @@
     "tests/unit/test_adapters_probe*.py 和 tests/unit/probe_fakes/ 的新增与修改，覆盖上述行为和 T-0007 审核发现的测试缺口"
   ],
   "acceptance_criteria": [
-    "输出流的读取时限（unit）：假 CLI 退出后，它启动的一个后代进程继续占着标准输出和标准错误时，步骤在 --grace 之后不久结束，不等那个后代进程退出；录制里有 output_not_closed 和 exit，结果为 finished。测试里那个后代进程的存活时间要远长于 --grace 和测试的断言时限，测试结束时清理掉它",
+    "输出流的读取时限（unit）：假 CLI 写出一段没有换行的尾部后退出，它启动的一个后代进程继续占着标准输出和标准错误。步骤在进程退出后 --grace 左右结束，不等那个后代进程退出；录制里依次是那段尾部的 recv、output_not_closed、exit，结果为 finished。--step-timeout 短于“进程退出时刻加 --grace”时结果仍是 finished，没有 timeout 记录。测试里那个后代进程的存活时间要远长于 --grace 和测试的断言时限，测试结束时清理掉它",
     "脱敏键名（unit）：chatgptAccountId、installationId、serverName、planTier、balance 的字符串值被换成 <REDACTED>；tool_use_id、session_id、threadId、turnId、request_id、environmentId 和以 Tokens 结尾的计数原样保留",
-    "文本行脱敏（unit）：假 claude 的 auth status 输出多行 JSON、每个键一行时，email、orgId、orgName、subscriptionType、planTier 所在行的值被换成 <REDACTED>，loggedIn、authMethod、apiKeySource 所在行不变",
+    "文本行脱敏（unit）：假 claude 的 auth status 输出多行 JSON、每个键一行时，email、orgId、orgName、subscriptionType、planTier 所在行的值被换成 <REDACTED>，loggedIn、authMethod、apiKeySource 所在行不变。值里含转义的引号或反斜杠时整个值被换掉，不留下尾部；同一行有两个命中的键值时两个都被换掉，行里没命中的键值不变",
     "Claude 的环境变量（unit）：探测进程的环境里有 ANTHROPIC_API_KEY 和 ANTHROPIC_AUTH_TOKEN 时，假 claude 看不到这两个变量、仍能看到其他变量，录制里的 env_removed 列出这两个名字，录制和 summary 里搜不到它们的值；只设其中一个时只列一个；都没设时是空列表。假 codex 仍然能看到这两个变量",
     "codex-sandbox（unit，由假 app-server 核对收到的内容）：三个 command/exec 请求的 command、cwd 和 sandboxPolicy 与契约一致，第三个的 writableRoots 只含本步骤的工作目录；没有发出 thread/start 和 turn/start；某个请求得到错误响应时后面的请求照常发出，结果为 finished；--list 列出十三个步骤，其中三个不发模型请求",
-    "回合后的条目列表（unit）：收到 turn/completed 之后发出 thread/items/list，带的是 thread/start 响应里的线程 id，按 nextCursor 翻到底，全部响应到达之后才开始 --settle 和关闭标准输入；thread/start 或 turn/start 得到错误响应时没有发出这个请求；它自己得到错误响应时步骤照常结束，结果为 finished",
+    "回合后的条目列表（unit）：收到 turn/completed 之后发出 thread/items/list，第一个请求只带 thread/start 响应里的线程 id，后面的请求带线程 id 和上一页的 nextCursor（作为 cursor），翻到底，全部响应到达之后才开始 --settle 和关闭标准输入；thread/start 或 turn/start 得到错误响应时没有发出这个请求；它自己得到错误响应时步骤照常结束，结果为 finished",
+    "条目列表不影响取消的判定（unit）：假 app-server 的条目列表响应比 --grace 晚到时，codex-cancel 在取消后及时收到 turn/completed 的，结果是 finished、没有 timeout 记录；回合在该发取消之前已经结束的，即使条目列表还没翻完也不发 turn/interrupt，录制里有 cancel_skipped。条目列表的响应一直不来时，步骤在 --step-timeout 结束，结果为 timed_out",
     "补上 T-0007 审核发现的测试缺口（unit）。下面七项各有一个在对应行为被改坏时会失败的测试，交付说明逐项写出测试名：a. claude-bad-model 和 codex-bad-model 用的是固定的模型名，假 CLI 从测试得知当前是哪个步骤，不从收到的内容反推，codex-bad-model 的 thread/start 和 turn/start 同时用错时测试也会失败；b. 别的线程的 turn/completed 不结束对话；c. 取消发出之后的等待以 --grace 为限：--step-timeout 远大于 --grace 时，codex-cancel 和 claude-cancel 的 timeout 在 --grace 前后出现，不拖到 --step-timeout；d. turn/completed 之后、--settle 之内到达的通知记录在 stdin_closed 之前，这期间到达的服务器请求得到应答；e. README.md 的内容含 read_marker 记录的标记，AGENTS.md 和 CLAUDE.md 的内容含 canary 记录的暗号；f. codex-env 运行了 codex --version；g. 不带任何选项时，命令行交给运行器的各项取值等于 probe-cli 规定的默认值",
     "T-0007 的验收条件仍然成立：原有测试没有被删除或放宽，只在本卡修改契约的地方调整断言，交付说明逐个列出被修改的原有测试和原因（审核者对照 diff 判定）",
     "协议里的名字有出处（审核者对照 diff 判定）：command/exec、thread/items/list 以及用到的参数和响应字段都在 protocol/ 快照里；ANTHROPIC_API_KEY 和 ANTHROPIC_AUTH_TOKEN 的出处是官方的环境变量文档，在模块文档里注明",
@@ -48,7 +49,7 @@
     {
       "question": "探测启动 Claude 时，要不要去掉环境里的 API key？",
       "blocks_dispatch": true,
-      "resolution": "去掉。实机运行发现用户的终端环境里有 ANTHROPIC_API_KEY，claude -p 因此不用订阅登录。用户 2026-11-15 说明自己没有 Claude 的 API key，要和 Codex 一样复用登录。这里只决定探测工具的做法；工作台的真实适配器怎么处理这个变量，在适配器的卡里由用户另行决定。"
+      "resolution": "去掉。实机运行发现用户的终端环境里有 ANTHROPIC_API_KEY，claude -p 因此不用订阅登录。用户 2026-11-15 说明自己没有 Claude 的 API key，要和 Codex 一样复用登录，随后确认工作台启动 Claude 时同样去掉这个变量。真实适配器的卡按这个决定写。"
     },
     {
       "question": "本卡合并后，由用户用新的探测工具重跑全部十三个步骤。录制文件经规划方检查脱敏结果后进入 tests/fixtures/runtime/，同时更新 runtime-protocols 的事实表和 PROJECT_PLAN.md 的待验证项，另立卡。现有的三次录制留在本机的 probe-runs/ 里，不进仓库。",
