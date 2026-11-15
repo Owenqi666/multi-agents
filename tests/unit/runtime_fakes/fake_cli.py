@@ -1,11 +1,14 @@
 """Standalone fake executable; all modeled protocol traffic is synthetic."""
 
+import copy
 import json
 import os
 import signal
 import subprocess
 import sys
 import time
+import tomllib
+from pathlib import Path
 
 args = sys.argv[1:]
 mode = os.environ.get("FAKE_RUNTIME_MODE", "success")
@@ -32,7 +35,13 @@ capture(
 )
 
 if args == ["--version"]:
-    print("fake-" + provider + " 1.0")
+    if provider == "codex" and mode == "wrong-version":
+        print("codex-cli 0.168.0")
+    else:
+        print("codex-cli 0.169.0" if provider == "codex" else "fake-claude 1.0")
+    if mode == "version-hang":
+        sys.stdout.flush()
+        time.sleep(60)
     sys.exit(int(os.environ.get("FAKE_VERSION_EXIT", "0")))
 if args == ["auth", "status"]:
     assert provider == "claude"
@@ -148,7 +157,9 @@ if provider == "claude":
         time.sleep(60)
     os._exit(0)
 
-assert args == ["app-server"]
+assert args == ["app-server", "--strict-config"]
+config_audited = False
+requirements_audited = False
 thread_id = "thread-" + str(os.getpid())
 turn_id = "turn-1"
 for line in sys.stdin:
@@ -167,10 +178,210 @@ for line in sys.stdin:
         result = {"userAgent": "fake"}
     elif method == "initialized":
         continue
+    elif method == "config/read":
+        assert params == {"includeLayers": True, "cwd": os.getcwd()}
+        config_path = Path(os.environ["CODEX_HOME"]) / "config.toml"
+        with config_path.open("rb") as config_file:
+            config = tomllib.load(config_file)
+        # Synthetic rust-v0.169.0 ConfigToml serialization: effective values
+        # include explicit nulls/defaults; the source layer remains the TOML.
+        nullable_keys = (
+            "allow_symlinked_codex_home",
+            "analytics",
+            "approvals_reviewer",
+            "apps",
+            "apps_mcp_product_sku",
+            "audio",
+            "auto_review",
+            "browser_use",
+            "check_for_update_on_startup",
+            "client_search_provider",
+            "compact_prompt",
+            "computer_use",
+            "daybreak",
+            "desktop",
+            "developer_instructions",
+            "disable_paste_burst",
+            "experimental_compact_prompt_file",
+            "experimental_realtime_start_instructions",
+            "experimental_realtime_webrtc_call_base_url",
+            "experimental_realtime_ws_backend_prompt",
+            "experimental_realtime_ws_base_url",
+            "experimental_realtime_ws_model",
+            "experimental_realtime_ws_startup_context",
+            "experimental_thread_store",
+            "experimental_thread_store_endpoint",
+            "experimental_use_unified_exec_tool",
+            "feedback",
+            "forced_chatgpt_workspace_id",
+            "forced_login_method",
+            "ghost_snapshot",
+            "goals",
+            "hooks",
+            "instructions",
+            "js_repl_node_module_dirs",
+            "js_repl_node_path",
+            "log_dir",
+            "mcp_enterprise_managed_auth",
+            "mcp_oauth_callback_port",
+            "mcp_oauth_callback_url",
+            "mcp_optional_startup_grace_ms",
+            "model",
+            "model_auto_compact_token_limit",
+            "model_auto_compact_token_limit_scope",
+            "model_catalog_json",
+            "model_context_window",
+            "model_instructions_file",
+            "model_post_turn_compact_threshold_percent",
+            "model_provider",
+            "model_reasoning_effort",
+            "model_reasoning_summary",
+            "model_verbosity",
+            "notice",
+            "notify",
+            "openai_base_url",
+            "oss_provider",
+            "otel",
+            "personality",
+            "plan_mode_reasoning_effort",
+            "profile",
+            "projects",
+            "realtime",
+            "responses_api_metadata",
+            "review_model",
+            "sandbox_mode",
+            "sandbox_workspace_write",
+            "service_tier",
+            "show_raw_agent_reasoning",
+            "sqlite_home",
+            "suppress_unstable_features_warning",
+            "thread_unload_delay_secs",
+            "tool_output_token_limit",
+            "tool_suggest",
+            "tools",
+            "tui",
+            "windows",
+        )
+        result = {
+            "config": {
+                **dict.fromkeys(nullable_keys),
+                "background_terminal_max_timeout": 300000,
+                "file_opener": "vscode",
+                "include_permissions_instructions": True,
+                "chatgpt_base_url": "https://chatgpt.com/backend-api/",
+                "project_root_markers": [".git"],
+                "mcp_oauth_credentials_store": "auto",
+                "hide_agent_reasoning": False,
+                "profiles": {},
+                "model_providers": {},
+                "mcp_servers": {},
+                "marketplaces": {},
+                **copy.deepcopy(config),
+            },
+            "layers": [
+                {
+                    "name": {"type": "user", "file": str(config_path)},
+                    "version": "synthetic",
+                    "config": config,
+                }
+            ],
+            "origins": {},
+        }
+        effective = result["config"]
+        profile = effective["permissions"][effective["default_permissions"]]
+        if mode == "config-missing":
+            result.pop("config")
+        elif mode == "config-malformed":
+            result["config"] = []
+        elif mode == "config-missing-mcp-servers":
+            effective.pop("mcp_servers")
+        elif mode == "config-missing-instructions":
+            effective.pop("instructions")
+        elif mode == "config-ignored-profile":
+            effective["default_permissions"] = ":read-only"
+        elif mode == "config-profile-extends":
+            profile["extends"] = ":read-only"
+        elif mode == "config-extra-filesystem":
+            profile["filesystem"]["/"] = "read"
+        elif mode == "config-extra-profile":
+            effective["permissions"]["unwanted"] = {"filesystem": {"/": "read"}}
+        elif mode == "config-network-enabled":
+            profile["network"]["enabled"] = True
+        elif mode == "config-bool-doc-limit":
+            effective["project_doc_max_bytes"] = False
+        elif mode == "config-null-permission-key":
+            profile["unexpected_isolation_key"] = None
+        elif mode == "config-null-top-level":
+            effective["unexpected_isolation_key"] = None
+        elif mode in ("config-system-layer", "config-mdm-layer"):
+            source = (
+                {"type": "system", "file": "/etc/codex/config.toml"}
+                if mode == "config-system-layer"
+                else {"type": "mdm", "domain": "synthetic", "key": "config"}
+            )
+            result["layers"].append(
+                {
+                    "name": source,
+                    "version": "foreign",
+                    "config": {"instructions": "synthetic-config-poison"},
+                }
+            )
+        elif mode == "config-mcp-servers":
+            effective["mcp_servers"] = {
+                "unwanted": {
+                    "command": "synthetic-server",
+                    "env": {"ORDINARY_NAME": "synthetic-config-poison"},
+                }
+            }
+        elif mode == "config-instructions":
+            effective["instructions"] = "synthetic-config-poison"
+        elif mode == "config-error":
+            emit(
+                {
+                    "id": identifier,
+                    "error": {
+                        "code": -32603,
+                        "message": "synthetic-config-poison",
+                        "data": {"echo": "synthetic-config-poison"},
+                    },
+                }
+            )
+            continue
+        elif mode in ("config-bool-id", "config-float-id", "config-wrong-id"):
+            identifier = {
+                "config-bool-id": True,
+                "config-float-id": float(identifier),
+                "config-wrong-id": identifier + 100,
+            }[mode]
+            result["untrusted_payload"] = "synthetic-config-poison"
+        config_audited = True
+    elif method == "configRequirements/read":
+        assert config_audited
+        assert params == {}
+        requirements = None
+        if mode == "requirements-empty":
+            requirements = {}
+        elif mode == "requirements-instructions":
+            requirements = {
+                "additionalDeveloperInstructions": "synthetic-managed-instructions"
+            }
+        elif mode == "requirements-unknown-null":
+            requirements = {"unexpected_managed_field": None}
+        elif mode == "requirements-login-methods":
+            requirements = {"allowedLoginMethods": ["chatgpt"]}
+        result = {"requirements": requirements}
+        if mode == "requirements-missing":
+            result.pop("requirements")
+        requirements_audited = True
     elif method == "account/read":
+        assert config_audited and requirements_audited
         assert params == {"refreshToken": False}
-        result = {"account": {"type": "chatgpt"}, "requiresOpenaiAuth": True}
+        result = {
+            "account": None if mode == "account-logged-out" else {"type": "chatgpt"},
+            "requiresOpenaiAuth": True,
+        }
     elif method == "model/list":
+        assert config_audited and requirements_audited
         assert params["includeHidden"] is False
         name = "model-2" if "cursor" in params else "model-1"
         result = {
@@ -187,7 +398,8 @@ for line in sys.stdin:
             "nextCursor": None if "cursor" in params else "page-2",
         }
     elif method == "thread/start":
-        assert params["sandbox"] == "read-only"
+        assert config_audited and requirements_audited
+        assert "sandbox" not in params and "sandboxPolicy" not in params
         assert params["approvalPolicy"] == "never"
         assert params["ephemeral"] is True
         assert params["cwd"] == os.getcwd()
@@ -195,11 +407,22 @@ for line in sys.stdin:
             "thread": {"id": thread_id},
             "model": "echo-not-evidence",
             "reasoningEffort": "ultra",
+            "approvalPolicy": "never",
+            "cwd": os.getcwd(),
             "instructionSources": [],
         }
+        if mode == "thread-instructions":
+            result["instructionSources"] = ["/synthetic/foreign/AGENTS.md"]
+        elif mode == "mcp-before-turn":
+            emit(
+                {
+                    "method": "mcpServer/startupStatus/updated",
+                    "params": {"name": "unexpected", "status": "ready"},
+                }
+            )
     elif method == "turn/start":
         assert params["effort"] == "high"
-        assert params["sandboxPolicy"] == {"type": "readOnly"}
+        assert "sandbox" not in params and "sandboxPolicy" not in params
         assert params["approvalPolicy"] == "never"
         assert params["threadId"] == thread_id
         emit(
@@ -265,6 +488,13 @@ for line in sys.stdin:
                 "params": {"threadId": thread_id, "turn": turn},
             }
         )
+        if mode == "mcp-after-terminal":
+            emit(
+                {
+                    "method": "mcpServer/startupStatus/updated",
+                    "params": {"name": "unexpected", "status": "ready"},
+                }
+            )
         if mode in ("duplicate", "contradictory", "late-contradictory"):
             if mode == "late-contradictory":
                 time.sleep(float(os.environ.get("FAKE_SECOND_DELAY", "0.06")))

@@ -9,6 +9,31 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def synthetic_codex_auth(tmp_path, monkeypatch):
+    auth_home = tmp_path / "synthetic-codex-auth"
+    auth_home.mkdir(mode=0o700)
+    auth = auth_home / "auth.json"
+    auth.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    key: "synthetic-" + key
+                    for key in (
+                        "id_token",
+                        "access_token",
+                        "refresh_token",
+                        "account_id",
+                    )
+                },
+            }
+        )
+    )
+    auth.chmod(0o600)
+    monkeypatch.setenv("CODEX_HOME", str(auth_home))
+
+
 def cli(data, *args):
     process = subprocess.run(
         [sys.executable, "-m", "multi_agent", "--data-dir", str(data), *args],
@@ -24,7 +49,15 @@ def cli(data, *args):
 def fake_executable(directory, provider):
     fake_body = (Path(__file__).parent / "runtime_fakes/fake_cli.py").read_text()
     executable = directory / f"{provider}-fake"
-    executable.write_text(f"#!{sys.executable}\n" + fake_body)
+    # This test launches the real module in another Python process. Carry fake
+    # controls in the generated fixture itself, outside the product allowlist.
+    fake_environment = {
+        key: value for key, value in os.environ.items() if key.startswith("FAKE_")
+    }
+    executable.write_text(
+        f"#!{sys.executable}\nimport os\nos.environ.update({fake_environment!r})\n"
+        + fake_body
+    )
     executable.chmod(0o755)
     return str(executable)
 
@@ -81,15 +114,15 @@ def test_frozen_git_input_through_real_cli_and_fake_transports(
             }
         )
     )
-    executables = {
-        provider: fake_executable(tmp_path, provider)
-        for provider in ("codex", "claude")
-    }
     capture = tmp_path / "wire.jsonl"
     monkeypatch.setenv("FAKE_RUNTIME_MODE", "success")
     monkeypatch.setenv("FAKE_RUNTIME_CAPTURE", str(capture))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-remove-me")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-remove-me")
+    executables = {
+        provider: fake_executable(tmp_path, provider)
+        for provider in ("codex", "claude")
+    }
     data = tmp_path / "data"
 
     frozen = cli(
@@ -152,7 +185,15 @@ def test_frozen_git_input_through_real_cli_and_fake_transports(
         if item["kind"] == "request" and item["message"].get("method") == "turn/start"
     ]
     assert len(turns) == 1
-    assert turns[0]["message"]["params"]["sandboxPolicy"] == {"type": "readOnly"}
+    assert "sandboxPolicy" not in turns[0]["message"]["params"]
+    assert "sandbox" not in turns[0]["message"]["params"]
+    config_reads = [
+        item
+        for item in wire
+        if item["kind"] == "request" and item["message"].get("method") == "config/read"
+    ]
+    assert len(config_reads) == 2  # Environment check and actual review process.
+    assert all(item["message"]["params"]["includeLayers"] for item in config_reads)
     claude_turns = [
         item for item in wire if item["kind"] == "spawn" and item["argv"][:1] == ["-p"]
     ]
@@ -167,7 +208,6 @@ def test_real_cli_claude_logged_out_exit_one_persists_auth_expired_without_turn(
     tmp_path, monkeypatch
 ):
     data = tmp_path / "data"
-    executable = fake_executable(tmp_path, "claude")
     capture = tmp_path / "wire.jsonl"
     monkeypatch.setenv("FAKE_RUNTIME_CAPTURE", str(capture))
     monkeypatch.setenv("FAKE_RUNTIME_MODE", "success")
@@ -176,6 +216,7 @@ def test_real_cli_claude_logged_out_exit_one_persists_auth_expired_without_turn(
     monkeypatch.setenv("FAKE_VERSION_EXIT", "0")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "synthetic-remove-me")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "synthetic-remove-me")
+    executable = fake_executable(tmp_path, "claude")
     requirements = tmp_path / "requirements.txt"
     requirements.write_text("Review the constant change.")
     diff = tmp_path / "change.patch"
@@ -244,4 +285,117 @@ def test_real_cli_claude_logged_out_exit_one_persists_auth_expired_without_turn(
     ]
     assert any(
         record["kind"] == "exit" and record["returncode"] == 1 for record in records
+    )
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_real_cli_preserves_literal_email_path_quotes_and_masks_registered_auth(
+    tmp_path, monkeypatch, provider
+):
+    repo = tmp_path / "quoted-repository"
+    repo.mkdir()
+
+    def git(*args):
+        return subprocess.check_output(
+            [
+                "git",
+                "-c",
+                f"core.hooksPath={os.devnull}",
+                "-c",
+                "commit.gpgSign=false",
+                "-c",
+                "user.name=Fixture",
+                "-c",
+                "user.email=fixture@example.invalid",
+                "-C",
+                str(repo),
+                *args,
+            ],
+            text=True,
+        ).strip()
+
+    git("init", "-q", "--template=")
+    (repo / "source.py").write_text("contact = {}\n")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    baseline = git("rev-parse", "HEAD")
+    quote = "contact = " + json.dumps(
+        {
+            "email": "reviewer@example.invalid",
+            "path": str(Path.home() / "public-project" / "settings.json"),
+            "access_token": "public-example-value",
+        }
+    )
+    (repo / "source.py").write_text(quote + "\n")
+    git("commit", "-qam", "candidate")
+    candidate = git("rev-parse", "HEAD")
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("Review the changed literal without altering its quotes.")
+    secret = "synthetic-access_token"
+    summary = "Synthetic review " + (secret if provider == "codex" else "complete")
+    report = {
+        "summary": summary,
+        "findings": [
+            {
+                "id": "literal-quote",
+                "severity": "P2",
+                "category": "fixture",
+                "side": "candidate",
+                "path": "source.py",
+                "line_start": 1,
+                "line_end": 1,
+                "quote": quote,
+                "title": "Synthetic literal finding",
+                "impact": "Literal evidence must remain exact",
+                "rationale": "The cited line is the frozen candidate source",
+            }
+        ],
+    }
+    monkeypatch.setenv("FAKE_RUNTIME_MODE", "success")
+    monkeypatch.setenv("FAKE_RUNTIME_REPORT", json.dumps(report))
+    executable = fake_executable(tmp_path, provider)
+    data = tmp_path / "data"
+    frozen = cli(
+        data,
+        "freeze",
+        "--repo",
+        str(repo),
+        "--baseline",
+        baseline,
+        "--candidate",
+        candidate,
+        "--requirements",
+        str(requirements),
+        "--acceptance",
+        "Retain exact source quotations",
+    )
+    output = cli(
+        data,
+        "run",
+        frozen["snapshot_id"],
+        "--seat",
+        provider,
+        "model-1",
+        "high",
+        f"--{provider}-bin",
+        executable,
+        "--timeout",
+        "5",
+        "--grace",
+        "0.1",
+    )
+    restored = cli(data, "show", output["round_id"], "--history")
+    attempt = restored["seats"][0]["attempts"][0]
+    assert attempt["status"] == "succeeded"
+    assert attempt["result"]["findings"][0]["quote"] == quote
+    checked = restored["assessment"]["reports"]["reviewer-1"]["findings"][0]
+    assert checked["quote"] == quote and checked["reference_status"] == "verified"
+    assert attempt["result"]["summary"] == (
+        "Synthetic review <REDACTED>" if provider == "codex" else summary
+    )
+    assert secret not in json.dumps(output)
+    assert secret not in json.dumps(restored)
+    assert secret.encode() not in (data / "reviews.sqlite3").read_bytes()
+    assert all(
+        secret not in path.read_text() for path in (data / "logs").rglob("*.jsonl")
     )

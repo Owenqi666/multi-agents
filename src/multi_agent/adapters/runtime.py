@@ -13,9 +13,10 @@ Sources: protocol/codex/schema/{ClientRequest,ServerRequest}.json, v1/
 InitializeParams.json, v2/{ThreadStartParams,TurnStartParams,TurnInterruptParams,
 ModelListParams,ModelListResponse}.json, protocol/claude/help.txt, and the recorded
 fixtures under tests/fixtures/runtime/. No runtime config overrides are invented.
-Codex's read-only sandbox is verified, but user MCP/skills/config isolation is
-NOT verified: logs preserve instructionSources and MCP notifications. The caller
-supplies a neutral review directory, never the mutable target checkout. Claude
+Codex uses a private HOME/CODEX_HOME and a pinned named permissions profile.
+Effective configuration and instruction sources are checked before a model turn;
+native no-model permission evidence is recorded separately from model acceptance.
+The caller supplies a frozen review directory, never the mutable target checkout. Claude
 uses the verified safe-mode tool restriction and removes both API credential
 variables to retain the user's subscription login.
 """
@@ -24,6 +25,7 @@ import asyncio
 import json
 import math
 import os
+import shutil
 import signal
 from collections import deque
 from collections.abc import AsyncIterator, Callable
@@ -38,8 +40,10 @@ from multi_agent.core.events import (
     Completed,
     Error,
     FailureCategory,
+    Message,
     ProcessExited,
     SessionStarted,
+    thaw_json,
 )
 
 from .base import (
@@ -51,6 +55,7 @@ from .base import (
     TurnHandle,
     TurnResult,
 )
+from .codex_isolation import VERSION, CodexIsolation, isolated_environment
 from .probe.process import Process, SpawnFailed
 from .probe.recording import Recorder, Redactor
 from .runtime_decode import (
@@ -58,8 +63,152 @@ from .runtime_decode import (
     RuntimeFailure,
     claude_events,
     object_value,
+    result_value,
     string_value,
 )
+
+# Optional nulls emitted by the pinned ConfigToml serializer; unknown keys are rejected.
+_CODEX_NULL_TOP_LEVEL = frozenset(
+    [
+        "allow_symlinked_codex_home",
+        "analytics",
+        "approvals_reviewer",
+        "apps",
+        "apps_mcp_product_sku",
+        "audio",
+        "auto_review",
+        "browser_use",
+        "check_for_update_on_startup",
+        "client_search_provider",
+        "compact_prompt",
+        "computer_use",
+        "daybreak",
+        "desktop",
+        "developer_instructions",
+        "disable_paste_burst",
+        "experimental_compact_prompt_file",
+        "experimental_realtime_start_instructions",
+        "experimental_realtime_webrtc_call_base_url",
+        "experimental_realtime_ws_backend_prompt",
+        "experimental_realtime_ws_base_url",
+        "experimental_realtime_ws_model",
+        "experimental_realtime_ws_startup_context",
+        "experimental_thread_store",
+        "experimental_thread_store_endpoint",
+        "experimental_use_unified_exec_tool",
+        "feedback",
+        "forced_chatgpt_workspace_id",
+        "forced_login_method",
+        "ghost_snapshot",
+        "goals",
+        "hooks",
+        "instructions",
+        "js_repl_node_module_dirs",
+        "js_repl_node_path",
+        "log_dir",
+        "mcp_enterprise_managed_auth",
+        "mcp_oauth_callback_port",
+        "mcp_oauth_callback_url",
+        "mcp_optional_startup_grace_ms",
+        "model",
+        "model_auto_compact_token_limit",
+        "model_auto_compact_token_limit_scope",
+        "model_catalog_json",
+        "model_context_window",
+        "model_instructions_file",
+        "model_post_turn_compact_threshold_percent",
+        "model_provider",
+        "model_reasoning_effort",
+        "model_reasoning_summary",
+        "model_verbosity",
+        "notice",
+        "notify",
+        "openai_base_url",
+        "oss_provider",
+        "otel",
+        "personality",
+        "plan_mode_reasoning_effort",
+        "profile",
+        "projects",
+        "realtime",
+        "responses_api_metadata",
+        "review_model",
+        "sandbox_mode",
+        "sandbox_workspace_write",
+        "service_tier",
+        "show_raw_agent_reasoning",
+        "sqlite_home",
+        "suppress_unstable_features_warning",
+        "thread_unload_delay_secs",
+        "tool_output_token_limit",
+        "tool_suggest",
+        "tools",
+        "tui",
+        "windows",
+    ]
+)
+_CODEX_NULL_FIELDS = {
+    ("permissions", "multi-agent-frozen-review"): frozenset(
+        ["description", "extends", "workspace_roots"]
+    ),
+    ("permissions", "multi-agent-frozen-review", "filesystem"): frozenset(
+        ["glob_scan_max_depth"]
+    ),
+    ("permissions", "multi-agent-frozen-review", "network"): frozenset(
+        [
+            "allow_local_binding",
+            "allow_upstream_proxy",
+            "dangerously_allow_all_unix_sockets",
+            "dangerously_allow_non_loopback_proxy",
+            "domains",
+            "enable_socks5",
+            "enable_socks5_udp",
+            "mitm",
+            "mode",
+            "proxy_url",
+            "socks_url",
+            "unix_sockets",
+        ]
+    ),
+    ("features",): frozenset(["network_proxy"]),
+    ("memories",): frozenset(
+        [
+            "consolidation_model",
+            "consolidation_service_tier",
+            "disable_on_external_context",
+            "dual_write",
+            "extract_model",
+            "max_raw_memories_for_consolidation",
+            "max_rollout_age_days",
+            "max_rollouts_per_startup",
+            "max_unused_days",
+            "min_rate_limit_remaining_percent",
+            "min_rollout_idle_hours",
+            "version",
+        ]
+    ),
+    ("agents",): frozenset(
+        [
+            "default_subagent_model",
+            "default_subagent_reasoning_effort",
+            "interrupt_message",
+            "job_max_runtime_seconds",
+            "max_concurrent_threads_per_session",
+            "max_depth",
+        ]
+    ),
+    ("orchestrator",): frozenset(["skills"]),
+    ("shell_environment_policy",): frozenset(
+        [
+            "exclude",
+            "experimental_use_profile",
+            "filters",
+            "ignore_default_excludes",
+            "include_only",
+        ]
+    ),
+    ("history",): frozenset(["max_bytes"]),
+}
 
 
 async def _read(process: Process) -> dict[str, Any] | str | None:
@@ -84,6 +233,26 @@ class _Rpc:
             if value is None:
                 return None
             message = object_value(value, "JSON-RPC message")
+            method = message.get("method")
+            if "method" in message and (
+                not isinstance(method, str)
+                or not method
+                or "id" in message
+                and type(message["id"]) not in (str, int)
+            ):
+                raise RuntimeFailure(
+                    Error(
+                        "runtime sent a malformed JSON-RPC server request",
+                        raw_type="adapter.isolation_failed",
+                    )
+                )
+            if isinstance(method, str) and method.startswith("mcpServer/"):
+                raise RuntimeFailure(
+                    Error(
+                        "unexpected MCP activity in isolated review",
+                        raw_type="adapter.isolation_failed",
+                    )
+                )
             if "method" in message and "id" in message:
                 # Never grant tool or filesystem permissions. Known approvals
                 # have a schema-defined decline; all other requests are rejected.
@@ -115,12 +284,26 @@ class _Rpc:
     async def request(self, method: str, params: dict[str, Any]) -> dict[str, Any]:
         identifier = await self.send(method, params)
         while (message := await self.receive()) is not None:
-            if "method" not in message and message.get("id") == identifier:
-                if "error" in message:
-                    error = object_value(message["error"], "RPC error")
+            if "method" not in message:
+                if type(message.get("id")) is not int or message["id"] != identifier:
                     raise RuntimeFailure(
                         Error(
-                            string_value(error.get("message"), "RPC error.message"),
+                            "runtime returned an unexpected JSON-RPC response id",
+                            raw_type="adapter.isolation_failed"
+                            if method in ("config/read", "configRequirements/read")
+                            else method,
+                        )
+                    )
+                if "error" in message:
+                    error = object_value(message["error"], "RPC error")
+                    detail = (
+                        "runtime rejected configuration audit"
+                        if method in ("config/read", "configRequirements/read")
+                        else string_value(error.get("message"), "RPC error.message")
+                    )
+                    raise RuntimeFailure(
+                        Error(
+                            str(self.process._recorder.redactor.redact(detail)),
                             raw_type=method,
                         )
                     )
@@ -161,6 +344,8 @@ class _Turn:
     exit_event: ProcessExited | None = None
     cancel_task: asyncio.Task[None] | None = None
     deadline: asyncio.Timeout | None = None
+    isolation: CodexIsolation | None = None
+    redactor: Redactor | None = None
 
 
 class RuntimeAdapter(Adapter):
@@ -198,6 +383,8 @@ class RuntimeAdapter(Adapter):
         self._turns: dict[TurnHandle, _Turn] = {}
 
     def _environment(self) -> dict[str, str]:
+        if self.provider == "codex":
+            return isolated_environment()
         env = dict(os.environ)
         if self.provider == "claude":
             env.pop("ANTHROPIC_API_KEY", None)
@@ -236,6 +423,21 @@ class RuntimeAdapter(Adapter):
         return handle
 
     def _observe(self, state: _Turn, event: AdapterEvent) -> None:
+        if state.redactor is not None:
+            if isinstance(event, Error):
+                event = replace(event, detail=str(state.redactor.redact(event.detail)))
+            elif isinstance(event, Message):
+                event = replace(
+                    event, text=str(state.redactor.redact_secrets(event.text))
+                )
+            elif isinstance(event, Completed):
+                event = replace(
+                    event,
+                    result=result_value(
+                        state.redactor.redact_secrets(thaw_json(event.result)),
+                        structured=False,
+                    ),
+                )
         if isinstance(event, (Completed, Error)):
             if state.observed_terminal is not None:
                 raise ValueError("runtime emitted multiple terminal results")
@@ -248,8 +450,23 @@ class RuntimeAdapter(Adapter):
             state.queue.put_nowait(event)
 
     async def _spawn(
-        self, argv: list[str], cwd: Path, recorder: Recorder, *, pipe: bool = False
+        self,
+        argv: list[str],
+        cwd: Path,
+        recorder: Recorder,
+        *,
+        pipe: bool = False,
+        isolation: CodexIsolation | None = None,
     ) -> Process:
+        if isolation is not None:
+            executable = shutil.which(argv[0])
+            if executable is None:
+                raise SpawnFailed("executable unavailable")
+            return await isolation.spawn(
+                [str(Path(executable).resolve()), *argv[1:]],
+                pipe=pipe,
+                grace=self.grace,
+            )
         return await Process.start(
             self.provider,
             argv,
@@ -265,8 +482,10 @@ class RuntimeAdapter(Adapter):
         recorder: Recorder | None = None
         failure: Error | None = None
         cleanup_problem: Error | None = None
+        isolation_incomplete = False
         try:
             recorder = self._recorder(handle.identifier, state.config.cwd)
+            state.redactor = recorder.redactor
             recorder.emit(
                 "requested",
                 model=state.config.model,
@@ -301,7 +520,7 @@ class RuntimeAdapter(Adapter):
                 failure = Error(
                     f"runtime boundary failure: {type(error).__name__}: {error}"
                 )
-        except (SpawnFailed, ValueError, TypeError, KeyError) as error:
+        except (SpawnFailed, ValueError, TypeError, KeyError, RuntimeError) as error:
             failure = Error(
                 f"runtime boundary failure: {type(error).__name__}: {error}"
             )
@@ -312,7 +531,10 @@ class RuntimeAdapter(Adapter):
                     await asyncio.gather(state.cancel_task, return_exceptions=True)
                 if state.process is not None:
                     try:
-                        await state.process.terminate(self.grace)
+                        if state.isolation is not None:
+                            await state.isolation.terminate(state.process, self.grace)
+                        else:
+                            await state.process.terminate(self.grace)
                     finally:
                         code = state.process.child.returncode
                         if code is not None:
@@ -325,11 +547,27 @@ class RuntimeAdapter(Adapter):
                     raw_type="adapter.cleanup_incomplete",
                 )
             finally:
+                if state.isolation is not None:
+                    try:
+                        if not state.isolation.cleanup():
+                            isolation_incomplete = True
+                            cleanup_problem = Error(
+                                "isolated runtime resources remain owned; cleanup unconfirmed",
+                                raw_type="adapter.cleanup_incomplete",
+                            )
+                    except OSError:
+                        isolation_incomplete = True
+                        cleanup_problem = Error(
+                            "isolated runtime resources could not be removed",
+                            raw_type="adapter.cleanup_incomplete",
+                        )
                 # A cancellation request is not proof of process termination.
                 # The runner keeps CANCELLING when this diagnostic has no exit
                 # or runtime terminal, instead of feeding it to the state machine.
                 if state.observed_terminal is None:
-                    if state.process is not None and state.exit_event is None:
+                    if isolation_incomplete or (
+                        state.process is not None and state.exit_event is None
+                    ):
                         failure = Error(
                             "runtime process stop remains unconfirmed",
                             raw_type="adapter.cleanup_incomplete",
@@ -347,6 +585,10 @@ class RuntimeAdapter(Adapter):
                     or cleanup_problem
                     or Error("runtime exited without a terminal result")
                 )
+                if isinstance(terminal, Error) and state.redactor is not None:
+                    terminal = replace(
+                        terminal, detail=str(state.redactor.redact(terminal.detail))
+                    )
                 state.terminal = terminal
                 state.queue.put_nowait(terminal)
                 if state.exit_event is not None:
@@ -362,24 +604,80 @@ class RuntimeAdapter(Adapter):
                         recorder.close()
 
     async def _codex(self, state: _Turn, recorder: Recorder) -> None:
+        state.isolation = isolation = CodexIsolation.create(
+            state.config.cwd, recorder, self._environment(), log_dir=self.log_dir
+        )
+        version, code = await self._collect(
+            [self.executable, "--version"],
+            state.config.cwd,
+            recorder,
+            isolation=isolation,
+        )
+        if code != 0 or version.strip() != VERSION:
+            raise RuntimeFailure(
+                Error(
+                    "Codex isolation requires the recorded 0.169.0 runtime",
+                    raw_type="adapter.isolation_failed",
+                )
+            )
+        if state.cancelled:
+            raise RuntimeFailure(
+                Error(
+                    "cancelled before review process launch", FailureCategory.CANCELLED
+                )
+            )
         process = await self._spawn(
-            [self.executable, "app-server"], state.config.cwd, recorder, pipe=True
+            [self.executable, "app-server", "--strict-config"],
+            state.config.cwd,
+            recorder,
+            pipe=True,
+            isolation=isolation,
         )
         state.process = process
         state.rpc = rpc = _Rpc(process)
         if state.cancelled:
             await self._send_cancel(state)
         await rpc.initialize()
+        await self._audit_codex(rpc, isolation)
+        auth = await rpc.request("account/read", {"refreshToken": False})
+        if auth.get("account") is None:
+            raise RuntimeFailure(
+                Error(
+                    "isolated Codex reports no subscription login",
+                    FailureCategory.AUTH_EXPIRED,
+                    raw_type="account/read",
+                )
+            )
+        if (
+            not isinstance(auth["account"], dict)
+            or auth["account"].get("type") != "chatgpt"
+        ):
+            raise RuntimeFailure(
+                Error(
+                    "isolated Codex returned unsupported account evidence",
+                    raw_type="adapter.isolation_failed",
+                )
+            )
         response = await rpc.request(
             "thread/start",
             {
                 "model": state.config.model,
                 "cwd": str(state.config.cwd),
-                "sandbox": "read-only",
                 "approvalPolicy": "never",
                 "ephemeral": True,
             },
         )
+        if (
+            response.get("instructionSources") != []
+            or response.get("approvalPolicy") != "never"
+            or response.get("cwd") != str(state.config.cwd)
+        ):
+            raise RuntimeFailure(
+                Error(
+                    "isolated thread returned unexpected instruction sources or policy",
+                    raw_type="adapter.isolation_failed",
+                )
+            )
         state.thread_id = string_value(
             object_value(response.get("thread"), "thread").get("id"), "thread.id"
         )
@@ -393,7 +691,6 @@ class RuntimeAdapter(Adapter):
             "input": [{"type": "text", "text": state.prompt}],
             "model": state.config.model,
             "effort": state.config.effort,
-            "sandboxPolicy": {"type": "readOnly"},
             "approvalPolicy": "never",
             "cwd": str(state.config.cwd),
         }
@@ -480,6 +777,11 @@ class RuntimeAdapter(Adapter):
 
     async def _send_cancel(self, state: _Turn) -> None:
         process = state.process
+        if process is None and state.isolation is not None and state.task is not None:
+            # Version/audit setup owns processes before the review handle exists.
+            # Cancelling that coroutine preserves its shielded ownership cleanup.
+            state.task.cancel()
+            return
         if process is None or state.cancel_sent or state.observed_terminal is not None:
             return
         if self.provider == "codex":
@@ -545,20 +847,255 @@ class RuntimeAdapter(Adapter):
         return TurnResult(state.terminal, state.exit_event)
 
     async def _collect(
-        self, argv: list[str], cwd: Path, recorder: Recorder
+        self,
+        argv: list[str],
+        cwd: Path,
+        recorder: Recorder,
+        *,
+        isolation: CodexIsolation | None = None,
     ) -> tuple[str, int]:
-        process = await self._spawn(argv, cwd, recorder)
+        process = await self._spawn(argv, cwd, recorder, isolation=isolation)
         try:
             lines: list[str] = []
             while (value := await _read(process)) is not None:
                 lines.append(json.dumps(value) if isinstance(value, dict) else value)
             return "\n".join(lines), await process.wait_exited()
         finally:
-            await process.terminate(self.grace)
+            if isolation is not None:
+                await isolation.terminate(process, self.grace)
+            else:
+                await process.terminate(self.grace)
+
+    async def _audit_codex(self, rpc: _Rpc, isolation: CodexIsolation) -> None:
+        """Check the runtime's merged values and the sources before any turn.
+
+        ConfigReadResponse serializes optional fields as null. Non-null defaults
+        below are pinned to rust-v0.169.0/codex-rs/config/defaults.toml; all owned
+        overrides must survive normalization exactly, including their types.
+        """
+        response = await rpc.request(
+            "config/read", {"includeLayers": True, "cwd": str(isolation.cwd)}
+        )
+
+        def reject() -> None:
+            raise RuntimeFailure(
+                Error(
+                    "Codex effective configuration does not satisfy frozen-review isolation",
+                    raw_type="adapter.isolation_failed",
+                )
+            )
+
+        def equal(left: object, right: object) -> bool:
+            return json.dumps(left, sort_keys=True) == json.dumps(right, sort_keys=True)
+
+        def effective_equal(
+            actual: object, expected: object, path: tuple[str, ...]
+        ) -> bool:
+            if not isinstance(expected, dict):
+                return equal(actual, expected)
+            if not isinstance(actual, dict) or not expected.keys() <= actual.keys():
+                return False
+            optional_nulls = _CODEX_NULL_FIELDS.get(path, frozenset())
+            for key, value in actual.items():
+                if key not in expected:
+                    if key not in optional_nulls or value is not None:
+                        return False
+                elif not effective_equal(value, expected[key], (*path, key)):
+                    return False
+            return True
+
+        config = response.get("config")
+        layers = response.get("layers")
+        origins = response.get("origins")
+        if (
+            not isinstance(config, dict)
+            or not isinstance(layers, list)
+            or not isinstance(origins, dict)
+        ):
+            reject()
+        assert isinstance(config, dict) and isinstance(layers, list)
+        own_layers = 0
+        for layer in layers:
+            if not isinstance(layer, dict) or not isinstance(layer.get("name"), dict):
+                reject()
+            assert isinstance(layer, dict)
+            name = layer["name"]
+            if not isinstance(layer.get("version"), str) or not layer["version"]:
+                reject()
+            if name.get("type") == "user":
+                if (
+                    name.get("file") != str(isolation.codex_home / "config.toml")
+                    or name.get("profile") is not None
+                    or layer.get("disabledReason") is not None
+                    or not equal(layer.get("config"), isolation.config)
+                ):
+                    reject()
+                own_layers += 1
+            elif not (
+                name.get("type") == "system"
+                and name.get("file") == "/etc/codex/config.toml"
+                and layer.get("config") == {}
+                and layer.get("disabledReason") is None
+            ):
+                reject()
+        if own_layers != 1:
+            reject()
+        for key, expected in isolation.config.items():
+            if key not in config or not effective_equal(config[key], expected, (key,)):
+                reject()
+        defaults: dict[str, object] = {
+            "background_terminal_max_timeout": 300000,
+            "file_opener": "vscode",
+            "include_permissions_instructions": True,
+            "chatgpt_base_url": "https://chatgpt.com/backend-api/",
+            "project_root_markers": [".git"],
+            "mcp_oauth_credentials_store": "auto",
+            "hide_agent_reasoning": False,
+        }
+        empty_maps = {"profiles", "model_providers", "mcp_servers", "marketplaces"}
+        if (
+            config.keys()
+            != isolation.config.keys()
+            | _CODEX_NULL_TOP_LEVEL
+            | defaults.keys()
+            | empty_maps
+        ):
+            reject()
+        for key, value in config.items():
+            if key in isolation.config or (
+                key in _CODEX_NULL_TOP_LEVEL and value is None
+            ):
+                continue
+            if key in empty_maps and type(value) is dict and not value:
+                continue
+            if key not in defaults or not equal(value, defaults[key]):
+                reject()
+        requirements = await rpc.request("configRequirements/read", {})
+        if (
+            "requirements" not in requirements
+            or requirements["requirements"] is not None
+        ):
+            reject()
+        isolation.recorder.emit(
+            "isolation_verified",
+            profile=config["default_permissions"],
+            effective_config={key: config[key] for key in isolation.config},
+            sources=[layer["name"]["type"] for layer in layers],
+            requirements=requirements["requirements"],
+        )
+
+    async def _check_codex_environment(self) -> EnvironmentInfo:
+        with TemporaryDirectory(prefix="multi-agent-environment-") as directory:
+            cwd = Path(directory).resolve()
+            with self._recorder("environment-" + uuid4().hex, cwd) as recorder:
+                isolation = CodexIsolation.create(
+                    cwd, recorder, self._environment(), log_dir=self.log_dir
+                )
+                process = None
+                try:
+                    async with asyncio.timeout(self.timeout):
+                        version, code = await self._collect(
+                            [self.executable, "--version"],
+                            cwd,
+                            recorder,
+                            isolation=isolation,
+                        )
+                        if code != 0 or version.strip() != VERSION:
+                            raise RuntimeFailure(
+                                Error(
+                                    "Codex isolation requires the recorded 0.169.0 runtime",
+                                    raw_type="adapter.isolation_failed",
+                                )
+                            )
+                        process = await self._spawn(
+                            [self.executable, "app-server", "--strict-config"],
+                            cwd,
+                            recorder,
+                            pipe=True,
+                            isolation=isolation,
+                        )
+                        rpc = _Rpc(process)
+                        await rpc.initialize()
+                        await self._audit_codex(rpc, isolation)
+                        auth = await rpc.request(
+                            "account/read", {"refreshToken": False}
+                        )
+                        if "account" not in auth or (
+                            auth["account"] is not None
+                            and not isinstance(auth["account"], dict)
+                        ):
+                            raise ValueError("account/read has no account evidence")
+                        if (
+                            auth["account"] is not None
+                            and auth["account"].get("type") != "chatgpt"
+                        ):
+                            raise RuntimeFailure(
+                                Error(
+                                    "isolated Codex returned unsupported account evidence",
+                                    raw_type="adapter.isolation_failed",
+                                )
+                            )
+                        models, efforts = await self._codex_catalog(rpc)
+                        return EnvironmentInfo(
+                            VERSION, auth["account"] is not None, models, efforts
+                        )
+                finally:
+                    try:
+                        if process is not None:
+                            try:
+                                await process.close_finished(self.grace)
+                            finally:
+                                await isolation.terminate(process, self.grace)
+                    finally:
+                        if not isolation.cleanup():
+                            raise RuntimeFailure(
+                                Error(
+                                    "isolated environment resources remain owned; cleanup unconfirmed",
+                                    raw_type="adapter.cleanup_incomplete",
+                                )
+                            )
+
+    async def _codex_catalog(
+        self, rpc: _Rpc
+    ) -> tuple[tuple[str, ...], dict[str, tuple[str, ...]]]:
+        models: list[str] = []
+        efforts: dict[str, tuple[str, ...]] = {}
+        params: dict[str, Any] = {"includeHidden": False}
+        cursors: set[str] = set()
+        while True:
+            page = await rpc.request("model/list", params)
+            if not isinstance(page.get("data"), list):
+                raise TypeError("model/list.data must be an array")
+            for value in page["data"]:
+                model = object_value(value, "model entry")
+                name = string_value(model.get("id"), "model.id")
+                levels = model.get("supportedReasoningEfforts")
+                if not isinstance(levels, list):
+                    raise TypeError("supportedReasoningEfforts must be an array")
+                if model.get("hidden") is not True:
+                    models.append(name)
+                    efforts[name] = tuple(
+                        string_value(
+                            object_value(level, "effort").get("reasoningEffort"),
+                            "reasoningEffort",
+                        )
+                        for level in levels
+                    )
+            cursor = page.get("nextCursor")
+            if cursor is None:
+                break
+            cursor = string_value(cursor, "model cursor")
+            if cursor in cursors or len(cursors) >= 100:
+                raise ValueError("model/list pagination did not terminate")
+            cursors.add(cursor)
+            params["cursor"] = cursor
+        return tuple(models), efforts
 
     async def check_environment(self) -> EnvironmentInfo:
         """Record version/login/catalog separately; never starts a model turn."""
         try:
+            if self.provider == "codex":
+                return await self._check_codex_environment()
             with TemporaryDirectory(prefix="multi-agent-environment-") as directory:
                 cwd = Path(directory)
                 with self._recorder("environment-" + uuid4().hex, cwd) as recorder:
@@ -569,84 +1106,23 @@ class RuntimeAdapter(Adapter):
                         if version_exit != 0:
                             raise ValueError("version check exited unsuccessfully")
                         version = string_value(version_text.strip(), "CLI version")
-                        if self.provider == "claude":
-                            auth_text, auth_exit = await self._collect(
-                                [self.executable, "auth", "status"], cwd, recorder
-                            )
-                            auth = object_value(
-                                json.loads(auth_text),
-                                "auth status",
-                            )
-                            logged_in = auth.get("loggedIn")
-                            if not isinstance(logged_in, bool):
-                                raise ValueError("auth loggedIn must be a boolean")
-                            # CLI reference: auth status exits 1 when logged out.
-                            # No other nonzero status is successful preflight.
-                            if auth_exit != 0 and not (
-                                auth_exit == 1 and logged_in is False
-                            ):
-                                raise ValueError("auth status exited unsuccessfully")
-                            return EnvironmentInfo(version, logged_in, None)
-                        process = await self._spawn(
-                            [self.executable, "app-server"], cwd, recorder, pipe=True
+                        auth_text, auth_exit = await self._collect(
+                            [self.executable, "auth", "status"], cwd, recorder
                         )
-                        try:
-                            rpc = _Rpc(process)
-                            await rpc.initialize()
-                            auth = await rpc.request(
-                                "account/read", {"refreshToken": False}
-                            )
-                            if "account" not in auth or (
-                                auth["account"] is not None
-                                and not isinstance(auth["account"], dict)
-                            ):
-                                raise ValueError("account/read has no account evidence")
-                            models: list[str] = []
-                            efforts: dict[str, tuple[str, ...]] = {}
-                            params: dict[str, Any] = {"includeHidden": False}
-                            cursors: set[str] = set()
-                            while True:
-                                page = await rpc.request("model/list", params)
-                                if not isinstance(page.get("data"), list):
-                                    raise TypeError("model/list.data must be an array")
-                                for value in page["data"]:
-                                    model = object_value(value, "model entry")
-                                    name = string_value(model.get("id"), "model.id")
-                                    levels = model.get("supportedReasoningEfforts")
-                                    if not isinstance(levels, list):
-                                        raise TypeError(
-                                            "supportedReasoningEfforts must be an array"
-                                        )
-                                    if model.get("hidden") is not True:
-                                        models.append(name)
-                                        efforts[name] = tuple(
-                                            string_value(
-                                                object_value(level, "effort").get(
-                                                    "reasoningEffort"
-                                                ),
-                                                "reasoningEffort",
-                                            )
-                                            for level in levels
-                                        )
-                                cursor = page.get("nextCursor")
-                                if cursor is None:
-                                    break
-                                cursor = string_value(cursor, "model cursor")
-                                if cursor in cursors or len(cursors) >= 100:
-                                    raise ValueError(
-                                        "model/list pagination did not terminate"
-                                    )
-                                cursors.add(cursor)
-                                params["cursor"] = cursor
-                            return EnvironmentInfo(
-                                version,
-                                auth["account"] is not None,
-                                tuple(models),
-                                efforts,
-                            )
-                        finally:
-                            await process.close_finished(self.grace)
-                            await process.terminate(self.grace)
+                        auth = object_value(
+                            json.loads(auth_text),
+                            "auth status",
+                        )
+                        logged_in = auth.get("loggedIn")
+                        if not isinstance(logged_in, bool):
+                            raise TypeError("auth loggedIn must be a boolean")
+                        # CLI reference: auth status exits 1 when logged out.
+                        # No other nonzero status is successful preflight.
+                        if auth_exit != 0 and not (
+                            auth_exit == 1 and logged_in is False
+                        ):
+                            raise ValueError("auth status exited unsuccessfully")
+                        return EnvironmentInfo(version, logged_in, None)
         except RuntimeFailure:
             raise
         except TimeoutError as error:

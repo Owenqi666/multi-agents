@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import sys
 from collections import defaultdict
 from dataclasses import replace
@@ -43,6 +44,41 @@ from multi_agent.core.snapshot import (
 from multi_agent.store import ReviewStore
 
 GOOD = {"summary": "No issues found", "findings": []}
+
+
+@pytest.fixture(autouse=True)
+def synthetic_codex_auth_and_fake_environment(tmp_path, monkeypatch):
+    auth_home = tmp_path / "synthetic-codex-auth"
+    auth_home.mkdir(mode=0o700)
+    auth = auth_home / "auth.json"
+    auth.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    key: "synthetic-" + key
+                    for key in (
+                        "id_token",
+                        "access_token",
+                        "refresh_token",
+                        "account_id",
+                    )
+                },
+            }
+        )
+    )
+    auth.chmod(0o600)
+    monkeypatch.setenv("CODEX_HOME", str(auth_home))
+    original = RuntimeAdapter._environment
+
+    def fake_environment(adapter):
+        environment = original(adapter)
+        environment.update(
+            (key, value) for key, value in os.environ.items() if key.startswith("FAKE_")
+        )
+        return environment
+
+    monkeypatch.setattr(RuntimeAdapter, "_environment", fake_environment)
 
 
 def report(identifier="issue-1", severity="P1", title="boundary defect"):
@@ -880,7 +916,8 @@ class CompletionWindowAdapter(RuntimeAdapter):
         if isinstance(event, Completed):
             self.completion_windows.append(
                 (
-                    state.observed_terminal is event,
+                    isinstance(state.observed_terminal, Completed)
+                    and state.observed_terminal.result == event.result,
                     state.terminal is None,
                     state.process.child.returncode is None,
                 )

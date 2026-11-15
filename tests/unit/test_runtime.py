@@ -29,6 +29,41 @@ from multi_agent.core.events import (
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "runtime"
 
 
+@pytest.fixture(autouse=True)
+def synthetic_codex_auth_and_fake_environment(tmp_path, monkeypatch):
+    auth_home = tmp_path / "synthetic-codex-auth"
+    auth_home.mkdir(mode=0o700)
+    auth = auth_home / "auth.json"
+    auth.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {
+                    key: "synthetic-" + key
+                    for key in (
+                        "id_token",
+                        "access_token",
+                        "refresh_token",
+                        "account_id",
+                    )
+                },
+            }
+        )
+    )
+    auth.chmod(0o600)
+    monkeypatch.setenv("CODEX_HOME", str(auth_home))
+    original = RuntimeAdapter._environment
+
+    def fake_environment(adapter):
+        environment = original(adapter)
+        environment.update(
+            (key, value) for key, value in os.environ.items() if key.startswith("FAKE_")
+        )
+        return environment
+
+    monkeypatch.setattr(RuntimeAdapter, "_environment", fake_environment)
+
+
 def fake(tmp_path, provider):
     executable = tmp_path / f"{provider}-fake"
     body = (Path(__file__).parent / "runtime_fakes" / "fake_cli.py").read_text()
@@ -114,7 +149,9 @@ def test_environment_is_explicit_and_preserves_catalog(tmp_path, monkeypatch, pr
     first, second = asyncio.run(run())
     assert first == second
     assert first.logged_in is True
-    assert first.cli_version == "fake-" + provider + " 1.0"
+    assert first.cli_version == (
+        "codex-cli 0.169.0" if provider == "codex" else "fake-claude 1.0"
+    )
     if provider == "codex":
         assert first.models == ("model-1", "model-2")
         assert first.model_efforts == {
@@ -241,7 +278,12 @@ def test_cancellation_is_confirmed_after_runtime_or_process_stop(
     assert result.terminal.failure_category == FailureCategory.CANCELLED
     assert result.process_exit is not None
     assert isinstance(events[-1], ProcessExited)
-    pid = json.loads(capture.read_text().splitlines()[0])["pid"]
+    pid = next(
+        record["pid"]
+        for line in capture.read_text().splitlines()
+        if (record := json.loads(line))["kind"] == "spawn"
+        and record["argv"][:1] in (["app-server"], ["-p"])
+    )
     with pytest.raises(ProcessLookupError):
         os.kill(pid, 0)
     if provider == "codex":
@@ -702,7 +744,13 @@ def test_runtime_cleans_owned_process_group(tmp_path, monkeypatch, provider, mod
     if mode == "grandchild-cancel":
         assert result.terminal.failure_category == FailureCategory.CANCELLED
     rows = [json.loads(line) for line in capture.read_text().splitlines()]
-    pids = [row["pid"] for row in rows if row["kind"] in ("spawn", "grandchild")]
+    pids = [
+        row["pid"]
+        for row in rows
+        if row["kind"] == "grandchild"
+        or row["kind"] == "spawn"
+        and row["argv"][:1] in (["app-server"], ["-p"])
+    ]
     assert len(pids) == 2
     # Orphan zombies may await the system reaper briefly; no running descendant
     # can survive the adapter's bounded process-group shutdown.
@@ -919,9 +967,9 @@ def test_cancel_refuses_observed_os_exit_before_exit_event(
         release = asyncio.Event()
 
         async def pause_cleanup(process, grace):
-            await process.wait_exited()
-            cleaning.set()
-            await release.wait()
+            if await process.wait_exited() == 17:
+                cleaning.set()
+                await release.wait()
             await original_terminate(process, grace)
 
         monkeypatch.setattr(Process, "terminate", pause_cleanup)
@@ -950,3 +998,256 @@ def test_cancel_refuses_observed_os_exit_before_exit_event(
         assert isinstance(events[-1], ProcessExited)
 
     asyncio.run(run())
+
+
+def assert_codex_resources_removed(adapter):
+    states = list(adapter._turns.values())
+    assert len(states) == 1
+    isolation = states[0].isolation
+    assert isolation is not None
+    assert not isolation.root.exists()
+    assert isolation._processes
+    assert all(process.child.returncode is not None for process in isolation._processes)
+    assert all(isolation._processes.values())
+
+
+def runtime_requests(capture):
+    return [
+        record["message"]
+        for line in capture.read_text().splitlines()
+        if (record := json.loads(line))["kind"] == "request"
+    ]
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "config-missing",
+        "config-malformed",
+        "config-missing-mcp-servers",
+        "config-missing-instructions",
+        "config-ignored-profile",
+        "config-profile-extends",
+        "config-extra-filesystem",
+        "config-extra-profile",
+        "config-network-enabled",
+        "config-bool-doc-limit",
+        "config-null-permission-key",
+        "config-null-top-level",
+        "config-system-layer",
+        "config-mdm-layer",
+        "config-mcp-servers",
+        "config-instructions",
+        "config-error",
+        "config-bool-id",
+        "config-float-id",
+        "config-wrong-id",
+        "requirements-instructions",
+    ],
+)
+def test_codex_rejects_unsafe_effective_configuration_before_model_turn(
+    tmp_path, monkeypatch, mode
+):
+    adapter, config, capture = setup(tmp_path, monkeypatch, "codex", mode)
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category is None
+    assert result.terminal.raw_type == (
+        "config/read" if mode == "config-error" else "adapter.isolation_failed"
+    )
+    assert sum(isinstance(event, Error) for event in events) == 1
+    assert not any(isinstance(event, Completed) for event in events)
+    assert result.process_exit is not None
+    methods = [request.get("method") for request in runtime_requests(capture)]
+    assert "config/read" in methods
+    assert "thread/start" not in methods and "turn/start" not in methods
+    if mode == "requirements-instructions":
+        assert "configRequirements/read" in methods
+    assert_codex_resources_removed(adapter)
+    assert all(
+        "synthetic-config-poison" not in path.read_text()
+        for path in (tmp_path / "logs").glob("*.jsonl")
+    )
+
+
+@pytest.mark.parametrize(
+    "mode, turn_count",
+    [("thread-instructions", 0), ("mcp-before-turn", 0), ("mcp-after-terminal", 1)],
+)
+def test_codex_rejects_instruction_or_mcp_contamination_including_final_drain(
+    tmp_path, monkeypatch, mode, turn_count
+):
+    adapter, config, capture = setup(tmp_path, monkeypatch, "codex", mode)
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category is None
+    assert result.terminal.raw_type == "adapter.isolation_failed"
+    assert not any(isinstance(event, Completed) for event in events)
+    assert sum(isinstance(event, Error) for event in events) == 1
+    assert result.process_exit is not None
+    methods = [request.get("method") for request in runtime_requests(capture)]
+    assert methods.count("thread/start") == 1
+    assert methods.count("turn/start") == turn_count
+    if mode == "mcp-after-terminal":
+        records = [
+            json.loads(line)
+            for path in (tmp_path / "logs").glob("*.jsonl")
+            for line in path.read_text().splitlines()
+        ]
+        assert any(
+            record.get("message", {}).get("method") == "turn/completed"
+            and record["message"]["params"]["turn"]["status"] == "completed"
+            for record in records
+        )
+    assert_codex_resources_removed(adapter)
+
+
+def test_codex_null_account_is_auth_expired_before_thread_and_cleans_isolation(
+    tmp_path, monkeypatch
+):
+    adapter, config, capture = setup(
+        tmp_path, monkeypatch, "codex", "account-logged-out"
+    )
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category == FailureCategory.AUTH_EXPIRED
+    assert result.terminal.raw_type == "account/read"
+    assert not any(isinstance(event, (SessionStarted, Completed)) for event in events)
+    methods = [request.get("method") for request in runtime_requests(capture)]
+    assert "account/read" in methods
+    assert "thread/start" not in methods and "turn/start" not in methods
+    assert result.process_exit is not None
+    assert_codex_resources_removed(adapter)
+
+
+def test_codex_version_mismatch_stops_before_app_server_and_cleans_isolation(
+    tmp_path, monkeypatch
+):
+    adapter, config, capture = setup(tmp_path, monkeypatch, "codex", "wrong-version")
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.raw_type == "adapter.isolation_failed"
+    assert result.terminal.failure_category is None
+    assert not any(isinstance(event, Completed) for event in events)
+    rows = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [row["argv"] for row in rows if row["kind"] == "spawn"] == [["--version"]]
+    assert runtime_requests(capture) == []
+    assert_codex_resources_removed(adapter)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    [
+        "requirements-empty",
+        "requirements-missing",
+        "requirements-unknown-null",
+        "requirements-login-methods",
+    ],
+)
+def test_codex_nonnull_or_missing_requirements_do_not_attest_absence(
+    tmp_path, monkeypatch, mode
+):
+    adapter, config, capture = setup(tmp_path, monkeypatch, "codex", mode)
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.raw_type == "adapter.isolation_failed"
+    assert result.terminal.failure_category is None
+    assert not any(isinstance(event, Completed) for event in events)
+    assert isinstance(events[-1], ProcessExited)
+    methods = [request.get("method") for request in runtime_requests(capture)]
+    assert methods.index("config/read") < methods.index("configRequirements/read")
+    assert "thread/start" not in methods and "turn/start" not in methods
+    assert_codex_resources_removed(adapter)
+
+
+@pytest.mark.parametrize("unknown_stop", [False, True])
+def test_codex_cancel_during_version_preflight_preserves_stop_evidence(
+    tmp_path, monkeypatch, unknown_stop
+):
+    adapter, config, capture = setup(
+        tmp_path, monkeypatch, "codex", "version-hang", timeout=10
+    )
+    original_start = Process.start
+
+    async def run():
+        spawned = asyncio.Event()
+        handles = []
+
+        async def capture_start(cls, name, argv, cwd, recorder, **kwargs):
+            process = await original_start(name, argv, cwd, recorder, **kwargs)
+            handles.append(process)
+            if argv[1:] == ["--version"]:
+                spawned.set()
+            return process
+
+        monkeypatch.setattr(Process, "start", classmethod(capture_start))
+        turn = await adapter.submit_turn(await adapter.start_session(config), "unused")
+        state = adapter._turns[turn]
+        version = None
+        original_terminate = None
+        try:
+            async with asyncio.timeout(3):
+                await spawned.wait()
+                version = handles[0]
+                # The fake flushes the real version line, then remains alive.
+                await version.first_stdout.wait()
+                assert state.process is None and state.isolation is not None
+                assert version.child.returncode is None
+                assert state.observed_terminal is None
+                original_terminate = version.terminate
+                if unknown_stop:
+
+                    async def fail_stop(grace):
+                        raise OSError("injected version stop remains unknown")
+
+                    monkeypatch.setattr(version, "terminate", fail_stop)
+                accepted = []
+                assert await adapter.cancel(
+                    turn, on_accepted=lambda: accepted.append(True)
+                )
+                events = [event async for event in adapter.events(turn)]
+                result = await adapter.result(turn)
+            assert accepted == [True]
+            assert isinstance(result.terminal, Error)
+            assert not any(
+                isinstance(event, (SessionStarted, Completed, ProcessExited))
+                for event in events
+            )
+            assert result.process_exit is None
+            assert state.process is None
+            assert len(handles) == 1
+            if unknown_stop:
+                assert result.terminal.raw_type == "adapter.cleanup_incomplete"
+                assert result.terminal.failure_category is None
+                assert version.child.returncode is None
+                assert state.isolation.root.is_dir()
+                assert state.isolation.root.stat().st_mode & 0o777 == 0o700
+                auth = state.isolation.codex_home / "auth.json"
+                assert auth.is_file() and auth.stat().st_mode & 0o777 == 0o600
+            else:
+                assert result.terminal.failure_category == FailureCategory.CANCELLED
+                assert version.child.returncode is not None
+                assert_codex_resources_removed(adapter)
+        finally:
+            if version is not None and original_terminate is not None:
+                monkeypatch.setattr(version, "terminate", original_terminate)
+            if state.task is not None and not state.task.done():
+                state.task.cancel()
+                await asyncio.gather(state.task, return_exceptions=True)
+            if state.isolation is not None and state.isolation.root.exists():
+                # The negative case deliberately retained a live owned process
+                # after its runtime recorder closed. Reap it with a live log.
+                with Recorder(
+                    tmp_path / "version-test-cleanup.jsonl", Redactor()
+                ) as recorder:
+                    state.isolation.recorder = recorder
+                    for process in state.isolation._processes:
+                        process._recorder = recorder
+                        await state.isolation.terminate(process, 0.05)
+                    assert state.isolation.cleanup()
+            assert all(process.child.returncode is not None for process in handles)
+
+    asyncio.run(run())
+    rows = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [row["argv"] for row in rows if row["kind"] == "spawn"] == [["--version"]]
+    assert runtime_requests(capture) == []

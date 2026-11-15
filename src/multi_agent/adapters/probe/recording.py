@@ -5,7 +5,7 @@ import re
 from pathlib import Path
 from time import monotonic
 from types import TracebackType
-from typing import Self
+from typing import Self, cast
 
 _PRIVATE_KEYS = {
     "email",
@@ -37,6 +37,19 @@ _JSON_STRING = r'"(?:[^"\\\x00-\x1f]|\\(?:["\\/bfnrt]|u[0-9a-fA-F]{4}))*"'
 _TEXT_FIELD = re.compile(
     rf"(?P<key>{_JSON_STRING})(?P<separator>\s*:\s*)(?P<value>{_JSON_STRING})"
 )
+# Names from ConfigReadResponse.ConfigLayerSource in the local protocol snapshot.
+# Configuration values, paths, layer names and versions may contain credentials.
+_CONFIG_LAYER_TYPES = {
+    "packagedDefaults",
+    "mdm",
+    "system",
+    "enterpriseManaged",
+    "user",
+    "project",
+    "sessionFlags",
+    "legacyManagedConfigTomlFromFile",
+    "legacyManagedConfigTomlFromMdm",
+}
 
 
 def _private(key: str) -> bool:
@@ -55,6 +68,7 @@ class Redactor:
 
     def __init__(self, home: Path | None = None) -> None:
         self._paths: dict[str, str] = {}
+        self._secrets: set[str] = set()
         self._add_path(Path.home() if home is None else home, "~")
 
     def _add_path(self, path: Path, replacement: str) -> None:
@@ -64,7 +78,50 @@ class Redactor:
     def add_workdir(self, path: Path) -> None:
         self._add_path(path, "<WORKDIR>")
 
+    def add_secret(self, value: str) -> None:
+        """Mask a known credential in values, keys, diagnostics and JSON text.
+
+        Register credentials before starting a process, so its earliest stdout
+        or stderr cannot reach the recorder first. This is literal redaction,
+        not a promise to recognize arbitrary encodings or unknown credentials.
+        """
+        if not isinstance(value, str):
+            raise TypeError("secret must be a string")
+        if not value:
+            raise ValueError("secret must not be empty")
+        self._secrets.add(value)
+        for ensure_ascii in (False, True):
+            self._secrets.add(json.dumps(value, ensure_ascii=ensure_ascii)[1:-1])
+
+    def _secret_text(self, text: str) -> str:
+        for secret in sorted(self._secrets, key=len, reverse=True):
+            text = text.replace(secret, "<REDACTED>")
+        return text
+
+    def redact_secrets(self, value: object) -> object:
+        """Mask registered credentials without rewriting legitimate report text.
+
+        Business results can contain exact source quotes, including email
+        addresses, paths and private-looking keys. Only a registered credential
+        is a reason to alter those values; general log privacy rules are separate.
+        """
+        if isinstance(value, str):
+            return self._secret_text(value)
+        if isinstance(value, dict):
+            return {
+                self._secret_text(key)
+                if isinstance(key, str)
+                else key: self.redact_secrets(child)
+                for key, child in value.items()
+            }
+        if isinstance(value, list):
+            return [self.redact_secrets(child) for child in value]
+        if isinstance(value, tuple):
+            return tuple(self.redact_secrets(child) for child in value)
+        return value
+
     def _text(self, text: str) -> str:
+        text = self._secret_text(text)
         for path in sorted(self._paths, key=len, reverse=True):
             text = text.replace(path, self._paths[path])
         text = _EMAIL.sub("<EMAIL>", text) if "@" in text else text
@@ -92,6 +149,79 @@ class Redactor:
         return value
 
 
+def _value_type(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, dict):
+        return "object"
+    if isinstance(value, (list, tuple)):
+        return "array"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, (int, float)):
+        return "number"
+    return "other"
+
+
+def _config_read_audit(
+    message: dict[object, object], identifier: str | int | None
+) -> dict[str, object]:
+    """Summarize an RPC envelope without retaining any arbitrary config data.
+
+    This runs before the raw response is written. It never changes the original
+    object consumed by the protocol validator. Validated policy values can be
+    recorded separately as explicit observations by the caller.
+    """
+    result = message.get("result")
+    error = message.get("error")
+    summary: dict[str, object] = {
+        "raw_payload_omitted": True,
+        "has_result": "result" in message,
+        "has_error": "error" in message,
+        "result_type": _value_type(result) if "result" in message else "missing",
+        "error_type": _value_type(error) if "error" in message else "missing",
+    }
+    if isinstance(result, dict):
+        for key in ("config", "layers", "origins"):
+            value = result.get(key)
+            summary[key + "_type"] = _value_type(value) if key in result else "missing"
+            if isinstance(value, (dict, list, tuple)):
+                summary[key + "_count"] = len(value)
+        layers = result.get("layers")
+        if isinstance(layers, list):
+            sources = []
+            for layer in layers:
+                source_type = None
+                disabled = None
+                if isinstance(layer, dict):
+                    name = layer.get("name")
+                    if isinstance(name, dict):
+                        source_type = name.get("type")
+                    reason = layer.get("disabledReason")
+                    if "disabledReason" in layer and (
+                        reason is None or isinstance(reason, str)
+                    ):
+                        disabled = reason is not None
+                sources.append(
+                    {
+                        "source_type": source_type
+                        if isinstance(source_type, str)
+                        and source_type in _CONFIG_LAYER_TYPES
+                        else "unrecognized",
+                        "disabled": disabled,
+                    }
+                )
+            summary["layer_sources"] = sources
+    if isinstance(error, dict):
+        code = error.get("code")
+        summary["error_code"] = (
+            code if isinstance(code, int) and not isinstance(code, bool) else None
+        )
+    return {"id": identifier, "config_read_audit": summary}
+
+
 class Recorder:
     """Flush each redacted JSONL record before returning to the event loop."""
 
@@ -99,6 +229,8 @@ class Recorder:
         self.redactor = redactor
         self._started = monotonic()
         self._count = 0
+        self._rpc_methods: dict[tuple[str | None, str | int], str] = {}
+        self._pending_config_reads: dict[str | None, set[str | int]] = {}
         self._stream = path.open("x", encoding="utf-8")
 
     @property
@@ -110,6 +242,67 @@ class Recorder:
         return monotonic() - self._started
 
     def emit(self, kind: str, **fields: object) -> None:
+        message = fields.get("message")
+        proc = fields.get("proc")
+        if isinstance(message, dict) and (proc is None or isinstance(proc, str)):
+            identifier = message.get("id")
+            valid_id = isinstance(identifier, (str, int)) and not isinstance(
+                identifier, bool
+            )
+            key = (proc, cast(str | int, identifier)) if valid_id else None
+            method = message.get("method")
+            pending = self._pending_config_reads.setdefault(proc, set())
+            if kind == "send" and isinstance(method, str) and key is not None:
+                self._rpc_methods[key] = method
+                if method in ("config/read", "configRequirements/read"):
+                    pending.add(key[1])
+                else:
+                    pending.discard(key[1])
+            elif kind == "recv":
+                known_method = self._rpc_methods.get(key) if key is not None else None
+                known_config = (
+                    known_method == "config/read"
+                    or known_method == "configRequirements/read"
+                )
+                server_request = (
+                    isinstance(method, str)
+                    and ("id" not in message or valid_id)
+                    and "result" not in message
+                    and "error" not in message
+                )
+                if not server_request and (pending or known_config):
+                    # Unexpected IDs are rejected by the RPC boundary only
+                    # after recording. Omit their payload and untrusted ID now.
+                    # Keep correct-ID associations for duplicate/late replies.
+                    fields = {
+                        **fields,
+                        "message": _config_read_audit(
+                            message, identifier if known_config else None
+                        ),
+                    }
+                    if known_config:
+                        pending.discard(identifier)
+        if (
+            kind == "recv"
+            and (proc is None or isinstance(proc, str))
+            and self._pending_config_reads.get(proc)
+            and "text" in fields
+        ):
+            # Non-object JSON and parse errors enter the recorder as text.
+            # Config parsing diagnostics can echo arbitrary values on stderr.
+            # The process reader retains the original for boundary validation.
+            raw_text = fields["text"]
+            fields = {
+                **fields,
+                "text": "<CONFIG_READ_PAYLOAD_OMITTED>",
+                "config_read_text_audit": {
+                    "raw_payload_omitted": True,
+                    "value_type": _value_type(raw_text),
+                    "character_count": len(raw_text)
+                    if isinstance(raw_text, str)
+                    else None,
+                },
+            }
         record = {
             **fields,
             "seq": self._count + 1,

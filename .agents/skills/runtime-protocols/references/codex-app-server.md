@@ -153,8 +153,53 @@
 | `thread/start` 响应里的 `instructionSources` 是该线程当前加载的指令文件路径，可用来记录会话实际加载了什么。工作目录里有 `AGENTS.md` 时是它的绝对路径，没有时是空数组 | `已验证` 2026-11-15，0.169.0 | `v2/ThreadStartResponse.json` 的字段说明；夹具 `codex-readonly`、`codex-turn` |
 | 工作目录里的 `AGENTS.md` 会被当作指令加载，模型照做。以候选检出为工作目录的审核会话，会执行候选提交里的 `AGENTS.md` | `已验证` 2026-11-15，0.169.0 | 夹具 `codex-readonly`（最终回答里带着 `AGENTS.md` 要求的暗号） |
 | 每个线程都会启动用户配置的 MCP 服务器，只读线程也一样。本机有 5 个，约 1 秒内就绪，其中 1 个启动失败 | `已验证` 2026-11-15，0.169.0 | 夹具 `codex-turn` |
-| 怎样让一个线程不加载 `AGENTS.md`、不启动 MCP 服务器 | `未确认` | `thread/start` 有 `config` 参数，没有试过 |
+| 隔离审核线程的配置与权限方案 | `文档`；共同产品路径无模型命令 `已验证` 2026-11-15，完整审核回合尚未验证 | 见下节 T21；不能由 `thread/start.config`、空 MCP overlay 或 cwd 单独推出隔离成立 |
 | 候选提交里新增的 `.agents/skills/` 会被以该检出为工作目录的会话加载 | `未确认` | 由前两条推出，没有实测 |
+
+## T21 审核隔离（0.169.0）
+
+### 来源与证据范围
+
+`protocol/codex/config.schema.json` 是[官方 `rust-v0.169.0` config schema](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/config.schema.json)的原始文件，没有人工改动。SHA256 为 `f515f420927460250181097af8dc72b80a6be4f01f4324a0efef816e46cc9c86`，大小 271771 字节；下载信息见旁边的 `config-schema-source.json`。下述源码结论状态为 `文档`，不能冒充本机模型实测。
+
+2026-11-15 的初步原生无模型 canary 使用产品 `policy_config` 生成配置，并对 `command/exec` 省略 `sandboxPolicy`。证据在本机 `/Users/owen/Desktop/Multi-agent-acceptance/T-0021/native-policy-canary/raw.jsonl`：10 个读取 case 均符合预期，冻结输入可读，外部文件、另一席报告、数据库、答案、认证、符号链接目标、父目录及改 cwd 后的外部文件拒读；改 cwd 后仍能读取绝对路径冻结输入。**这只验证当次原生命令读取路径。** 原始配置摘要仍记 `policy_matches:false`，不能宣称完整配置审计通过；后续配置增补、最终产品集成及真实模型审核回合需要各自证据。未调用 `turn/start`。
+
+同日 `native-policy-final/` 的共同产品路径 canary 记录了配置 gate 通过、10 项读取符合预期及实际退出清理，作为开发证据保留；此时尚未覆盖后补的独立 requirements gate。初步全等失败已由 schema/source 对照解释为 serde 补 null/默认值，旧记录不改写。
+
+严格 requirements 路线的阶段证据在 `/Users/owen/Desktop/Multi-agent-acceptance/T-0021/native-policy-strict-requirements/{summary.json,raw.jsonl}`（`已验证` 2026-11-15，0.169.0）：删除 `forced_login_method`，最小认证材料仍只允许官方 ChatGPT 登录；调用共同产品的 `CodexIsolation.create/spawn/terminate/cleanup` 和 `RuntimeAdapter._collect/_spawn/_audit_codex`，以 `app-server --strict-config` 启动，实际通过 `requirements` 必须存在且为 null 的 gate。10 个读取 case 全部 `matches=true`，版本进程与 App Server 实际退出 0，随后记录 `isolation_removed`，模型请求为 0。此前 `native-policy-requirements/raw.jsonl` 保留了有 forced-login 投影时被严格 gate 拒绝并清理的记录。
+
+**最终验收记录**是 `/Users/owen/Desktop/Multi-agent-acceptance/T-0021/native-policy-accepted/{raw.jsonl,summary.json,metadata.json}`，脚本为上级目录的 `native-policy-accepted.py`，记录时间为 2026-11-15 22:00 UTC。它通过完整字段存在性核对，`isolation_verified` 实际保存 `effective_config`（含官方序列化 null）、真实来源 `["user","system"]` 和 `requirements:null`；`account/read` 实际报告 `type:"chatgpt"`。10/10 case 符合预期，两个进程退出码均为 0，资源清理确认，模型请求为 0。metadata 绑定当次 `runtime.py`、`codex_isolation.py`、`probe/recording.py` 的 SHA256；验收对 32 个输出文件进行实际认证串扫描，未发现泄漏。旧记录保持原貌，不把新日志字段倒填进早期证据。
+
+这些证据覆盖当次共同实现的配置/requirements 审计、原生命令读取和资源生命周期，不扩张到客户端 `fs/readFile`，不证明所有模型工具或完整模型上下文已隔离。真实审核回合仍待 T22。
+
+### Named permissions 与实际执行路径
+
+最小结构是 `default_permissions="multi-agent-frozen-review"`，对应 `[permissions.multi-agent-frozen-review.filesystem]` 的 `":minimal"="read"` 和冻结目录规范化绝对路径 `="read"`，以及 `[permissions.multi-agent-frozen-review.network] enabled=false`。不继承 `:read-only`，不增加 `:root`、临时目录、认证、日志或其他席位根；不使用相对 cwd 授权。实现从空 restricted filesystem 编译这些条目；未知特殊路径可能被忽略并警告，因此必须核对准确键名及有效配置。[权限编译源码](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/config/permissions.rs#L459)
+
+`command/exec` 未指定权限覆盖时取 `self.config.permissions.effective_permission_profile()`，随后传入 `build_exec_request`；指定旧 `sandboxPolicy` 则走另一条覆盖分支。审核线程及回合也必须避免旧 `thread/start.sandbox`、`turn/start.sandboxPolicy` 把 named profile 改回宽泛只读。官方源码中的实验性 `permissionProfile`、`activePermissionProfile` 没有出现在本仓库本机导出结构中，不能据源码擅自加入协议请求或要求响应必有。[命令执行处理器](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/request_processors/command_exec_processor.rs#L250)
+
+macOS `:minimal` 允许系统程序、框架、库与若干系统配置目录读取，包括 `/etc`、`/private/etc`、`/Library/Preferences`、`/var/db`、`/opt/homebrew/lib` 和 `/usr/local/lib`；还有终端、描述符和 `/dev/null` 等必要写入例外。因此它是“受限用户文件读取加系统运行时例外”，不是全文件系统零外读或绝对只写禁止。[原始 Seatbelt 平台规则](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/sandboxing/src/seatbelt_read_only_platform_defaults.sbpl)
+
+模型 `view_image` 把当前环境的 sandbox context 传给 metadata/read；受限文件系统读取走 sandboxed helper，同样使用权限 profile，并额外放行 helper 可执行文件及平台运行时，不能建立沙箱时返回错误。`tool_search` 搜索已注册工具目录，本身不是文件读取工具；它不会约束搜出的 MCP 或远端工具。客户端 `fs/readFile` 则显式使用 `sandbox=None`，具有 App Server 客户端权限的人仍可调用它；产品不能把这个客户端 RPC 暴露为模型读文件后声称沿用了模型沙箱。[模型图片读取](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/tools/handlers/view_image.rs#L150)、[文件读取分派](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/exec-server/src/local_file_system.rs#L93)、[文件系统 helper](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/exec-server/src/fs_sandbox.rs#L112)、[工具搜索](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/tools/handlers/tool_search.rs#L75)、[客户端文件 RPC](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/request_processors/fs_processor.rs#L64)
+
+### 宿主上下文与配置审计
+
+- 临时 HOME/CODEX_HOME 只承接必要的官方订阅认证；模型可读根不包含它们。`project_doc_max_bytes=0` 会跳过项目指令，却不抑制 Codex home 的 `AGENTS.md` / `AGENTS.override.md`，所以需要干净 home 和指令来源审计。[项目加载](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/agents_md.rs#L58)、[全局加载](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/codex-home/src/instructions/mod.rs#L40)
+- `skills.include_instructions=false`、`skills.bundled.enabled=false`、`cloud.skills.enabled=false`，并关闭 `features.skill_search`。后者是 shadow selection 开关；前两项不能代替文件权限。`skip_host_skill_discovery` 仅在没有 contributor 要求 host discovery 时才生效，当前 App Server 注册的 HostSkillProvider 会要求发现，不能当作全局禁用开关。[技能配置接线](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/extensions.rs#L114)、[host catalog 条件](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/ext/skills/src/preparation.rs#L85)、[发现需求](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/ext/skills/src/extension.rs#L304)
+- 同时关闭 memories 的 `use_memories`、`generate_memories`、`dedicated_tools`，以及相应 features；关闭 plugins、remote_plugin、apps/connectors、hooks、shell snapshots、外部 agent memory import、remote control、子代理和非审核工具。`plugins._default.enabled=false` 可能被具体插件设置覆盖；空 `mcp_servers={}` overlay 也不删除低优先级层，须审计最终集合为空。`orchestrator.mcp.enabled=false` 只控制 orchestrator MCP。`plugin_hooks` 是旧 no-op，`memory_tool` 是 memories 别名，不能算独立保证。[官方配置 schema](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/config.schema.json)、[features 定义](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/features/src/lib.rs)
+- 显式关闭 `features.token_budget` 和 `features.context_management`，防止模型默认或 experimental context 开启远端 notes/history；这些后端调用不受本地文件系统沙箱约束。`image_generation` 也有独立工具 gate，审核不需要时关闭，不能由 `network.enabled=false` 推导宿主所有远端工具都被禁用。[notes/history gate](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/ext/history-notes/src/extension.rs#L56)、[模型默认与 experimental context](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/session/token_budget.rs#L22)、[图像工具 gate](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/tools/spec_plan.rs#L821)
+
+`config/read` 要指定冻结 cwd 并请求 `includeLayers=true`。服务端先合并配置，再应用 exact requirements，返回有效 config、origins 和 layers（不返回 packaged-defaults 层）。审计不能只比较 profile 名称：要核对完整关键配置、实际文件授权根、禁用开关及外部工具集合，确认唯一非空用户层是本次临时配置、没有意外 profile/session flags、非空外来系统/MDM/企业配置或未知层；已知空层如实记录。有效值可能经过默认值补全，原始 JSON 不相等不一定表示权限不同，但未经解释也不能算通过。[config/read 实现](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/config_manager_service.rs#L136)、[层来源及优先级](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/config/src/config_layer_source.rs)
+
+`permissions` 和 `default_permissions` 经 API `Config.additional` 的 serde flatten 保留在有效 config 顶层。序列化会补 `description/extends/workspace_roots=null`、`filesystem.glob_scan_max_depth=null` 和未设置的 network 字段；只能按已知结构接受这些 null，不能忽略任意额外非空授权。memories、agents、orchestrator、shell environment 也会补 Option 字段的 null。固定非空默认值来自官方 `config/defaults.toml`（如五类 include 指令/context 开关为 true、`history.persistence="save-all"`、`project_root_markers=[".git"]`），features 还会由 config/read 补选定实验功能的实际值。未知原始 TOML 键可能在解析成 ConfigToml 时被忽略，因此还必须检查原始 layers，不能只查有效 config。[API flatten](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server-protocol/src/protocol/v2/config.rs#L282)、[权限序列化结构](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/config/src/permissions_toml.rs#L113)、[固定默认值](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/config/defaults.toml)、[实验功能回填](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/request_processors/config_processor.rs#L117)
+
+`instructionSources` 只枚举有路径的 user/thread/project 指令；它不列出所有配置字符串、base/developer instructions、插件说明或远端上下文。必须另行拒绝不受控的 `instructions`、`developer_instructions`、`model_instructions_file`、外部 provider/工具等配置，不得把空数组当完整隔离证明。配置或来源无法确认时，在模型请求前失败。[来源枚举](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/agents_md.rs#L486)
+
+还有独立 requirements 边界：`config/read` 的 exact projection 没有覆盖全部 requirements，尤其 `additional_developer_instructions` 会作为独立 managed developer 消息进入上下文，既不必出现在有效 `developer_instructions`，也不属于文件型 `instructionSources`。必须另查本机快照已有的 `configRequirements/read`；`ConfigRequirementsReadResponse.requirements` 的 schema 说明，无 requirements 配置时为 null。不能仅凭自有用户层与空系统 config 层断言没有 MDM/requirements 上下文。[有限投影](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/config/src/config_requirements.rs#L1821)、[独立开发者消息](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/core/src/context/world_state/managed_developer_instructions.rs#L24)
+
+该 schema 的 null 说明还需结合 0.169.0 源码：`forced_login_method="chatgpt"` 本身就会把 AuthManager 的有效方法限制为 `["chatgpt"]`。API 映射发现有效方法不是默认 `["api","chatgpt"]` 时，即使没有 requirements 文件，也会生成 requirements 对象，并填 `allowedLoginMethods`、将其他未配置字段序列化为 null。这解释了开发时自身配置为何被严格 null gate 拒绝，**不是最终允许 requirements 对象的例外**。[登录策略交集](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/config/src/auth_policy.rs#L11)、[API 对象生成](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/request_processors/config_processor.rs#L467)
+
+API 只投影部分 `ConfigRequirementsToml` 字段；隐藏的非空 requirements 也可能产生“登录列表加其他字段全 null”的同形对象。最终方案因此移除自身 `forced_login_method`，拒绝任何 requirements 对象（包括空对象）及缺字段，只接受实际 null。官方服务先判断完整 requirements 是否为空，再做 API 投影；这避免把可见字段为空误当成不存在隐藏要求。订阅约束由最小认证材料加环境检查/实际运行各自的 `account/read` 类型检查保证，不使用 internal token RPC；模型请求前必须观察到 `account.type="chatgpt"`。[完整 requirements 的空判断](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/app-server/src/config_manager_service.rs#L214)、[requirements 完整结构](https://github.com/openai/codex/blob/rust-v0.169.0/codex-rs/config/src/config_requirements.rs#L1131)
 
 ## 计划列出的待验证项
 
