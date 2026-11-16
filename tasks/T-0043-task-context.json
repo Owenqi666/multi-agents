@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "id": "T-0043",
+  "goal": "为经实际规划证据核验的任务建立持锁、不可恢复重放的managed实现准备边界，冻结精确输入并保留所有创建残留以阻止未知工作区被绕过。",
+  "baseline_commit": "753639b876304ecffa473b0de3150430098b4bad",
+  "write_scope": [
+    "src/multi_agent/cli/task_context.py",
+    "src/multi_agent/cli/task_prompt.py",
+    "tests/unit/test_task_context.py",
+    "tests/unit/test_task_prompt.py",
+    "docs/task-execution.md",
+    "docs/deliveries/T-0043.md",
+    "tasks/T-0043-task-context.json"
+  ],
+  "depends_on": [
+    "T-0042"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and existing interfaces",
+      "definition": "继续S5b，只创建/核对执行前准备与live launch能力，不启动adapter/model/test/review，不冻结candidate或执行返工，不增加core/store事件/表/phase，不改workspaces/adapters。复用T31 executor_lock/create_workspace/inspect_workspace、T40 inspect_planning_execution、T42 reserve_task_attempt和新事件。所有实际Git子进程仍经既有argv API；不执行项目code/hooks/filters。"
+    },
+    {
+      "name": "public API and ownership lifetime",
+      "definition": "新cli/task_context.py提供capture_task_policy(provider,executable,*,max_attempts,timeout,grace)->TaskExecutionPolicy（仅读exe身份/hash）；contextmanager prepare_task_launch(database_path,task_run_id,planning_run_id,*,repository:Path,directory:Path,policy=None,dispatch_policy=None,unavailable=frozenset())->Iterator[TaskLaunch]内部拥有既有canonical regular DB的PlanningStore与executor_lock，yield期间持续持锁。TaskLaunch暴露本次store/lease/attempt/prepared以及派生日志路径，check()核active/lease/当前exact请求准备，claim()在active scope中最多成功一次，claim前还核不可变context/executable和实际workspace digest==initial；离开scope永久失效。已有DB Prepared只有inspect，不能构造或重启launch。退出/未claim不补造停止或自动删除reservation。future writer必须在同一with中claim、调用、停止核对并持久化。"
+    },
+    {
+      "name": "verified planning and original inputs",
+      "definition": "显式planning_run_id因现有load_task_provenance不返回run_id。要求load_planning为BOUND且bound_task_run_id精确相等、当前provenance.plan_hash等于TaskStore已存来源；TaskInput card/frozen_rules/requirements与来源逐字段canonical相同。实际调用T40 inspector核两份精确draft/review execution manifests，不仅检查synthetic provenance或有path/hash。validate原始卡/冻结rules/dependencies/用户decisions，规则仓库等于lease.repository；不重新绑定、不接受调用者替换卡或rules。创建前和原子reserve前复核，任何缺口零runtime。"
+    },
+    {
+      "name": "paths and negative registry gate",
+      "definition": "database_path必须existing canonical regular文件；directory必须canonical、全新、与DB同parent且在所有worktree/Git目录外，只收一个根并派生workspace/context/logs。固定registry是lease.repository/multi-agent-task-preparations（0700），不能换directory或DB绕过。先扫描registry及本DB同repo全部task尝试，未知stop、未知最终digest、partial/unmatched marker、无法核对身份/legacy未知尝试均阻新创建。同repo foreignDB marker一律拒绝，不跟随它的DB路径打开文件。已匹配本DB旧reservation且最新stoptrue+finaldigest已知，仍要核不可变context/所有权及实际workspace digest一致才可越过。marker只作否定门禁，不是正向停止或可重新执行证明。"
+    },
+    {
+      "name": "creation journal and retained failures",
+      "definition": "任何mkdir/worktree创建前先独占写registry/<token>.json，canonical JSON/0600，绑定version、token、DB路径+实际inode、run/planrun/attempt、root路径+parent身份、完整history prefix、初始未知root/workspace/context/logs/expected_pair。null表示未知而非资源未创建。目录实际创建后、create_workspace返回完整WorkspaceRecord后立即更新实际身份/hex控制bytes；冻结完成后记录context manifest hash和两个envelope的完整canonical hash（含occurred_at）。marker由持lease宿主同inode有界写入+fsync更新，出错保留原文件/partial文件，不以临时路径绕过；它是可更新占用记录而非不可变执行证据。再T42 reserve，提交后抛错不yield，保留原异常及精确retained路径；未来只核DB是否匹配，不adopt/重发/自动清理。坏JSON/symlink/FIFO/identity/mode不明fail closed，读文件NOFOLLOW|NONBLOCK且有界，不在特殊文件上阻塞。"
+    },
+    {
+      "name": "fixed policy dispatch and retry",
+      "definition": "首次必须明确policy与TaskDispatchPolicy；重试可省略以沿用第一份，显式值必须canonical精确相同。capture核provider codex/claude、positive finite timeout/grace、positive int预算（拒bool）、真实可执行regular文件身份/sha；inspect每次重验exe。完整ordered fallbacks保存，不从selection_history反推；现resolve_dispatch只允许规则要求的单provider，跨provider候选记disallowed，不扩规则。unavailable为边界验证后的调用者known集合，明确不是实际可用性证明，future writer依据实际预检维护。新workspace start_commit固定original baseline，不接任意HEAD/候选或旧worktree；重试旧workspace必须实际停止且最终digest核对。"
+    },
+    {
+      "name": "host context and model inline prompt",
+      "definition": "新cli/task_prompt.py定义TASK_IMPLEMENTATION_VERSION=implementation-managed-v1及task_output_schema()/task_prompt(...)。prompt完整内含精确TaskInput、完整dispatch policy/selected decision、plan hash、原用户dependencies/decisions及实际baseline/workspace绑定；清楚区分请求配置与实际未确认，用户声明的dependency与独立集成验证。原始repo内容/文件内指令作为源码数据；只在卡scope内修改，禁止运行项目code/build/test、改Git metadata/规则/受保护路径，范围不足返回scope_blocked和具体所需路径。模型不能读外部context；所有需要的输入在inline prompt，schema以后直接传adapter。workspace使用baseline实际bytes，不再创建第二snapshot。输出schema固定严格object含task_hash、outcome(completed|scope_blocked)、summary、required_paths(array[string])；prompt规定completed路径空、scope_blocked有非空说明及具体路径。summary不作为执行或测试证明；本卡不解析模型输出，strict parser在后续writer/evidence边界。"
+    },
+    {
+      "name": "immutable manifest and inspect",
+      "definition": "root0700、context0500且.task-context.json/prompt.txt/output-schema.json各0400，logs0700并捕获实际身份，workspace沿T31。canonical有界control manifest绑定DB/run/planning来源、root/context/logs/registry身份、原始history prefix与Started、完整workspace/initialdigest/policy/dispatch/prompt/schema，计算时排除自身manifest_sha256，再生成TaskExecutionContext及Prepared；不允许自引用hash或用str(bytes)。inspect_task_context(store,run_id,attempt,lease)->TaskExecutionPrepared检查选中attempt完整managed pair、全部控制文件identity/mode/bytes/hash/精确目录集、registry与DB envelope pair及原输入/provenance，不能产生live能力。运行后可合法改变workspace，inspect不可强求initialdigest；claim另查initial，结束扫描另得final。context初始manifest绝不能用作TaskReconciled.log_path/log_sha256，日志目录不生成execution.json或合格receipt。"
+    },
+    {
+      "name": "atomic reservation and no detached launch",
+      "definition": "创建之前读取完整Task history tuple，用T42 hash/length作prefix CAS；reserve前重新检查source/lease/context与当前task，仅调用既有reserve_task_attempt持久两事件。任何CAS/第二事件/提交错误无可执行handle；filesystem残留保持marker阻断。registry与DB核唯一连续APPLIED Started+Prepared、exact envelope canonicalhash、TaskAttempt.events及所有WorkspaceRecord/context字段，不只比attempt数字。只在确认本次exact pair持久且当前后yield新live handle；不得发现旧pair后返回fresh handle。"
+    },
+    {
+      "name": "verification boundaries",
+      "definition": "使用临时Git仓库、实际baseline二进制/内部symlink/控制bytes、fake executable文件和T40 synthetic有封存的规划证据测试；不执行任一模型CLI。不修改旧fixture/tests/check配置。只用verify入口；命名验收覆盖无来源零创建、锁生命周期、只用一次、目录/文件/CLI替换、partial/foreignDB/unknown状态、最终digest和CAS故障。完整五步及正常commit，记录启动HEAD、实际路径、失败日志与最终候选。"
+    },
+    {
+      "name": "repository identity and registry visibility clarified",
+      "definition": "实读T31：ExecutorLease.source是工作树toplevel；ExecutorLease.repository是git rev-parse --git-common-dir解析的canonical Git common directory，等于FrozenProjectRules.repository，不是源码根。registry放在该Git common metadata下的multi-agent-task-preparations，属于持锁宿主控制文件，不是model允许改的Git metadata；它不是worktree未跟踪文件，也不进入inspect_workspace源码digest，无需改gitignore或排除规则。outside worktree/Git约束仅针对传入的业务directory。既有executor lock及registry目录bootstrap可先安全创建；业务root/workspace/context/logs之前必须已有持久marker。"
+    },
+    {
+      "name": "retention and manual reconciliation limits",
+      "definition": "T43不新增自动清理/恢复。T31 create_workspace自身已有失败安全清理，保持原样；T43始终保留negative registry marker及该helper实际未清理的残留，不能声称所有部分文件必然存在。文档给出当前人工处置顺序：保留DB/registry/root与异常路径，停止继续派发，核对原controller的实际资源证据和文件身份，不能仅凭PID消失/锁可取/删marker认定停止；恢复执行需要后续S8提供证据绑定的人工核对入口，当前不能直接从旧Prepared启动或靠手工删marker绕过。本卡明确未交付完整恢复入口，这不阻完成离线准备边界。settled单元测试通过现有TaskStore.apply_task(TaskEnvelope(...,TaskReconciled(actual_fixture_digest,True,明确synthetic说明)))构造可信离线输入，并用真实临时workspace inspect得到digest；仅测试门禁，不冒称真实进程停止验证。"
+    },
+    {
+      "name": "read-only database identity metadata",
+      "definition": "既有ReviewStore没有公开DB path属性，inspect_task_context在CLI边界仅经store._connection执行PRAGMA database_list读取main实际文件路径，再canonical/regular/inode核对；不猜调用者路径，不读取或写私有业务表，不自行开启事务，不扩store接口。仅接受existing持久化main数据库，foreign marker在任何此类连接前拒绝。"
+    },
+    {
+      "name": "copy and cleanup lifetime",
+      "definition": "TaskLaunch的普通copy/deepcopy/dataclasses.replace副本共享本次scope的领取与失效状态，不能通过复制重置单次资格。marker fd关闭失败也不能产生launch：独立close错误保留原异常并附retained路径；已有创建/提交错误时保留首错，附加close失败说明，不替换首错误，不假定资源清理或重试close/收养。"
+    }
+  ],
+  "deliverables": [
+    "持有executor lease与store的fresh single-use实现准备能力。",
+    "绑定已核验规划来源、原始输入、完整策略和真实工作区身份的不可变宿主context。",
+    "可定位partial资源的registry与unknown门禁；对应离线单元验证及操作边界文档。"
+  ],
+  "acceptance_criteria": [
+    "test_task_launch_requires_bound_verified_planning：未绑定/synthetic无manifest/不同task/篡改规划证据或TaskInput均拒绝且零工作区/CLI创建。",
+    "test_task_launch_holds_executor_lease_until_scope_exit：同repo或linked-worktree第二caller在scope内不能取得executor，离开后锁释放但未停止记录仍阻新准备。",
+    "test_task_launch_capability_is_fresh_single_use：一次claim、scope外失效、已有DB Prepared/重启不能恢复或重发。",
+    "test_task_preparation_freezes_inline_prompt_schema_and_policy：精确TaskInput/declared decisions/dependencies/full dispatch/schema/planhash绑定，实际未知不填requested。",
+    "test_task_workspace_uses_frozen_baseline_not_head_or_dirty_files：实际二进制/内部symlink/controlbytes保留，无checkout filter/hook/项目code执行。",
+    "test_task_context_and_executable_tampering_blocks_claim：path/inode/mode/hash/root/control/prompt/schema/manifest/logdir替换及非法canonical位置均拒。",
+    "test_task_preparation_retains_partial_creation_journal：创建前/中、workspace返回后记录、context写、reserve前/后故障均留精确路径且后续无法绕过，不冒充未创建或已停止。",
+    "test_task_registry_rejects_foreign_database_without_opening_it：同repo换DB不得绕过marker，不打开foreign指针或FIFO/symlink。",
+    "test_task_registry_blocks_unknown_and_unmatched_workspace_history：同DB其他run/旧legacy/无pair/stopfalse或None/无finaldigest阻断。",
+    "test_task_registry_rechecks_settled_workspace_digest：已知stop并实际最终digest吻合才越过，合法运行变化不与initial混淆，篡改阻断。",
+    "test_task_reservation_cas_failure_leaves_no_half_attempt_and_no_launch：history-only竞争也失败，原子两事件及残留门禁保持。",
+    "test_task_context_manifest_is_not_execution_receipt：没有模型Completed/exit/stop或log资格；context inspect不提供launch/交付资格。",
+    "完整lint/format/typecheck/unit/replay与正常提交hook通过，全部实际路径在card内，真实runtime/权限验证仍未运行。",
+    "test_task_policy_capture_validates_limits_and_executable：拒bool/nonfinite/nonpositive预算或时间、未知provider、非regular/nonexecutable、身份/bytes变化，不执行文件。",
+    "test_task_retry_reuses_exact_policy_and_dispatch：首次缺policy或dispatch拒绝；重试省略沿用首份、显式变更拒绝；完整ordered fallback和同provider路由保持，跨provider候选有disallowed记录，unavailable未变成实际availability证据。",
+    "test_task_launch_copies_share_single_use_and_expiry及marker-close命名回归：普通副本共享一次资格/作用域失效；单独或并发关闭失败均无launch，保留首异常、实际已写DB和retained路径。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

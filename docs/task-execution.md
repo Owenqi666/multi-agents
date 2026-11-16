@@ -43,3 +43,19 @@ managed delivery_ready 必须同时具备 awaiting_delivery、实际成功、实
 新 managed hash 使用 UTF-8、排序键、紧凑 JSON、`allow_nan=False`，事件带 kind，bytes 使用明确 hex 标签。它不改旧 task/rules/plan hash。codec 只为缺失的新可选字段提供 legacy 默认，旧必需字段缺失仍抛错；旧字段形状保持。
 
 已有 task_attempts/history 表存 JSON，扩展不需要 SQL 表迁移。转移、codec、原子 reserve 和新回放一起验证。旧四个 task 场景保留；legacy reconciliation 继续核对原三字段，新 managed 场景另外核对完整 receipt 与事件序列。离线合成记录不代表实际模型或权限验收。
+
+## 持锁准备边界（T43）
+
+`prepare_task_launch(database_path, task_run_id, planning_run_id, ...)` 在一个持锁作用域中打开实际数据库、核对已绑定的规划来源、创建全新的工作区和宿主 context，再原子保留本次尝试。作用域内的 launch 只能 claim 一次；退出后所有普通复制副本一并失效，复制不能重新取得领取次数。之后的 writer 必须在该作用域内完成调用、停止核对和持久化，不能把 Prepared 取出后另行启动。
+
+首次调用需要明确 runtime policy 与完整 dispatch policy；重试可省略以沿用原值，显式值必须精确一致。执行文件的路径、身份、内容 hash 和可执行位分别核验，capture 不运行它。模型与档位仍是请求值，可用性仍须实际预检报告。当前派发规则固定一个 provider；有序备选中的其他 provider 只留下被规则拒绝的记录。
+
+业务 directory 必须是数据库旁的全新 canonical 目录，并位于所有工作树和 Git 目录之外。内部 workspace 从原始 baseline 的对象字节建立；context 保存 0400 的 prompt、schema 和控制 manifest；logs 只冻结目录身份，后续运行可写日志。模型需要的原始输入直接内联到 prompt，它不读取外部 context。
+
+Git common directory 下的 `multi-agent-task-preparations` 是宿主 registry，目录为 0700、每个 marker 为 0600。这里的 repository 是 Git common directory，source 才是工作树根；registry 不进入源码 digest。锁和 registry bootstrap 之外，任何业务资源创建前先登记 marker。它记录实际已观察到的身份，null 是未知，不能解释为未创建。可更新 marker 的稳定身份进入不可变 context，内容本身不建立循环 hash。
+
+准备会核对同仓库所有 marker 和当前 DB 的任务历史。foreign DB 指针不自动打开；partial、未匹配 reservation、未知停止或未知最终 digest 都阻断。已停止的旧尝试仍需核对实际工作区控制身份与最终 digest；初始 digest 不能替代结束扫描。既有 store 没有公开数据库路径属性，CLI inspector 只用 `PRAGMA database_list` 读取当前连接 main 文件身份，不碰私有业务表或另建事务。
+
+创建失败、CAS 冲突或提交后抛错都不能产生 launch。T43 保留负向 marker 和实际残留及异常路径，不额外清理；T31 自身已有的安全失败清理保持。旧 Prepared 只可 inspect，不能重新派发。context 的控制 hash 也不提供 Completed、ProcessExited、process_stopped 或结束执行 manifest 的资格。
+
+遇到未知残留时，保留数据库、registry、工作区及原异常，停止继续派发，核对原 controller 的资源记录和实际文件身份。锁可取得或 PID 消失不证明进程组已经停止；手工删除 marker 也不能替代核对。证据绑定的人工恢复入口留给 S8，当前不提供绕过或自动收养流程。
