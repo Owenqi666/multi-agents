@@ -249,13 +249,115 @@ def test_version_exit_remains_strict_before_auth(
 def test_boundary_errors_have_terminal_and_exit(
     tmp_path, monkeypatch, provider, mode, category
 ):
-    adapter, config, _ = setup(tmp_path, monkeypatch, provider, mode, timeout=0.4)
-    events, result = asyncio.run(collect(adapter, config))
+    adapter, config, capture = setup(tmp_path, monkeypatch, provider, mode)
+    if mode == "hang-start":
+        ready = tmp_path / "hang-ready"
+        monkeypatch.setenv("FAKE_HANG_READY", str(ready))
+
+        async def collect_after_hang():
+            turn = await adapter.submit_turn(
+                await adapter.start_session(config), "wait"
+            )
+            state = adapter._turns[turn]
+            try:
+                # Startup has its own finite allowance. The short timeout must
+                # exercise the actual hang, not an unfinished --version check.
+                async with asyncio.timeout(3):
+                    while not ready.exists() or state.process is None:
+                        assert state.task is not None and not state.task.done()
+                        await asyncio.sleep(0.005)
+                assert state.process.child.returncode is None
+                assert state.deadline is not None and not state.deadline.expired()
+                records = [
+                    json.loads(line) for line in capture.read_text().splitlines()
+                ]
+                assert [r["pid"] for r in records if r["kind"] == "hang-ready"] == [
+                    state.process.child.pid
+                ]
+                started = asyncio.get_running_loop().time()
+                state.deadline.reschedule(started + 0.4)
+                async with asyncio.timeout(3):
+                    events = [event async for event in adapter.events(turn)]
+                    result = await adapter.result(turn)
+                assert asyncio.get_running_loop().time() - started >= 0.4
+                assert state.process.child.returncode is not None
+                return events, result
+            finally:
+                if state.task is not None and not state.task.done():
+                    state.task.cancel()
+                    _, pending = await asyncio.wait({state.task}, timeout=3)
+                    assert not pending, "runtime cleanup did not finish"
+                    state.task.result()
+
+        events, result = asyncio.run(collect_after_hang())
+    else:
+        events, result = asyncio.run(collect(adapter, config))
     assert isinstance(result.terminal, Error)
     assert result.terminal.failure_category == category
     assert result.process_exit is not None
     assert sum(isinstance(e, (Completed, Error)) for e in events) == 1
+    assert isinstance(events[-2], Error)
     assert isinstance(events[-1], ProcessExited)
+
+
+def test_slow_version_reaches_model_error_after_old_timeout(tmp_path, monkeypatch):
+    monkeypatch.setenv("FAKE_VERSION_DELAY", "0.6")
+    adapter, config, capture = setup(tmp_path, monkeypatch, "codex", "model-error")
+    assert adapter.timeout == 3
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category == FailureCategory.MODEL_UNAVAILABLE
+    assert result.process_exit is not None
+    assert sum(isinstance(e, (Completed, Error)) for e in events) == 1
+    assert isinstance(events[-2], Error) and isinstance(events[-1], ProcessExited)
+    records = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [r for r in records if r["kind"] == "version-delay"] == [
+        {"kind": "version-delay", "seconds": 0.6}
+    ]
+    rows = [
+        json.loads(line)
+        for line in next((tmp_path / "logs").glob("*.jsonl")).read_text().splitlines()
+    ]
+    spawns = [i for i, row in enumerate(rows) if row["kind"] == "spawn"]
+    assert len(spawns) == 2
+    version, app_server = (rows[i] for i in spawns)
+    assert version["argv"][1:] == ["--version"]
+    assert app_server["argv"][1:] == ["app-server", "--strict-config"]
+    preflight = rows[spawns[0] : spawns[1]]
+    exits = [row for row in preflight if row["kind"] == "exit"]
+    assert len(exits) == 1 and exits[0]["returncode"] == 0
+    assert exits[0]["t"] - version["t"] > 0.4
+    assert not any(row["kind"] == "signal" for row in preflight)
+    terminals = [
+        row["message"]
+        for row in rows[spawns[1] :]
+        if row["kind"] == "recv"
+        and row.get("message", {}).get("method") == "turn/completed"
+    ]
+    assert len(terminals) == 1
+    assert terminals[0]["params"]["turn"]["status"] == "failed"
+    assert terminals[0]["params"]["turn"]["error"]["codexErrorInfo"] == "modelNotFound"
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_fake_version_delay_is_disabled_by_default(tmp_path, monkeypatch, provider):
+    monkeypatch.delenv("FAKE_VERSION_DELAY", raising=False)
+    adapter, _, capture = setup(tmp_path, monkeypatch, provider)
+    result = subprocess.run(
+        [adapter.executable, "--version"],
+        capture_output=True,
+        text=True,
+        timeout=3,
+        check=False,
+        shell=False,
+    )
+    assert result.returncode == 0 and result.stderr == ""
+    assert result.stdout == (
+        "codex-cli 0.169.0\n" if provider == "codex" else "fake-claude 1.0\n"
+    )
+    records = [json.loads(line) for line in capture.read_text().splitlines()]
+    assert [record["kind"] for record in records] == ["spawn"]
+    assert records[0]["argv"] == ["--version"]
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])

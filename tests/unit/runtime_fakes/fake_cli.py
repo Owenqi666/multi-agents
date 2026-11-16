@@ -35,6 +35,9 @@ capture(
 )
 
 if args == ["--version"]:
+    if delay := os.environ.get("FAKE_VERSION_DELAY"):
+        capture("version-delay", seconds=float(delay))
+        time.sleep(float(delay))
     if provider == "codex" and mode == "wrong-version":
         print("codex-cli 0.168.0")
     else:
@@ -61,6 +64,9 @@ if mode == "malformed":
     os.write(1, b"not json\n")
     time.sleep(60)
 if mode == "hang-start":
+    if ready := os.environ.get("FAKE_HANG_READY"):
+        capture("hang-ready", pid=os.getpid())
+        Path(ready).touch()
     time.sleep(60)
 if mode.startswith("grandchild-"):
     child = subprocess.Popen(
