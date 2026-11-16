@@ -11,7 +11,7 @@ T36 将“这次规划会读什么、按什么预算运行”保存到规划尝�
 - `run_owner`：外部运行根目录的路径、身份、随机 token 和不可变 owner manifest hash。
 - `attempt_context`：本次独占目录的路径、身份、新 token、完整内容与模式 digest，以及 manifest hash。
 
-策略中的 timeout 是后续 runner 预检与模型共用的预算；grace 用于清理。T36 冻结并保存这些值，尚未执行计时。预检失败也占一次 provider attempt；重启不重置次数。没有模型实际报告时，Started.environment 仍为 None。实际环境观察和运行时停止收据由后续卡接入，不能把请求或目录锁状态填成运行证据。
+策略中的 timeout 是后续 runner 预检与模型共用的预算；grace 用于清理。T36 冻结并保存这些值，尚未执行计时。预检失败也占一次 provider attempt；重启不重置次数。没有模型实际报告时，Started.environment 仍为 None。T38 提供独立的实际环境观察事件；运行器仍须在真正预检后写入，并连接 T37 的资源收据，不能把请求或目录锁状态填成运行证据。
 
 可执行文件 hash 绑定该文件本身，不覆盖解释器、动态库或其所有依赖；后续仍需运行时版本与配置审计。
 
@@ -41,4 +41,12 @@ Claude draft 使用 task-card schema，Codex review 使用 REVIEW_SCHEMA。两�
 
 仓库文件中的指令作为被分析的数据。规划不执行项目代码、测试或 Git，也不将 proposed_tests 当已获认可的命令。源文件是否可见、提示词是否禁止执行与运行时权限是否实际生效是不同证据；本卡只验证前两项，后续运行器沿用独立 READ_ONLY 会话。
 
-本卡不自动生成 needs_revision 的修订反馈文件。后续 runner 接入修订时，需要明确绑定前次复核反馈，仍与用户决定区分，并继续记录本次精确提示词。运行器还需实际环境观察、全部受管资源的停止证明和已关闭日志的收据；Completed 加父进程退出码不能替代这些证明。
+T38 新上下文默认使用 `planning-draft-v2` / `planning-review-v2`，另写只读 `revision-feedback.json`。它绑定本次 Started 前完整历史 prefix 的长度和 hash，只从 APPLIED 的宿主验证事件选择最近有效审核及其精确草案，并保存关联 attempt、task hash、review hash 和宿主拒绝原因。迟到的 history-only 结果不会变成新指令。草案失败后重试仍能找到上一轮有效反馈，不依赖已经清空的当前 card 字段。
+
+反馈另外列出与冻结用户决定未精确匹配的阻塞问题。若模型审核为 ready 但用户问题尚未解决，保留原 ready，同时显示未决问题；不伪造 needs_revision，也不将反馈转换为用户答案。两种信息各自保留来源。
+
+v2 manifest 包含 history_prefix_length/hash 和反馈文件的实际 SHA256；prompt 引用同一 SHA256。reserve 的两个可选 keyword 为 `expected_history_length` 和 `expected_history_hash`，v2 必须同时提供，只有旧 v1 可以省略。事务内再核对完整历史，变化则两条占位和状态一起拒绝；已生成目录按原规则保留。后续 inspect 必须定位同 stage/attempt、完整 Started 相等的真实 APPLIED 历史，按它之前的 prefix 重建，不能在缺失时采用当前历史或把目录当已启动。
+
+v1 prompt renderer 和原 manifest 字节保持，inspect 使用保存的模板版本，而非当前默认版本；已有 v1 run 后续可以准备 v2 context，旧目录仍逐一核对。任何历史 context 被篡改仍阻止同 run 重试，证据拒绝事件没有豁免此边界。
+
+本卡没有启动 runtime。后续 runner 仍须实际预检、取得全部受管资源停止与清理、真实 EOF 和已关闭日志收据，并将其绑定到独占 manifest 后再校验产物；Completed 加父进程退出码不能替代这些证明。

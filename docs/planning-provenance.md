@@ -1,6 +1,6 @@
 # 单卡规划来源与派发门禁
 
-T34 建立规划的不可变输入、角色尝试、宿主校验和持久化关联，不启动模型或创建工作树。T35 将连接只读规划调用，后续实现 runner 才使用这些门禁；旧 `TaskStore.create_task` 本身没有规划来源，不能被描述为已经过 Claude/GPT 规划。
+T34 建立规划的不可变输入、角色尝试、宿主校验和持久化关联，不启动模型或创建工作树。T35 补齐严格运行时 JSON 边界，T36 冻结执行上下文，T38 补齐环境观察及证据拒绝事件；后续 runner 才连接真实调用并使用这些门禁；旧 `TaskStore.create_task` 本身没有规划来源，不能被描述为已经过 Claude/GPT 规划。
 
 ## 输入与角色
 
@@ -21,7 +21,7 @@ draft/review 分别从尝试 1 递增。每次开始冻结请求、精确 prompt
 | pending | 开始 Claude draft。 |
 | drafting / reviewing | 当前尝试运行事件；成功终态进入 awaiting_validation；错误进入 failed/cancelled；请求取消进入 cancelling。 |
 | cancelling | 取消终态或真实进程退出可关闭；诊断不代替终态。 |
-| awaiting_validation | 成功终态、真实退出、最新停止核对和日志 receipt 全部具备后，才接收相应宿主验证结果。 |
+| awaiting_validation | 成功终态、真实退出、最新停止核对和日志 receipt 全部具备后，才接收相应宿主验证结果。T38 允许另发 EvidenceRejected 明确拒绝不可用产物，保留原运行时事实并转 failed。 |
 | awaiting_review | 已验证 draft 可开始 Codex review，必须绑定当前 draft attempt 和 task hash。 |
 | revision_required | 复核要求修订或卡有未决阻塞问题；完整停止后可重新起草，旧卡及复核立刻失去当前资格。 |
 | failed / cancelled | 最新停止核对为 true 后可重试；复核重试仍绑定当前有效 draft。 |
@@ -58,3 +58,14 @@ draft/review 分别从尝试 1 递增。每次开始冻结请求、精确 prompt
 ## 离线验证
 
 命名回放为 planning-happy、planning-revision-late、planning-missing-exit、planning-cancel-diagnostic、planning-reconcile-revoked。相同序列在纯状态机与 SQLite 中重复，检查最终状态和完整历史 disposition。双连接竞争另由单元测试验证；边界、hash 稳定性、未知报告值和旧数据库迁移也有独立测试。模型和工作树编排不在本卡内。
+
+
+## T38：环境观察与不可用证据
+
+`PlanningEnvironmentObserved(environment)` 保存深冻结的实际预检 JSON，不覆盖 Started.environment，也不从请求填补实际模型或档位。首次观察要求当前尝试已 Prepared、还在 drafting/reviewing，且没有模型运行事件、取消或 reconciliation；Prepared 后的宿主 Diagnostic 不阻止真实环境观察。实际 null 与 logged_in=false 保留。同值重复只进历史，当前不同值或不合法的首次观察抛错并回滚。旧阶段/尝试及 bound 仍只进历史。
+
+`PlanningEvidenceRejected(detail)` 解决成功运行后日志或上下文无法形成可信产物时的停滞。它只从当前 awaiting_validation 进入 failed，不要求先有 usable、日志 hash 或停止证明；原 Completed、result、实际 exit、报告字段及 reconciliation 均保留。它不是新的 FailureCategory，不把成功 runtime 改成失败。两种宿主拒绝各自按事件类型判重，不能凭同一 detail 冒充另一种拒绝。
+
+拒绝后补全 reconciliation 可以确认实际停止，但不会重新激活同一次产物。只有新的尝试能重新验证，并仍受最新停止证明与每 provider 的 Started 次数上限限制；预算不按错误类别另开。旧上下文被篡改时，现有全历史 inspect 仍拒绝同 run 重试，需要保留证据并另建运行。
+
+两个事件复用已有 attempts payload 与 history，不新增 SQL 表、迁移、phase 或旧 dataclass 默认字段。旧 plan hash 仍由原黄金回归约束。T38 的新增回放为 planning-environment-observation、planning-evidence-rejected、planning-evidence-late；与原有场景一样分别在纯 fold 和 SQLite 重复检查状态及完整历史。

@@ -39,6 +39,7 @@ from multi_agent.core.snapshot import FrozenSnapshot
 from multi_agent.core.tasks import TaskCard
 from multi_agent.store.planning_store import PlanningStore
 
+from .planning_feedback import feedback_for_prefix
 from .planning_inputs import validate_planning_input
 from .planning_prompt import (
     planning_output_schema,
@@ -55,6 +56,7 @@ _OWNER_FILE = ".planning-owner.json"
 _CONTEXT_FILE = ".planning-context.json"
 _CONTEXT_ACCEPTANCE = ("Plan from the frozen baseline without executing project code.",)
 _NOFOLLOW = os.O_NOFOLLOW | os.O_NONBLOCK
+type PlanningHistory = tuple[tuple[PlanningEnvelope, Disposition], ...]
 
 
 def _identity(info: os.stat_result) -> tuple[int, int]:
@@ -384,6 +386,31 @@ def _review_card(
     return card
 
 
+def _feedback_bytes(feedback: dict[str, Any]) -> bytes:
+    return (planning_json(feedback) + "\n").encode("utf-8")
+
+
+def _history_before(
+    store: PlanningStore,
+    run_id: str,
+    stage: str,
+    attempt: PlanningAttempt,
+) -> PlanningHistory:
+    history = store.load_planning_history(run_id)
+    matches = [
+        index
+        for index, (envelope, disposition) in enumerate(history)
+        if disposition == Disposition.APPLIED
+        and envelope.stage == stage
+        and envelope.attempt == attempt.number
+        and isinstance(envelope.event, PlanningAttemptStarted)
+        and planning_hash(envelope.event) == planning_hash(attempt.request)
+    ]
+    if len(matches) != 1:
+        raise ValueError("planning context has no unique applied Started history")
+    return history[: matches[0]]
+
+
 def _context_value(
     run_id: str,
     state: PlanningState,
@@ -391,10 +418,16 @@ def _context_value(
     number: int,
     started: PlanningAttemptStarted,
     prepared: PlanningExecutionPrepared,
+    feedback: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     context = prepared.attempt_context
-    return {
-        "version": 1,
+    version = started.prompt_template_version
+    if version not in (f"planning-{stage}-v1", f"planning-{stage}-v2"):
+        raise ValueError("unsupported frozen planning prompt version")
+    if (version.endswith("-v2")) != (feedback is not None):
+        raise ValueError("planning feedback does not match the template version")
+    value = {
+        "version": 1 if feedback is None else 2,
         "run_id": run_id,
         "stage": stage,
         "attempt": number,
@@ -406,10 +439,17 @@ def _context_value(
         "identity": list(context.identity),
         "token": context.token,
         "prompt_sha256": hashlib.sha256(started.prompt.encode("utf-8")).hexdigest(),
-        "prompt_template_version": started.prompt_template_version,
+        "prompt_template_version": version,
         "draft_attempt": started.draft_attempt,
         "task_hash": started.task_hash,
     }
+    if feedback is not None:
+        value.update(
+            history_prefix_length=feedback["history_prefix"]["length"],
+            history_prefix_hash=feedback["history_prefix"]["sha256"],
+            feedback_sha256=hashlib.sha256(_feedback_bytes(feedback)).hexdigest(),
+        )
+    return value
 
 
 def _inspect(
@@ -419,6 +459,8 @@ def _inspect(
     stage: str,
     attempt: PlanningAttempt,
     prepared: PlanningExecutionPrepared,
+    *,
+    prospective_history: PlanningHistory | None = None,
 ) -> None:
     root = _owner(store, run_id, state, prepared)
     context = prepared.attempt_context
@@ -429,8 +471,25 @@ def _inspect(
     info, manifest_hash, raw = _read_file(path / _CONTEXT_FILE, keep=True)
     if stat.S_IMODE(info.st_mode) != 0o400 or manifest_hash != context.manifest_sha256:
         raise ValueError("planning context manifest changed")
+    feedback = None
+    feedback_hash = None
+    if attempt.request.prompt_template_version == f"planning-{stage}-v2":
+        prefix = (
+            _history_before(store, run_id, stage, attempt)
+            if prospective_history is None
+            else prospective_history
+        )
+        feedback = feedback_for_prefix(prefix, state.planning_input)
+        expected_feedback = _feedback_bytes(feedback)
+        feedback_info, feedback_hash, _ = _read_file(path / "revision-feedback.json")
+        if (
+            stat.S_IMODE(feedback_info.st_mode) != 0o400
+            or feedback_info.st_size != len(expected_feedback)
+            or feedback_hash != hashlib.sha256(expected_feedback).hexdigest()
+        ):
+            raise ValueError("planning feedback differs from its frozen history")
     expected = _context_value(
-        run_id, state, stage, attempt.number, attempt.request, prepared
+        run_id, state, stage, attempt.number, attempt.request, prepared, feedback
     )
     if raw != (planning_json(expected) + "\n").encode("utf-8"):
         raise ValueError("planning context manifest binding differs")
@@ -441,11 +500,10 @@ def _inspect(
         prepared.source_snapshot_id,
         draft_attempt=attempt.request.draft_attempt,
         card=card,
+        template_version=attempt.request.prompt_template_version,
+        feedback_sha256=feedback_hash,
     )
-    if (
-        prompt != attempt.request.prompt
-        or attempt.request.prompt_template_version != planning_prompt_version(stage)
-    ):
+    if prompt != attempt.request.prompt:
         raise ValueError("planning prompt differs from its frozen context")
     if _tree_digest(path) != context.digest:
         raise ValueError("planning context content, mode or identity changed")
@@ -520,8 +578,9 @@ def _prepare_planning_attempt(
     policy: PlanningExecutionPolicy | None = None,
 ) -> PlanningExecutionPrepared:
     """Create a fresh context and atomically reserve it before any runtime I/O."""
-    planning_prompt_version(stage)
+    template_version = planning_prompt_version(stage)
     state = store.load_planning(run_id)
+    history_prefix = store.load_planning_history(run_id)
     validate_planning_input(state.planning_input)
     records = _managed(state)
     if records:
@@ -558,6 +617,16 @@ def _prepare_planning_attempt(
     number = (current.number if current is not None else 0) + 1
     card = state.card if stage == "review" else None
     draft = state.current("draft") if stage == "review" else None
+    feedback = (
+        feedback_for_prefix(history_prefix, state.planning_input)
+        if template_version == f"planning-{stage}-v2"
+        else None
+    )
+    feedback_hash = (
+        hashlib.sha256(_feedback_bytes(feedback)).hexdigest()
+        if feedback is not None
+        else None
+    )
     started = PlanningAttemptStarted(
         getattr(state.planning_input, stage + "_request"),
         planning_prompt(
@@ -566,8 +635,10 @@ def _prepare_planning_attempt(
             snapshot.snapshot_id,
             draft_attempt=draft.number if draft is not None else None,
             card=card,
+            template_version=template_version,
+            feedback_sha256=feedback_hash,
         ),
-        planning_prompt_version(stage),
+        template_version,
         datetime.now(UTC).isoformat(),
         draft_attempt=draft.number if draft is not None else None,
         task_hash=card.task_hash if card is not None else None,
@@ -605,6 +676,8 @@ def _prepare_planning_attempt(
         _write(path / "output-schema.json", planning_output_schema(stage))
         if card is not None:
             _write(path / "task-card.json", card.to_dict())
+        if feedback is not None:
+            _write(path / "revision-feedback.json", feedback)
         context = PlanningAttemptContext(
             str(path), _identity(path.stat()), token, "", ""
         )
@@ -613,7 +686,7 @@ def _prepare_planning_attempt(
         )
         manifest_hash = _write(
             path / _CONTEXT_FILE,
-            _context_value(run_id, state, stage, number, started, prepared),
+            _context_value(run_id, state, stage, number, started, prepared, feedback),
         )
         path.chmod(0o500)
         context = PlanningAttemptContext(
@@ -629,11 +702,18 @@ def _prepare_planning_attempt(
             stage,
             _new_attempt(started, number),
             prepared,
+            prospective_history=history_prefix,
         )
         store.reserve_planning_attempt(
             run_id,
             envelope,
             PlanningEnvelope(stage, number, prepared, started.started_at),
+            expected_history_length=len(history_prefix)
+            if feedback is not None
+            else None,
+            expected_history_hash=planning_hash(history_prefix)
+            if feedback is not None
+            else None,
         )
         return prepared
     except (OSError, ValueError, TypeError, sqlite3.Error) as error:

@@ -29,6 +29,7 @@ from multi_agent.core.planning import (
     PlanningReview,
     PlanningState,
     UserDecision,
+    planning_hash,
     planning_value,
 )
 from multi_agent.core.planning_events import (
@@ -36,6 +37,8 @@ from multi_agent.core.planning_events import (
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningEnvironmentObserved,
+    PlanningEvidenceRejected,
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
@@ -1112,5 +1115,316 @@ def test_legacy_planning_provenance_hash_survives_execution_events(tmp_path):
         assert store.load_planning("legacy").card == card
         assert store.load_planning_history("legacy")[-1] == (
             pair[1],
+            Disposition.HISTORY_ONLY,
+        )
+
+
+def v2_reservation(value, source, **kwargs):
+    started, prepared = reservation(value, source, **kwargs)
+    return (
+        replace(
+            started,
+            event=replace(
+                started.event,
+                prompt_template_version=f"planning-{started.stage}-v2",
+            ),
+        ),
+        prepared,
+    )
+
+
+def history_prefix(store):
+    history = store.load_planning_history("plan")
+    return {
+        "expected_history_length": len(history),
+        "expected_history_hash": planning_hash(history),
+    }
+
+
+@pytest.mark.parametrize("stage", ["draft", "review"])
+@pytest.mark.parametrize("missing", ["both", "length", "hash"])
+def test_planning_v2_reservation_requires_complete_history_prefix(
+    tmp_path, stage, missing
+):
+    with PlanningStore(tmp_path / "required-prefix.db") as store:
+        value, card, source, pair = create_reservable_plan(store)
+        if stage == "review":
+            store.reserve_planning_attempt("plan", *pair)
+            finish_reserved_draft(store, value, card)
+        before = store.load_planning("plan"), store.load_planning_history("plan")
+        prefix = history_prefix(store)
+        if missing == "both":
+            prefix = {}
+        else:
+            prefix.pop(f"expected_history_{missing}")
+        with pytest.raises(ValueError, match="history prefix"):
+            store.reserve_planning_attempt(
+                "plan",
+                *v2_reservation(value, source, stage=stage, card=card),
+                **prefix,
+            )
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+
+
+@pytest.mark.parametrize("supplied", ["length", "hash"])
+def test_planning_v1_reservation_rejects_partial_history_prefix(tmp_path, supplied):
+    with PlanningStore(tmp_path / "partial-prefix.db") as store:
+        value, _, _, pair = create_reservable_plan(store)
+        prefix = history_prefix(store)
+        prefix = {
+            f"expected_history_{supplied}": prefix[f"expected_history_{supplied}"]
+        }
+        with pytest.raises(ValueError, match="both history prefix"):
+            store.reserve_planning_attempt("plan", *pair, **prefix)
+        assert store.load_planning("plan") == PlanningState(value)
+        assert store.load_planning_history("plan") == ()
+
+
+@pytest.mark.parametrize("changed", ["applied", "history_only"])
+def test_planning_reservation_rejects_changed_history_atomically(tmp_path, changed):
+    path = tmp_path / "changed-history.db"
+    with PlanningStore(path) as store:
+        value, _, source, pair = create_reservable_plan(store)
+        store.reserve_planning_attempt("plan", *pair)
+        fail_reserved_attempt(store, "draft", 1)
+        prefix = history_prefix(store)
+        original = store.load_planning("plan")
+        with PlanningStore(path) as concurrent:
+            late = PlanningEnvelope(
+                "draft",
+                1,
+                PlanningDiagnostic(Error("later host observation"))
+                if changed == "applied"
+                else Completed({"late": True}),
+                "late-time",
+            )
+            disposition = concurrent.apply_planning("plan", late)
+            assert disposition == Disposition(changed)
+        before = store.load_planning("plan"), store.load_planning_history("plan")
+        if changed == "history_only":
+            assert before[0] == original
+        with pytest.raises(ValueError, match="history changed"):
+            store.reserve_planning_attempt(
+                "plan", *v2_reservation(value, source, attempt=2), **prefix
+            )
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+        assert len(store.load_planning("plan").draft_attempts) == 1
+        fresh = history_prefix(store)
+        second = v2_reservation(value, source, attempt=2)
+        assert store.reserve_planning_attempt("plan", *second, **fresh) is None
+        assert store.load_planning_history("plan") == before[1] + tuple(
+            (envelope, Disposition.APPLIED) for envelope in second
+        )
+
+
+@pytest.mark.parametrize("changed", ["length", "hash", "disposition", "time", "order"])
+def test_planning_reservation_hash_covers_complete_ordered_history(tmp_path, changed):
+    with PlanningStore(tmp_path / "complete-history.db") as store:
+        value, _, source, pair = create_reservable_plan(store)
+        store.reserve_planning_attempt("plan", *pair)
+        fail_reserved_attempt(store, "draft", 1)
+        late = PlanningEnvelope(
+            "draft", 1, Completed({"late": "retained"}), "late-time"
+        )
+        assert store.apply_planning("plan", late) == Disposition.HISTORY_ONLY
+        before = store.load_planning("plan"), store.load_planning_history("plan")
+        prefix = history_prefix(store)
+        altered = list(before[1])
+        if changed == "length":
+            prefix["expected_history_length"] += 1
+        elif changed == "hash":
+            prefix["expected_history_hash"] = "0" * 64
+        elif changed == "disposition":
+            altered[-1] = (altered[-1][0], Disposition.APPLIED)
+        elif changed == "time":
+            altered[-1] = (
+                replace(altered[-1][0], occurred_at="other-time"),
+                altered[-1][1],
+            )
+        else:
+            altered[-2:] = reversed(altered[-2:])
+        if changed in {"disposition", "time", "order"}:
+            prefix["expected_history_hash"] = planning_hash(tuple(altered))
+        with pytest.raises(ValueError, match="history changed"):
+            store.reserve_planning_attempt(
+                "plan", *v2_reservation(value, source, attempt=2), **prefix
+            )
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+
+
+def test_planning_v2_reservation_two_connections_share_one_prefix_winner(tmp_path):
+    path = tmp_path / "prefix-race.db"
+    with PlanningStore(path) as store:
+        value, _, source, _ = create_reservable_plan(store)
+        pair = v2_reservation(value, source)
+        prefix = history_prefix(store)
+    barrier = Barrier(2)
+
+    def reserve(label):
+        started, prepared = pair
+        prepared = replace(
+            prepared,
+            event=replace(
+                prepared.event,
+                attempt_context=replace(prepared.event.attempt_context, token=label),
+            ),
+        )
+        with PlanningStore(path) as store:
+            barrier.wait(timeout=5)
+            try:
+                store.reserve_planning_attempt("plan", started, prepared, **prefix)
+            except ValueError as exc:
+                assert "history changed" in str(exc)
+                return None
+            return prepared
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(reserve, ("first-token", "second-token")))
+    winners = [item for item in outcomes if item is not None]
+    assert len(winners) == 1
+    with PlanningStore(path) as store:
+        assert len(store.load_planning("plan").draft_attempts) == 1
+        assert store.load_planning_history("plan") == (
+            (pair[0], Disposition.APPLIED),
+            (winners[0], Disposition.APPLIED),
+        )
+
+
+@pytest.mark.parametrize("stage", ["draft", "review"])
+def test_planning_environment_observation_persists_without_rewriting_started(
+    tmp_path, stage
+):
+    path = tmp_path / "environment-observation.db"
+    with PlanningStore(path) as store:
+        value, card, source, pair = create_reservable_plan(store)
+        store.reserve_planning_attempt("plan", *pair)
+        if stage == "review":
+            finish_reserved_draft(store, value, card)
+            pair = v2_reservation(value, source, stage="review", card=card)
+            store.reserve_planning_attempt("plan", *pair, **history_prefix(store))
+        environment = {
+            "cli_version": None,
+            "logged_in": False,
+            "nested": ["actual", None],
+        }
+        event = PlanningEnvironmentObserved(environment)
+        envelope = PlanningEnvelope(stage, 1, event, "observed-at")
+        environment["nested"].append("mutated caller")
+        assert store.apply_planning("plan", envelope) == Disposition.APPLIED
+        assert store.apply_planning("plan", envelope) == Disposition.HISTORY_ONLY
+        before = store.load_planning("plan"), store.load_planning_history("plan")
+        assert before[0].current(stage).request == pair[0].event
+        assert before[0].current(stage).request.environment is None
+        assert before[0].current(stage).runtime.reported_model is None
+        with pytest.raises(ValueError):
+            store.apply_planning(
+                "plan",
+                replace(
+                    envelope, event=PlanningEnvironmentObserved({"logged_in": True})
+                ),
+            )
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+    with PlanningStore(path) as store:
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+        persisted = store.load_planning("plan").current(stage).events[-1]
+        assert persisted.environment == {
+            "cli_version": None,
+            "logged_in": False,
+            "nested": ("actual", None),
+        }
+        with pytest.raises(TypeError):
+            persisted.environment["logged_in"] = True
+
+
+@pytest.mark.parametrize("actual_exit", [None, -15])
+def test_planning_evidence_rejection_preserves_actual_runtime_after_restart(
+    tmp_path, actual_exit
+):
+    path = tmp_path / "evidence-rejection.db"
+    with PlanningStore(path) as store:
+        value, card, source, pair = create_reservable_plan(store)
+        store.reserve_planning_attempt("plan", *pair)
+        for envelope in sequence(value, card)[1:5]:
+            store.apply_planning("plan", envelope)
+        if actual_exit is not None:
+            store.apply_planning(
+                "plan", PlanningEnvelope("draft", 1, ProcessExited(actual_exit))
+            )
+        completed = store.load_planning("plan").current("draft").runtime
+        rejected = PlanningEnvelope(
+            "draft",
+            1,
+            PlanningEvidenceRejected("Log could not be sealed"),
+            "rejected-at",
+        )
+        assert store.apply_planning("plan", rejected) == Disposition.APPLIED
+        assert store.apply_planning("plan", rejected) == Disposition.HISTORY_ONLY
+        before = store.load_planning("plan"), store.load_planning_history("plan")
+        assert before[0].phase == PlanningPhase.FAILED
+        assert before[0].validation_error == "Log could not be sealed"
+        assert before[0].current("draft").runtime == completed
+        assert before[0].current("draft").reconciliation is None
+        assert completed.exit_code == actual_exit
+        assert planning_value(completed.result) == card.to_dict()
+        assert completed.reported_model == "actual-draft"
+        assert completed.failure_category is None
+        for invalid in (
+            replace(rejected, event=PlanningEvidenceRejected("Different rejection")),
+            PlanningEnvelope("draft", 1, PlanningDraftValidated(card)),
+        ):
+            with pytest.raises(ValueError):
+                store.apply_planning("plan", invalid)
+            assert (
+                store.load_planning("plan"),
+                store.load_planning_history("plan"),
+            ) == before
+        with pytest.raises(ValueError):
+            store.reserve_planning_attempt(
+                "plan",
+                *v2_reservation(value, source, attempt=2),
+                **history_prefix(store),
+            )
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+    with PlanningStore(path) as store:
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+        store.apply_planning(
+            "plan",
+            PlanningEnvelope(
+                "draft",
+                1,
+                PlanningReconciled(True, "All owned processes actually stopped"),
+            ),
+        )
+        assert store.load_planning("plan").phase == PlanningPhase.FAILED
+        assert store.load_planning("plan").current("draft").runtime == completed
+        store.reserve_planning_attempt(
+            "plan", *v2_reservation(value, source, attempt=2), **history_prefix(store)
+        )
+        fresh = store.load_planning("plan")
+        assert store.apply_planning("plan", rejected) == Disposition.HISTORY_ONLY
+        assert store.load_planning("plan") == fresh
+        assert store.load_planning_history("plan")[-1] == (
+            rejected,
             Disposition.HISTORY_ONLY,
         )

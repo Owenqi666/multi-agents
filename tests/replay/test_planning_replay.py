@@ -20,15 +20,20 @@ from multi_agent.core.planning import (
     PlanningRequest,
     PlanningReview,
     PlanningState,
+    planning_hash,
+    planning_value,
 )
 from multi_agent.core.planning_events import (
     PlanningAttemptStarted,
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningEnvironmentObserved,
+    PlanningEvidenceRejected,
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
+    PlanningTaskBound,
     PlanningValidationRejected,
 )
 from multi_agent.core.planning_execution import (
@@ -59,6 +64,9 @@ REQUIRED_SCENARIOS = {
     "planning-reconcile-revoked",
     "planning-prepared-reservation",
     "planning-prepared-late",
+    "planning-environment-observation",
+    "planning-evidence-rejected",
+    "planning-evidence-late",
 }
 
 
@@ -194,6 +202,9 @@ def _event(stage, fields, inputs):
             Usage,
             PlanningReconciled,
             PlanningValidationRejected,
+            PlanningEnvironmentObserved,
+            PlanningEvidenceRejected,
+            PlanningTaskBound,
         )
     }
     return constructors[kind](**values)
@@ -209,9 +220,26 @@ class CoreBackend:
         self.history.append((envelope, disposition))
         return disposition
 
-    def reserve(self, started, prepared):
+    def reserve(self, started, prepared, **prefix):
         # Match the store's transaction boundary: neither event is visible
         # unless both folds succeed. The source fixture is already frozen.
+        length = prefix.get("expected_history_length")
+        digest = prefix.get("expected_history_hash")
+        if (length is None) != (digest is None):
+            raise ValueError("reservation requires both history prefix values")
+        if (
+            started.event.prompt_template_version
+            in (
+                "planning-draft-v2",
+                "planning-review-v2",
+            )
+            and length is None
+        ):
+            raise ValueError("v2 reservation requires a history prefix")
+        if length is not None and (
+            length != len(self.history) or digest != planning_hash(tuple(self.history))
+        ):
+            raise ValueError("planning history changed before reservation")
         state, started_disposition = apply_planning(self.state, started)
         state, prepared_disposition = apply_planning(state, prepared)
         assert started_disposition == prepared_disposition == Disposition.APPLIED
@@ -219,6 +247,9 @@ class CoreBackend:
         self.history.extend(
             ((started, started_disposition), (prepared, prepared_disposition))
         )
+
+    def bind(self, envelope):
+        return self.apply(envelope)
 
     def load(self):
         return self.state
@@ -250,8 +281,22 @@ class StoreBackend:
     def apply(self, envelope):
         return self.store.apply_planning("replay", envelope)
 
-    def reserve(self, started, prepared):
-        assert self.store.reserve_planning_attempt("replay", started, prepared) is None
+    def reserve(self, started, prepared, **prefix):
+        assert (
+            self.store.reserve_planning_attempt("replay", started, prepared, **prefix)
+            is None
+        )
+
+    def bind(self, envelope):
+        self.store.create_planned_task(
+            envelope.event.task_run_id, "replay", envelope.occurred_at
+        )
+        assert self.store.load_planning_history("replay")[-1][0] == envelope
+        assert (
+            self.store.load_task_provenance(envelope.event.task_run_id)
+            == self.load().provenance()
+        )
+        return Disposition.APPLIED
 
     def load(self):
         return self.store.load_planning("replay")
@@ -309,11 +354,17 @@ def _final(state):
 def _replay(backend, scenario, inputs):
     history = []
     trace = []
+    prefixes = {}
     for step in scenario["steps"]:
         before = backend.load(), backend.load_history()
         if step["op"] == "reopen":
             backend.reopen()
             assert (backend.load(), backend.load_history()) == before
+        elif step["op"] == "capture_prefix":
+            prefixes[step["name"]] = {
+                "expected_history_length": len(before[1]),
+                "expected_history_hash": planning_hash(before[1]),
+            }
         elif step["op"] == "reserve":
             envelopes = tuple(
                 PlanningEnvelope(
@@ -324,17 +375,27 @@ def _replay(backend, scenario, inputs):
                 )
                 for fields in (step["started"], step["prepared"])
             )
+            reference = step.get("history_prefix")
+            if reference == "current":
+                prefix = {
+                    "expected_history_length": len(before[1]),
+                    "expected_history_hash": planning_hash(before[1]),
+                }
+            elif isinstance(reference, str):
+                prefix = prefixes[reference]
+            else:
+                prefix = reference or {}
             if step.get("error") == "ValueError":
                 with pytest.raises(ValueError):
-                    backend.reserve(*envelopes)
+                    backend.reserve(*envelopes, **prefix)
                 assert (backend.load(), backend.load_history()) == before
             else:
-                backend.reserve(*envelopes)
+                backend.reserve(*envelopes, **prefix)
                 history.extend(
                     (envelope, Disposition.APPLIED) for envelope in envelopes
                 )
         else:
-            assert step["op"] == "event"
+            assert step["op"] in {"event", "bind"}
             fields = step["envelope"]
             envelope = PlanningEnvelope(
                 fields["stage"],
@@ -348,13 +409,42 @@ def _replay(backend, scenario, inputs):
                 assert (backend.load(), backend.load_history()) == before
             else:
                 disposition = Disposition(step["disposition"])
-                assert backend.apply(envelope) == disposition
+                apply = backend.bind if step["op"] == "bind" else backend.apply
+                assert apply(envelope) == disposition
                 history.append((envelope, disposition))
                 if disposition == Disposition.HISTORY_ONLY:
                     assert backend.load() == before[0]
         assert _observation(backend.load()) == step["expect"]
         if "prepared_contexts" in step:
             assert _prepared_contexts(backend.load()) == step["prepared_contexts"]
+        if "validation_error" in step:
+            assert backend.load().validation_error == step["validation_error"]
+        if "environment_observations" in step:
+            assert {
+                stage: [
+                    [
+                        planning_value(event.environment)
+                        for event in attempt.events
+                        if isinstance(event, PlanningEnvironmentObserved)
+                    ]
+                    for attempt in backend.load().attempts(stage)
+                ]
+                for stage in ("draft", "review")
+            } == step["environment_observations"]
+        if "result_cards" in step:
+            assert {
+                stage: [
+                    planning_value(attempt.runtime.result)
+                    for attempt in backend.load().attempts(stage)
+                ]
+                for stage in step["result_cards"]
+            } == {
+                stage: [
+                    _card(variant).to_dict() if variant is not None else None
+                    for variant in variants
+                ]
+                for stage, variants in step["result_cards"].items()
+            }
         assert backend.load_history() == tuple(history)
         trace.append((backend.load(), backend.load_history()))
     assert _final(backend.load()) == scenario["final"]

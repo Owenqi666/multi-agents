@@ -38,6 +38,21 @@ class PlanningExecutionPrepared:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanningEnvironmentObserved:
+    kind: ClassVar[str] = "planning_environment_observed"
+    environment: JSONValue
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "environment", freeze_json(self.environment))
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningEvidenceRejected:
+    kind: ClassVar[str] = "planning_evidence_rejected"
+    detail: str
+
+
+@dataclass(frozen=True, slots=True)
 class PlanningDraftValidated:
     kind: ClassVar[str] = "planning_draft_validated"
     card: TaskCard
@@ -79,6 +94,8 @@ class PlanningTaskBound:
 type PlanningEvent = (
     PlanningAttemptStarted
     | PlanningExecutionPrepared
+    | PlanningEnvironmentObserved
+    | PlanningEvidenceRejected
     | PlanningDraftValidated
     | PlanningReviewValidated
     | PlanningValidationRejected

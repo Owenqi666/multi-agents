@@ -32,15 +32,19 @@ from multi_agent.core.planning import (
     DependencyReceipt,
     PlanningInput,
     PlanningRequest,
+    PlanningReview,
     UserDecision,
     planning_hash,
     planning_value,
 )
 from multi_agent.core.planning_events import (
     PlanningAttemptStarted,
+    PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningEvidenceRejected,
     PlanningReconciled,
+    PlanningReviewValidated,
 )
 from multi_agent.core.planning_execution import prepared_for
 from multi_agent.core.snapshot import FrozenSnapshot
@@ -823,3 +827,229 @@ def test_planning_context_policy_freezes_resolved_file_identity_without_running_
         )
     assert project.calls == []
     assert project.policy.timeout == 90.0 and project.policy.grace == 1.5
+
+
+def finish_review(store, card, decision):
+    review = PlanningReview(
+        card.task_hash,
+        decision,
+        "Compare the exact interface with the original requirement.",
+        ("Clarify the interface acceptance criterion.",)
+        if decision == "needs_revision"
+        else (),
+    )
+    emit(store, Completed(planning_value(review)), stage="review")
+    emit(store, ProcessExited(0), stage="review")
+    emit(
+        store,
+        PlanningReconciled(True, "Synthetic actual stop", "/logs/review", "e" * 64),
+        stage="review",
+    )
+    emit(store, PlanningReviewValidated(review), stage="review")
+    return review
+
+
+def test_planning_context_v2_binds_empty_prefix_and_actual_feedback_bytes(
+    project, store
+):
+    record = prepare(store, project)
+    context = Path(record.attempt_context.path)
+    feedback_path = context / "revision-feedback.json"
+    feedback = read_json(feedback_path)
+    manifest = read_json(context / ".planning-context.json")
+    assert feedback["history_prefix"] == {"length": 0, "sha256": planning_hash(())}
+    assert feedback["review"] is None and feedback["reviewed_draft"] is None
+    assert manifest["version"] == 2
+    assert manifest["history_prefix_length"] == 0
+    assert manifest["history_prefix_hash"] == planning_hash(())
+    assert (
+        manifest["feedback_sha256"]
+        == hashlib.sha256(feedback_path.read_bytes()).hexdigest()
+    )
+    assert stat.S_IMODE(feedback_path.stat().st_mode) == 0o400
+    assert (
+        manifest["feedback_sha256"]
+        in store.load_planning("plan").current().request.prompt
+    )
+    assert inspect_planning_context(store, "plan", "draft", 1) == record
+
+
+@pytest.mark.parametrize("decision", ["needs_revision", "ready"])
+def test_planning_feedback_is_bound_to_history_prefix(project, store, decision):
+    prepare(store, project)
+    card = validate_draft(store, project)
+    prepare_planning_attempt(store, "plan", "review")
+    review = finish_review(store, card, decision)
+    prefix = store.load_planning_history("plan")
+    second = prepare_planning_attempt(store, "plan", "draft")
+    assert store.load_planning("plan").card is None
+    path = Path(second.attempt_context.path) / "revision-feedback.json"
+    frozen_bytes = path.read_bytes()
+    feedback = read_json(path)
+    assert feedback["history_prefix"] == {
+        "length": len(prefix),
+        "sha256": planning_hash(prefix),
+    }
+    assert feedback["reviewed_draft"] == {
+        "attempt": 1,
+        "task_hash": card.task_hash,
+        "card": card.to_dict(),
+    }
+    assert feedback["review"]["artifact"] == planning_value(review)
+    assert feedback["review"]["artifact_hash"] == review.artifact_hash
+    assert feedback["review"]["request"]["draft_attempt"] == 1
+    assert feedback["review"]["request"]["task_hash"] == card.task_hash
+    assert feedback["review"]["artifact"]["decision"] == decision
+    assert [
+        question["question"] for question in feedback["unresolved_blocking_questions"]
+    ] == ["Which deployment target?"]
+    assert (
+        store.apply_planning(
+            "plan", PlanningEnvelope("review", 1, Error("late stale review result"))
+        )
+        == Disposition.HISTORY_ONLY
+    )
+    assert inspect_planning_context(store, "plan", "draft", 2) == second
+    assert path.read_bytes() == frozen_bytes
+    finish_failure(store)
+    third = prepare_planning_attempt(store, "plan", "draft")
+    retry_feedback = read_json(
+        Path(third.attempt_context.path) / "revision-feedback.json"
+    )
+    assert retry_feedback["reviewed_draft"] == feedback["reviewed_draft"]
+    assert retry_feedback["review"] == feedback["review"]
+    assert retry_feedback["history_prefix"] != feedback["history_prefix"]
+    assert len(store.load_planning_input("plan").decisions) == 1
+    assert not store.load_planning("plan").questions_resolved
+
+
+@pytest.mark.parametrize(
+    "change", ["missing", "history-only", "different", "duplicate"]
+)
+def test_planning_context_public_inspection_requires_applied_started(
+    project, store, monkeypatch, change
+):
+    prepare(store, project)
+    history = store.load_planning_history("plan")
+    if change == "missing":
+        changed = history[1:]
+    elif change == "history-only":
+        changed = ((history[0][0], Disposition.HISTORY_ONLY), *history[1:])
+    elif change == "different":
+        envelope = history[0][0]
+        changed = (
+            (
+                replace(envelope, event=replace(envelope.event, prompt="different")),
+                Disposition.APPLIED,
+            ),
+            *history[1:],
+        )
+    else:
+        changed = (*history, history[0])
+    monkeypatch.setattr(store, "load_planning_history", lambda run_id: changed)
+    with pytest.raises(ValueError, match="unique applied Started"):
+        inspect_planning_context(store, "plan", "draft", 1)
+
+
+@pytest.mark.parametrize("change", ["content", "mode"])
+def test_planning_context_rejects_changed_feedback(project, store, change):
+    record = prepare(store, project)
+    path = Path(record.attempt_context.path) / "revision-feedback.json"
+    path.chmod(0o600)
+    if change == "content":
+        path.write_text("{}\n")
+        path.chmod(0o400)
+    with pytest.raises(ValueError, match="feedback differs"):
+        inspect_planning_context(store, "plan", "draft", 1)
+
+
+def test_planning_context_history_race_keeps_unreserved_files(
+    project, store, monkeypatch
+):
+    prepare(store, project)
+    finish_failure(store)
+    previous = store.load_planning("plan").current()
+    reserve = store.reserve_planning_attempt
+    raced = []
+
+    def append_before_reserve(*args, **kwargs):
+        emit(store, PlanningDiagnostic(Error("concurrent observation")))
+        raced.append((store.load_planning("plan"), store.load_planning_history("plan")))
+        return reserve(*args, **kwargs)
+
+    monkeypatch.setattr(store, "reserve_planning_attempt", append_before_reserve)
+    with pytest.raises(ValueError, match="owned files retained"):
+        prepare_planning_attempt(store, "plan", "draft")
+    assert len(raced) == 1
+    assert (store.load_planning("plan"), store.load_planning_history("plan")) == raced[
+        0
+    ]
+    assert store.load_planning("plan").current().number == previous.number
+    assert len(list((project.root / "contexts").iterdir())) == 2
+    assert inspect_planning_context(store, "plan", "draft", 1)
+
+
+def test_planning_v1_context_remains_inspectable(project, store, monkeypatch):
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            boundary, "planning_prompt_version", lambda stage: f"planning-{stage}-v1"
+        )
+        first = prepare(store, project)
+    context = Path(first.attempt_context.path)
+    started = store.load_planning("plan").current().request
+    assert started.prompt_template_version == "planning-draft-v1"
+    assert not (context / "revision-feedback.json").exists()
+    # This is the complete v1 manifest shape retained from the T36 baseline.
+    expected_manifest = {
+        "version": 1,
+        "run_id": "plan",
+        "stage": "draft",
+        "attempt": 1,
+        "input_hash": project.value.input_hash,
+        "source_snapshot_id": first.source_snapshot_id,
+        "policy_hash": planning_hash(first.policy),
+        "run_owner_token": first.run_owner.token,
+        "path": first.attempt_context.path,
+        "identity": list(first.attempt_context.identity),
+        "token": first.attempt_context.token,
+        "prompt_sha256": hashlib.sha256(started.prompt.encode()).hexdigest(),
+        "prompt_template_version": "planning-draft-v1",
+        "draft_attempt": None,
+        "task_hash": None,
+    }
+    assert read_json(context / ".planning-context.json") == expected_manifest
+    expected_bytes = (
+        json.dumps(
+            expected_manifest, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        )
+        + "\n"
+    ).encode("utf-8")
+    assert (context / ".planning-context.json").read_bytes() == expected_bytes
+    validate_draft(store, project)
+    second = prepare_planning_attempt(store, "plan", "review")
+    assert (
+        store.load_planning("plan").current().request.prompt_template_version
+        == "planning-review-v2"
+    )
+    assert inspect_planning_context(store, "plan", "draft", 1) == first
+    assert inspect_planning_context(store, "plan", "review", 1) == second
+    assert (
+        read_json(Path(second.attempt_context.path) / ".planning-context.json")[
+            "version"
+        ]
+        == 2
+    )
+
+
+def test_planning_context_large_feedback_uses_stable_streamed_evidence(project, store):
+    prepare(store, project)
+    emit(store, Completed(draft_card(project).to_dict()))
+    emit(store, ProcessExited(0))
+    emit(store, PlanningReconciled(True, "Synthetic stopped process"))
+    detail = "irrecoverable evidence: " + "x" * (2 * 1024 * 1024)
+    emit(store, PlanningEvidenceRejected(detail))
+    record = prepare_planning_attempt(store, "plan", "draft")
+    path = Path(record.attempt_context.path) / "revision-feedback.json"
+    assert path.stat().st_size > 2 * 1024 * 1024
+    assert read_json(path)["host_rejections"][0]["detail"] == detail
+    assert inspect_planning_context(store, "plan", "draft", 2) == record

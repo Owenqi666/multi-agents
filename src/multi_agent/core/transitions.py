@@ -30,7 +30,9 @@ from .planning_events import (
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningEnvironmentObserved,
     PlanningEvent,
+    PlanningEvidenceRejected,
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
@@ -666,6 +668,63 @@ def _planning_diagnostic(
     return _planning_record(state, envelope, current), Disposition.APPLIED
 
 
+def _planning_environment(
+    state: PlanningState, envelope: PlanningEnvelope
+) -> tuple[PlanningState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, PlanningEnvironmentObserved)
+    current = state.current(envelope.stage)
+    assert current is not None
+    existing = next(
+        (
+            item
+            for item in current.events
+            if isinstance(item, PlanningEnvironmentObserved)
+        ),
+        None,
+    )
+    if existing is not None:
+        if planning_hash(existing) != planning_hash(event):
+            raise ValueError("planning environment observation is immutable")
+        return state, Disposition.HISTORY_ONLY
+    if (
+        state.phase not in (PlanningPhase.DRAFTING, PlanningPhase.REVIEWING)
+        or prepared_for(current) is None
+        or any(
+            not isinstance(
+                item,
+                (PlanningAttemptStarted, PlanningExecutionPrepared, PlanningDiagnostic),
+            )
+            for item in current.events
+        )
+    ):
+        raise ValueError(
+            "planning environment requires preparation before runtime or cancellation"
+        )
+    return _planning_record(state, envelope, current), Disposition.APPLIED
+
+
+def _planning_reject_evidence(
+    state: PlanningState, envelope: PlanningEnvelope
+) -> tuple[PlanningState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, PlanningEvidenceRejected)
+    current = state.current(envelope.stage)
+    assert current is not None
+    existing = next(
+        (item for item in current.events if isinstance(item, PlanningEvidenceRejected)),
+        None,
+    )
+    if existing is not None:
+        if existing != event:
+            raise ValueError("planning evidence rejection is immutable")
+        return state, Disposition.HISTORY_ONLY
+    if state.phase != PlanningPhase.AWAITING_VALIDATION:
+        raise ValueError("planning evidence rejection requires awaiting validation")
+    updated = replace(state, phase=PlanningPhase.FAILED, validation_error=event.detail)
+    return _planning_record(updated, envelope, current), Disposition.APPLIED
+
+
 def _planning_validate(
     state: PlanningState, envelope: PlanningEnvelope
 ) -> tuple[PlanningState, Disposition]:
@@ -737,6 +796,8 @@ def _planning_repeat_validation(
     state: PlanningState, envelope: PlanningEnvelope
 ) -> tuple[PlanningState, Disposition]:
     event = envelope.event
+    current = state.current(envelope.stage)
+    assert current is not None
     repeated = (
         isinstance(event, PlanningDraftValidated)
         and envelope.stage == "draft"
@@ -746,6 +807,10 @@ def _planning_repeat_validation(
         and state.review_artifact == event.review
         or isinstance(event, PlanningValidationRejected)
         and state.validation_error == event.detail
+        and any(
+            isinstance(item, PlanningValidationRejected) and item == event
+            for item in current.events
+        )
     )
     if not repeated:
         raise ValueError("current planning artifact has not been validated")
@@ -762,6 +827,7 @@ _PLANNING_ACTIVE.update(
         ProcessExited: _planning_exit,
         PlanningReconciled: _planning_reconcile,
         PlanningDiagnostic: _planning_diagnostic,
+        PlanningEnvironmentObserved: _planning_environment,
     }
 )
 _PLANNING_CLOSED: dict[type[PlanningEvent], PlanningTransition | None] = {
@@ -775,6 +841,8 @@ _PLANNING_CLOSED: dict[type[PlanningEvent], PlanningTransition | None] = {
     PlanningReconciled: _planning_reconcile,
     PlanningDiagnostic: _planning_diagnostic,
     PlanningExecutionPrepared: _planning_prepare,
+    PlanningEnvironmentObserved: _planning_environment,
+    PlanningEvidenceRejected: _planning_reject_evidence,
 }
 _PLANNING_TRANSITIONS: dict[
     PlanningPhase, dict[type[PlanningEvent], PlanningTransition | None]

@@ -10,6 +10,7 @@ from multi_agent.core.planning import (
     PlanningPhase,
     PlanningProvenance,
     PlanningState,
+    planning_hash,
     planning_json,
 )
 from multi_agent.core.planning_events import (
@@ -76,6 +77,9 @@ class PlanningStore(TaskStore):
         run_id: str,
         started: PlanningEnvelope,
         prepared: PlanningEnvelope,
+        *,
+        expected_history_length: int | None = None,
+        expected_history_hash: str | None = None,
     ) -> None:
         """Persist a current launch and its frozen inputs in one reservation."""
         if not isinstance(started.event, PlanningAttemptStarted) or not isinstance(
@@ -84,9 +88,27 @@ class PlanningStore(TaskStore):
             raise TypeError("reservation requires Started and Prepared envelopes")
         if (started.stage, started.attempt) != (prepared.stage, prepared.attempt):
             raise ValueError("reservation envelopes must identify the same attempt")
+        if (expected_history_length is None) != (expected_history_hash is None):
+            raise ValueError("reservation requires both history prefix values")
+        if (
+            started.event.prompt_template_version
+            in (
+                "planning-draft-v2",
+                "planning-review-v2",
+            )
+            and expected_history_length is None
+        ):
+            raise ValueError("v2 reservation requires a history prefix")
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             state = self._read_planning(run_id)
+            if expected_history_length is not None:
+                history = self._read_planning_history(run_id)
+                if (
+                    len(history) != expected_history_length
+                    or planning_hash(history) != expected_history_hash
+                ):
+                    raise ValueError("planning history changed before reservation")
             source_id = prepared.event.source_snapshot_id
             snapshot = FrozenSnapshot.from_dict(
                 cast(dict[str, Any], self.load_snapshot(source_id))
@@ -141,17 +163,22 @@ class PlanningStore(TaskStore):
         with self._connection:
             self._connection.execute("BEGIN")
             self._planning_row(run_id)
-            rows = self._connection.execute(
-                "SELECT envelope, disposition FROM planning_history WHERE run_id = ? ORDER BY sequence",
-                (run_id,),
-            ).fetchall()
-            return tuple(
-                (
-                    decode_planning_envelope(row["envelope"]),
-                    Disposition(row["disposition"]),
-                )
-                for row in rows
+            return self._read_planning_history(run_id)
+
+    def _read_planning_history(
+        self, run_id: str
+    ) -> tuple[tuple[PlanningEnvelope, Disposition], ...]:
+        rows = self._connection.execute(
+            "SELECT envelope, disposition FROM planning_history WHERE run_id = ? ORDER BY sequence",
+            (run_id,),
+        ).fetchall()
+        return tuple(
+            (
+                decode_planning_envelope(row["envelope"]),
+                Disposition(row["disposition"]),
             )
+            for row in rows
+        )
 
     def list_recoverable_planning(self) -> tuple[str, ...]:
         """List unbound runs, including failed/cancelled work; never grant a retry."""

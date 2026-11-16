@@ -18,7 +18,9 @@ from multi_agent.core.planning_events import (
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningEnvironmentObserved,
     PlanningEvent,
+    PlanningEvidenceRejected,
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
@@ -126,6 +128,10 @@ def _planning_event(value: dict[str, Any]) -> PlanningEvent:
         return _started(value)
     if kind == PlanningExecutionPrepared.kind:
         return _prepared(value)
+    if kind == PlanningEnvironmentObserved.kind:
+        return PlanningEnvironmentObserved(value["environment"])
+    if kind == PlanningEvidenceRejected.kind:
+        return PlanningEvidenceRejected(value["detail"])
     if kind == PlanningDraftValidated.kind:
         return PlanningDraftValidated(TaskCard.from_dict(value["card"]))
     if kind == PlanningReviewValidated.kind:
