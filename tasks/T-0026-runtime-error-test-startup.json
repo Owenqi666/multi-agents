@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "T-0026",
+  "goal": "消除 runtime 错误分类回归对假 CLI 在 0.4 秒内启动的依赖，证明慢启动后仍实际到达目标错误分支，并保留真实超时和进程退出覆盖。",
+  "baseline_commit": "4328ed51314aef88094568f2c9fe4aa5fdaec780",
+  "write_scope": [
+    "tests/unit/test_runtime.py",
+    "tests/unit/runtime_fakes/fake_cli.py",
+    "docs/deliveries/T-0026.md"
+  ],
+  "depends_on": [
+    "T-0020",
+    "T-0023"
+  ],
+  "interface_contracts": [
+    {
+      "name": "original request and scheduling",
+      "definition": "用户原文：把 Codex 上下文隔离和测试启动同步问题分别建卡，发给阶段1窗口修复，补齐回归测试，完整运行 verify 后各自提交；再补跑受影响的实机验收，结果交回本窗口审核。本卡是提交 T24/T25 规划文件时新暴露的同类测试启动问题的后续，沿用已授权的测试修复范围，不因现有检查变更规则重复索取许可。由阶段1窗口在 T25 插件基准首轮全部运行/封存后执行；不得夹在首轮样本中修改运行环境，不改变已冻结产品或重跑基准挑结果。规划方第4步跨提供方复核完成后才实施。"
+    },
+    {
+      "name": "observed evidence and boundary",
+      "definition": "完整正常 hook 在 test_boundary_errors_have_terminal_and_exit[model-error-model_unavailable-codex] 失败：预期 MODEL_UNAVAILABLE，得到 TIMEOUT。外部证据 /Users/owen/Desktop/Multi-agent-acceptance/card-reviews/T24-T25-planning-check-failure/ 保存原日志与 diagnosis.json。日志仅见 fake --version spawn(t约0.00135)、SIGTERM(0.40078)、exit=-15(0.40608)及隔离清理，没有 recv/AppServer/模型错误。产品总 deadline 覆盖预检启动，TIMEOUT 是该实际执行的合法结果；这不是已证明的产品分类缺陷。测试把四种非计时错误和 hang-start 共用0.4秒预算，非计时分类不应以此偶然启动速度为前提。"
+    },
+    {
+      "name": "classification and timeout coverage",
+      "definition": "保留 test_boundary_errors_have_terminal_and_exit 的名称及原有两provider乘五mode共10节点；model-error/malformed/bad-result/early-exit 使用 setup 已有有限默认预算3秒，不改生产 deadline。保留精确分类（含None）、唯一终态、实际ProcessExited及顺序断言。hang-start 保留0.4秒真实超时窗口，先以有界ready同步确认已到达假CLI实际挂起点，再在测试内对真实asyncio deadline重新定时，不能在version预检耗尽预算后冒充挂起阶段覆盖；启动等待同样有独立有限上限。不把TIMEOUT转成其他类别，也不能删除或只mock最终Error。可在测试范围内为目标阶段建立显式同步；不复制无关取消基础设施。"
+    },
+    {
+      "name": "slow startup regression and causal evidence",
+      "definition": "假CLI提供默认关闭、仅用于本卡测试的可控 --version 延迟；新回归固定延迟0.6秒，沿用现有有限3秒总预算，配置余量2.4秒，在交付中明确。必须从原始流或单调时钟实测该version子进程spawn到exit大于0.4秒，证明开关确实跨隔离传入。之后确实到达AppServer且收到对应turn/completed的modelNotFound（protocol/codex/schema/v2/TurnCompletedNotification.json可核对），保留最终MODEL_UNAVAILABLE/唯一终态/退出断言。version子进程应自然exit0、没有针对该进程的SIGTERM，最终不能为TIMEOUT；不禁止模型终态之后对AppServer的正常SIGTERM清理。不得用重试直到绿、任意大sleep、跳过case或mock生产清理代替修复；默认假CLI和其他场景不变。"
+    },
+    {
+      "name": "scope and delivery",
+      "definition": "只用假CLI，不启动真实codex或claude作实现测试；规划方跨提供方卡片复核属于另一个只读环节。只改本卡三个路径，不改src/、protocol/、受保护配置、检查入口或T24/T25封存；范围不足就交回规划，不自行扩大。按skill确认卡基线到开工HEAD三个范围路径没有他方修改，记录两者；本卡改动diff从开工HEAD起算，产品src/等路径与adbf4928比较应为空。实现与提交排在T25封存及其文档提交之后，Git/全套检查与原窗口协调。各等待和失败清理有界，仅回收本次拥有的子进程。完整 scripts/verify.sh 保存独立日志并正常提交，不夹带根窗口任务卡和计划文档；候选提交用全新临时检出再次完整verify。此次测试专属更改不改变产品字节，因此不重复已经封存的真实模型请求；受影响的假CLI回归与完整检查必须实际重跑。"
+    },
+    {
+      "name": "cross-provider review disposition",
+      "definition": "2026-11-16 Claude Opus工具禁用只读复核记录在 /Users/owen/Desktop/Multi-agent-acceptance/card-reviews/T26-20261116T000324Z/。B1采纳实际延迟与确切终态证据，禁止SIGTERM限定到version进程：源码runtime.py的_run finally会对AppServer正常清理，一概禁止Codex SIGTERM会与真实行为冲突；B2采纳固定0.6秒与3秒预算/2.4秒余量。N1明确基线和提交顺序，N2增加hang-start到达同步，N3保留10节点并验证延迟默认关闭，N4明确范围不足回报。复核者未读源码/协议的推测已由规划方用当前文件核对，以上问题均已解决。"
+    }
+  ],
+  "deliverables": [
+    "稳定的现有边界错误分类回归，以及跨过旧0.4秒启动窗口并证明到达模型错误分支的新回归。",
+    "docs/deliveries/T-0026.md：开工HEAD、逐项验收、原有测试改动与原因、实际路径和完整/全新检出verify证据；聊天给候选完整SHA。"
+  ],
+  "acceptance_criteria": [
+    "unit/diff：现有边界错误测试保留名称、两provider与五mode共10节点，交付列出前后相同节点清单；非超时分类使用既有有限3秒默认预算，分类/唯一终态/实际退出及事件顺序断言不削弱。",
+    "unit：命名慢启动回归固定0.6秒延迟/3秒总预算，实测version spawn到自然exit0大于0.4秒且无针对version的SIGTERM；随后AppServer真实turn/completed含modelNotFound，最终MODEL_UNAVAILABLE且没有TIMEOUT，保留唯一终态/退出断言。",
+    "unit：hang-start先确认假CLI实际挂起阶段已到达再对真实deadline设置0.4秒窗口，得到TIMEOUT及实际退出，启动等待另有有限上限；不模拟最终Error或绕过生产终止逻辑。",
+    "unit/diff：新增默认关闭的明确证据，不开延迟时version输出/退出与原行为一致；等待有界，成功及失败均清理自有进程，其他fake模式及既有回归保持，无循环重跑直到通过。",
+    "diff：只改三个write_scope路径，src/及产品adbf4928相应路径字节不变；旧失败日志、T24/T25封存及其他窗口工作区文件不修改。",
+    "完整verify五步及候选全新检出完整verify均通过，日志记录真实计数和退出码；只使用假CLI，不运行真实模型或削弱检查。",
+    "独立正常提交，交付开工HEAD、候选SHA、逐条验收、被改原有测试及原因、实际路径；任务卡由规划方独立保存，不能夹带他方文件或宣称工作区完全干净。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
