@@ -1,0 +1,1453 @@
+{
+  "source": true,
+  "steps": [
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 1",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:00Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-1",
+            "identity": [
+              2,
+              101
+            ],
+            "token": "draft-1",
+            "digest": "af72250d489ae165bf74a26d181af5117879339ffbb1725e2fb09c82c5cf3441",
+            "manifest_sha256": "b9d48f3ff5754066d9f58ce794a1d3abe6e4ad754555e23748e5237b09cc706b"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:00Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-1",
+            "identity": [
+              2,
+              101
+            ],
+            "token": "draft-1",
+            "digest": "af72250d489ae165bf74a26d181af5117879339ffbb1725e2fb09c82c5cf3441",
+            "manifest_sha256": "b9d48f3ff5754066d9f58ce794a1d3abe6e4ad754555e23748e5237b09cc706b"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:01Z"
+      },
+      "disposition": "history_only",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-1",
+            "identity": [
+              2,
+              101
+            ],
+            "token": "draft-1",
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "manifest_sha256": "b9d48f3ff5754066d9f58ce794a1d3abe6e4ad754555e23748e5237b09cc706b"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:02Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 2",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:04Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-2",
+            "identity": [
+              2,
+              102
+            ],
+            "token": "draft-2",
+            "digest": "21e3128391f041094280641595d6bbece668ee14e47ffa02666db7e3f8b1934e",
+            "manifest_sha256": "064e76c4bfeca20c91d05ab5d3daafbe3273983d680e10a7d22206a3d8cdd2be"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:04Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "error",
+          "detail": "Preflight reports no login",
+          "failure_category": "auth_expired",
+          "raw_type": "environment"
+        },
+        "occurred_at": "2026-11-16T00:00:05Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 7
+        },
+        "occurred_at": "2026-11-16T00:00:06Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 2",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:07Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-2",
+            "identity": [
+              2,
+              102
+            ],
+            "token": "draft-2",
+            "digest": "21e3128391f041094280641595d6bbece668ee14e47ffa02666db7e3f8b1934e",
+            "manifest_sha256": "064e76c4bfeca20c91d05ab5d3daafbe3273983d680e10a7d22206a3d8cdd2be"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:07Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": false,
+          "detail": "Owned process stop remains unknown",
+          "log_path": "/synthetic/logs/draft-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:08Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 2",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:09Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-2",
+            "identity": [
+              2,
+              102
+            ],
+            "token": "draft-2",
+            "digest": "21e3128391f041094280641595d6bbece668ee14e47ffa02666db7e3f8b1934e",
+            "manifest_sha256": "064e76c4bfeca20c91d05ab5d3daafbe3273983d680e10a7d22206a3d8cdd2be"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:09Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Observed owned process and closed logs",
+          "log_path": "/synthetic/logs/draft-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:10Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 2",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:11Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 121.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-2",
+            "identity": [
+              2,
+              102
+            ],
+            "token": "draft-2",
+            "digest": "21e3128391f041094280641595d6bbece668ee14e47ffa02666db7e3f8b1934e",
+            "manifest_sha256": "064e76c4bfeca20c91d05ab5d3daafbe3273983d680e10a7d22206a3d8cdd2be"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:11Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 2",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:12Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-2",
+            "identity": [
+              2,
+              102
+            ],
+            "token": "draft-1",
+            "digest": "21e3128391f041094280641595d6bbece668ee14e47ffa02666db7e3f8b1934e",
+            "manifest_sha256": "064e76c4bfeca20c91d05ab5d3daafbe3273983d680e10a7d22206a3d8cdd2be"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:12Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 2",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:14Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-2",
+            "identity": [
+              2,
+              102
+            ],
+            "token": "draft-2",
+            "digest": "21e3128391f041094280641595d6bbece668ee14e47ffa02666db7e3f8b1934e",
+            "manifest_sha256": "064e76c4bfeca20c91d05ab5d3daafbe3273983d680e10a7d22206a3d8cdd2be"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:14Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "session_started",
+          "session_id": "draft-session-2",
+          "raw_type": "synthetic.init"
+        },
+        "occurred_at": "2026-11-16T00:00:16Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "usage",
+          "counts": {
+            "input_tokens": 5
+          },
+          "raw_type": "synthetic.usage"
+        },
+        "occurred_at": "2026-11-16T00:00:17Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "card_variant": 0,
+          "reported_model": "reported-drafter",
+          "raw_type": "synthetic.completed"
+        },
+        "occurred_at": "2026-11-16T00:00:18Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:00:19Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Observed owned process and closed logs",
+          "log_path": "/synthetic/logs/draft-2.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:20Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_draft_validated",
+          "card_variant": 0
+        },
+        "occurred_at": "2026-11-16T00:00:21Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_review",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": []
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen review prompt 1",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null,
+          "card_variant": 0,
+          "draft_attempt": 2
+        },
+        "occurred_at": "2026-11-16T00:00:22Z"
+      },
+      "prepared": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/review-1",
+            "identity": [
+              2,
+              201
+            ],
+            "token": "review-1",
+            "digest": "19f365a95185035965832eb2ea072ba6a9741ba32c7a5348260ab681856818f1",
+            "manifest_sha256": "a30cabd44f0e0b6e0e140917cfaa41173f81d86a874b378e18df1bbb4d3420cd"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:22Z"
+      },
+      "expect": {
+        "phase": "reviewing",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "review-session-1"
+        },
+        "occurred_at": "2026-11-16T00:00:23Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "reviewing",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "review": {
+            "card_variant": 0,
+            "decision": "ready",
+            "reason": "Checked the frozen task",
+            "blocking_issues": []
+          },
+          "raw_type": "synthetic.completed"
+        },
+        "occurred_at": "2026-11-16T00:00:24Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:00:25Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Observed owned process and closed logs",
+          "log_path": "/synthetic/logs/review-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:26Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_review_validated",
+          "card_variant": 0,
+          "decision": "ready",
+          "reason": "Checked the frozen task",
+          "blocking_issues": []
+        },
+        "occurred_at": "2026-11-16T00:00:27Z"
+      },
+      "disposition": "applied",
+      "expect": {
+        "phase": "ready",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": true
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "ready",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": true
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "stage": "draft",
+        "attempt": 3,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Frozen draft prompt 3",
+          "prompt_template_version": "planning-prepared-replay-v1",
+          "started_at": "2026-11-16T00:00:00Z",
+          "environment": null
+        },
+        "occurred_at": "2026-11-16T00:00:29Z"
+      },
+      "prepared": {
+        "stage": "draft",
+        "attempt": 3,
+        "event": {
+          "type": "planning_execution_prepared",
+          "source_snapshot_id": "$source_snapshot_id",
+          "policy": {
+            "providers": [
+              {
+                "provider": "claude",
+                "executable": "/synthetic/bin/claude",
+                "executable_identity": [
+                  1,
+                  10
+                ],
+                "executable_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+                "max_attempts": 2
+              },
+              {
+                "provider": "codex",
+                "executable": "/synthetic/bin/codex",
+                "executable_identity": [
+                  1,
+                  11
+                ],
+                "executable_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "max_attempts": 1
+              }
+            ],
+            "timeout": 120.0,
+            "grace": 2.0
+          },
+          "run_owner": {
+            "root": "/synthetic/plan",
+            "identity": [
+              2,
+              10
+            ],
+            "token": "owner-token",
+            "manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "attempt_context": {
+            "path": "/synthetic/plan/draft-3",
+            "identity": [
+              2,
+              103
+            ],
+            "token": "draft-3",
+            "digest": "c3702a9422d2cc7dfe7d1487716788cb3a734c46ef98c46a1de5bce029be3ea0",
+            "manifest_sha256": "42c239f5d76affcf6e798e6f644eef7b80ac4adec4b146d81413ae9d47299d7a"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:29Z"
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "ready",
+        "stage": "review",
+        "draft_attempt": 2,
+        "review_attempt": 1,
+        "can_bind": true
+      },
+      "prepared_contexts": {
+        "draft": [
+          "draft-1",
+          "draft-2"
+        ],
+        "review": [
+          "review-1"
+        ]
+      }
+    }
+  ],
+  "final": {
+    "phase": "ready",
+    "stage": "review",
+    "draft_attempt": 2,
+    "review_attempt": 1,
+    "can_bind": true,
+    "card_goal": "Original scope",
+    "review_decision": "ready",
+    "attempts": {
+      "draft": [
+        {
+          "number": 1,
+          "status": "failed",
+          "failure_category": "auth_expired",
+          "reported_model": null,
+          "reported_effort": null,
+          "exit_code": 7,
+          "process_stopped": true,
+          "usable": false
+        },
+        {
+          "number": 2,
+          "status": "succeeded",
+          "failure_category": null,
+          "reported_model": "reported-drafter",
+          "reported_effort": null,
+          "exit_code": -15,
+          "process_stopped": true,
+          "usable": true
+        }
+      ],
+      "review": [
+        {
+          "number": 1,
+          "status": "succeeded",
+          "failure_category": null,
+          "reported_model": null,
+          "reported_effort": null,
+          "exit_code": -15,
+          "process_stopped": true,
+          "usable": true
+        }
+      ]
+    }
+  }
+}

@@ -36,11 +36,21 @@ from multi_agent.core.planning_events import (
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
     PlanningTaskBound,
     PlanningValidationRejected,
 )
+from multi_agent.core.planning_execution import (
+    PlanningAttemptContext,
+    PlanningExecutionPolicy,
+    PlanningProviderPolicy,
+    PlanningRunOwner,
+    prepared_for,
+)
+from multi_agent.core.snapshot import FrozenFile, FrozenSnapshot
+from multi_agent.core.snapshot import TestEvidence as SnapshotTestEvidence
 from multi_agent.core.task_state import TaskInput, TaskPhase
 from multi_agent.core.tasks import FrozenProjectRules, TaskCard
 from multi_agent.store import database
@@ -588,3 +598,519 @@ def test_unknown_planning_runs_raise_without_history_or_task_writes(tmp_path):
                 operation()
         assert store.list_recoverable_planning() == ()
         assert store.list_recoverable_tasks() == ()
+
+
+def planning_source(value):
+    return FrozenSnapshot(
+        value.frozen_rules.repository,
+        value.frozen_rules.baseline_commit,
+        value.frozen_rules.baseline_commit,
+        "",
+        value.requirements,
+        ("Plan from the frozen requirements and source.",),
+        (),
+        (
+            FrozenFile(
+                "candidate", "src/main.py", "frozen source\n", "d" * 40, "100644"
+            ),
+        ),
+    )
+
+
+def execution_policy(*, draft_attempts=2, review_attempts=2):
+    return PlanningExecutionPolicy(
+        (
+            PlanningProviderPolicy(
+                "claude", "/synthetic/bin/claude", (10, 11), "a" * 64, draft_attempts
+            ),
+            PlanningProviderPolicy(
+                "codex", "/synthetic/bin/codex", (10, 12), "b" * 64, review_attempts
+            ),
+        ),
+        90.0,
+        0.5,
+    )
+
+
+def reservation(value, source, *, stage="draft", attempt=1, policy=None, card=None):
+    owner = PlanningRunOwner("/external/planning", (20, 21), "owner-token", "c" * 64)
+    context = PlanningAttemptContext(
+        f"/external/planning/{stage}-{attempt}",
+        (20, (100 if stage == "draft" else 200) + attempt),
+        f"{stage}-{attempt}-token",
+        "d" * 64,
+        "e" * 64,
+    )
+    started = PlanningEnvelope(
+        stage,
+        attempt,
+        PlanningAttemptStarted(
+            value.draft_request if stage == "draft" else value.review_request,
+            f"exact {stage} launch prompt\n",
+            "planning-execution-v1",
+            "fixed-start",
+            draft_attempt=1 if stage == "review" else None,
+            task_hash=card.task_hash if stage == "review" else None,
+        ),
+        "start-time",
+    )
+    prepared = PlanningEnvelope(
+        stage,
+        attempt,
+        PlanningExecutionPrepared(
+            source.snapshot_id,
+            execution_policy() if policy is None else policy,
+            owner,
+            context,
+        ),
+        "prepared-time",
+    )
+    return started, prepared
+
+
+def create_reservable_plan(store, *, policy=None):
+    value, card = inputs()
+    source = planning_source(value)
+    store.create_planning("plan", value, "created")
+    store.save_snapshot(source.snapshot_id, source.to_dict())
+    return value, card, source, reservation(value, source, policy=policy)
+
+
+def finish_reserved_draft(store, value, card):
+    for envelope in sequence(value, card)[1:8]:
+        assert store.apply_planning("plan", envelope) == Disposition.APPLIED
+    assert store.load_planning("plan").phase == PlanningPhase.AWAITING_REVIEW
+
+
+def fail_reserved_attempt(store, stage, attempt):
+    for event in (
+        Error("synthetic preflight failure"),
+        ProcessExited(2),
+        PlanningReconciled(
+            True, "observed stopped", "/external/failed.jsonl", "f" * 64
+        ),
+    ):
+        assert (
+            store.apply_planning("plan", PlanningEnvelope(stage, attempt, event))
+            == Disposition.APPLIED
+        )
+
+
+def test_planning_reservation_is_atomic_and_blocks_unknown_stop(tmp_path):
+    path = tmp_path / "reservation.db"
+    with PlanningStore(path) as store:
+        value, _, source, pair = create_reservable_plan(store)
+        assert store.reserve_planning_attempt("plan", *pair) is None
+        state = store.load_planning("plan")
+        assert state.phase == PlanningPhase.DRAFTING
+        assert state.current("draft").events == tuple(item.event for item in pair)
+        assert not state.current("draft").stopped
+        assert store.load_planning_history("plan") == tuple(
+            (item, Disposition.APPLIED) for item in pair
+        )
+    with PlanningStore(path) as store:
+        before = store.load_planning("plan")
+        history = store.load_planning_history("plan")
+        for attempted in (pair, reservation(value, source, attempt=2)):
+            with pytest.raises(ValueError):
+                store.reserve_planning_attempt("plan", *attempted)
+            assert store.load_planning("plan") == before
+            assert store.load_planning_history("plan") == history
+        fail_reserved_attempt(store, "draft", 1)
+        store.apply_planning(
+            "plan",
+            PlanningEnvelope(
+                "draft", 1, PlanningReconciled(False, "stop unknown again")
+            ),
+        )
+        revoked = store.load_planning("plan")
+        history = store.load_planning_history("plan")
+        with pytest.raises(ValueError):
+            store.reserve_planning_attempt(
+                "plan", *reservation(value, source, attempt=2)
+            )
+        assert store.load_planning("plan") == revoked
+        assert store.load_planning_history("plan") == history
+
+
+@pytest.mark.parametrize(
+    "table,operation,condition",
+    [
+        ("planning_attempts", "INSERT", ""),
+        ("planning_runs", "UPDATE", ""),
+        ("planning_history", "INSERT", "WHEN NEW.sequence = 1"),
+        ("planning_history", "INSERT", "WHEN NEW.sequence = 2"),
+    ],
+)
+def test_planning_reservation_sql_failures_leave_no_partial_attempt(
+    tmp_path, table, operation, condition
+):
+    with PlanningStore(tmp_path / "rollback.db") as store:
+        value, _, source, pair = create_reservable_plan(store)
+        store._connection.execute(
+            f"CREATE TRIGGER fail_reservation BEFORE {operation} ON {table} {condition} BEGIN SELECT RAISE(ABORT, 'injected reservation failure'); END"
+        )
+        with pytest.raises(
+            sqlite3.IntegrityError, match="injected reservation failure"
+        ):
+            store.reserve_planning_attempt("plan", *pair)
+        assert store.load_planning("plan") == PlanningState(value)
+        assert store.load_planning_history("plan") == ()
+        assert (
+            store._connection.execute(
+                "SELECT COUNT(*) FROM planning_attempts"
+            ).fetchone()[0]
+            == 0
+        )
+        assert store.load_snapshot(source.snapshot_id) == source.to_dict()
+        store._connection.execute("DROP TRIGGER fail_reservation")
+        store.reserve_planning_attempt("plan", *pair)
+        assert len(store.load_planning_history("plan")) == 2
+
+
+@pytest.mark.parametrize("which", ["started", "prepared"])
+def test_planning_reservation_rejects_nonapplied_fold_without_writes(
+    tmp_path, monkeypatch, which
+):
+    original = transitions.apply_planning
+
+    def history_only(state, envelope):
+        updated, disposition = original(state, envelope)
+        selected = (
+            PlanningAttemptStarted if which == "started" else PlanningExecutionPrepared
+        )
+        if isinstance(envelope.event, selected):
+            return updated, Disposition.HISTORY_ONLY
+        return updated, disposition
+
+    with PlanningStore(tmp_path / "nonapplied.db") as store:
+        value, _, _, pair = create_reservable_plan(store)
+        monkeypatch.setattr(transitions, "apply_planning", history_only)
+        with pytest.raises(ValueError):
+            store.reserve_planning_attempt("plan", *pair)
+        assert store.load_planning("plan") == PlanningState(value)
+        assert store.load_planning_history("plan") == ()
+
+
+@pytest.mark.parametrize(
+    "mismatch", ["stage", "attempt", "start-type", "prepared-type", "environment"]
+)
+def test_planning_reservation_rejects_mismatched_envelopes_atomically(
+    tmp_path, mismatch
+):
+    with PlanningStore(tmp_path / "envelopes.db") as store:
+        value, _, _, (started, prepared) = create_reservable_plan(store)
+        if mismatch == "stage":
+            prepared = replace(prepared, stage="review")
+        elif mismatch == "attempt":
+            prepared = replace(prepared, attempt=2)
+        elif mismatch == "start-type":
+            started = replace(started, event=Message("not a start"))
+        elif mismatch == "prepared-type":
+            prepared = replace(prepared, event=Message("not a preparation"))
+        else:
+            started = replace(
+                started, event=replace(started.event, environment={"unreserved": True})
+            )
+        with pytest.raises(TypeError if mismatch.endswith("type") else ValueError):
+            store.reserve_planning_attempt("plan", started, prepared)
+        assert store.load_planning("plan") == PlanningState(value)
+        assert store.load_planning_history("plan") == ()
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
+        {"repository": "/other/repo/.git"},
+        {"baseline": "e" * 40},
+        {"candidate": "e" * 40},
+        {"requirements": "different requirements"},
+        {"diff": "a change"},
+        {
+            "tests": (
+                SnapshotTestEvidence(BASELINE, ("pytest",), 0, "not a planning source"),
+            )
+        },
+        {"required_tests": (("pytest",),)},
+    ],
+)
+def test_planning_reservation_validates_stored_source_binding(tmp_path, changed):
+    with PlanningStore(tmp_path / "source.db") as store:
+        value, _, source, (started, prepared) = create_reservable_plan(store)
+        other = replace(source, **changed)
+        store.save_snapshot(other.snapshot_id, other.to_dict())
+        prepared = replace(
+            prepared,
+            event=replace(prepared.event, source_snapshot_id=other.snapshot_id),
+        )
+        with pytest.raises(ValueError, match="source snapshot"):
+            store.reserve_planning_attempt("plan", started, prepared)
+        assert store.load_planning("plan") == PlanningState(value)
+        assert store.load_planning_history("plan") == ()
+
+
+@pytest.mark.parametrize("corruption", ["missing", "wrong-id", "changed-content"])
+def test_planning_reservation_rechecks_snapshot_content_identity(tmp_path, corruption):
+    with PlanningStore(tmp_path / "source-id.db") as store:
+        value, _, source, (started, prepared) = create_reservable_plan(store)
+        if corruption == "changed-content":
+            damaged = replace(
+                source, files=(replace(source.files[0], text="tampered\n"),)
+            )
+            store._connection.execute(
+                "UPDATE snapshots SET payload = ? WHERE snapshot_id = ?",
+                (json.dumps(damaged.to_dict()), source.snapshot_id),
+            )
+        else:
+            if corruption == "wrong-id":
+                store.save_snapshot("0" * 64, source.to_dict())
+            prepared = replace(
+                prepared, event=replace(prepared.event, source_snapshot_id="0" * 64)
+            )
+        with pytest.raises(KeyError if corruption == "missing" else ValueError):
+            store.reserve_planning_attempt("plan", started, prepared)
+        assert store.load_planning("plan") == PlanningState(value)
+        assert store.load_planning_history("plan") == ()
+
+
+def test_planning_reservation_two_connections_have_one_winner(tmp_path):
+    path = tmp_path / "race.db"
+    with PlanningStore(path) as store:
+        _, _, _, pair = create_reservable_plan(store)
+    barrier = Barrier(2)
+
+    def reserve(label):
+        started, prepared = pair
+        context = prepared.event.attempt_context
+        prepared = replace(
+            prepared,
+            event=replace(
+                prepared.event, attempt_context=replace(context, token=label)
+            ),
+        )
+        with PlanningStore(path) as store:
+            barrier.wait(timeout=5)
+            try:
+                store.reserve_planning_attempt("plan", started, prepared)
+            except ValueError:
+                return label, None
+            return label, prepared
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(
+            pool.map(reserve, ("first-context-token", "second-context-token"))
+        )
+    winners = [
+        (label, prepared) for label, prepared in outcomes if prepared is not None
+    ]
+    assert len(winners) == 1
+    with PlanningStore(path) as store:
+        label, prepared = winners[0]
+        state = store.load_planning("plan")
+        assert len(state.draft_attempts) == 1
+        assert prepared_for(state.current("draft")).attempt_context.token == label
+        assert store.load_planning_history("plan") == (
+            (pair[0], Disposition.APPLIED),
+            (prepared, Disposition.APPLIED),
+        )
+
+
+def test_planning_execution_policy_and_source_survive_restart(tmp_path):
+    path = tmp_path / "execution-restart.db"
+    with PlanningStore(path) as store:
+        value, card, source, pair = create_reservable_plan(store)
+        store.reserve_planning_attempt("plan", *pair)
+        finish_reserved_draft(store, value, card)
+        review_pair = reservation(value, source, stage="review", card=card)
+        store.reserve_planning_attempt("plan", *review_pair)
+        before = store.load_planning("plan")
+        history = store.load_planning_history("plan")
+    with PlanningStore(path) as store:
+        state = store.load_planning("plan")
+        assert state == before
+        assert store.load_planning_history("plan") == history
+        assert store.load_snapshot(source.snapshot_id) == source.to_dict()
+        for stage, expected in (
+            ("draft", pair[1].event),
+            ("review", review_pair[1].event),
+        ):
+            actual = prepared_for(state.current(stage))
+            assert actual == expected
+            assert isinstance(actual.policy.providers, tuple)
+            assert isinstance(actual.policy.providers[0].executable_identity, tuple)
+            assert isinstance(actual.run_owner.identity, tuple)
+            assert isinstance(actual.attempt_context.identity, tuple)
+            with pytest.raises(FrozenInstanceError):
+                actual.policy.timeout = 1
+            assert (
+                decode_planning_envelope(
+                    encode_planning_envelope(PlanningEnvelope(stage, 1, actual))
+                ).event
+                == actual
+            )
+        # The old draft's identical preparation is retained only as history.
+        assert store.apply_planning("plan", pair[1]) == Disposition.HISTORY_ONLY
+        assert store.load_planning("plan") == state
+        fail_reserved_attempt(store, "review", 1)
+        retry = reservation(value, source, stage="review", attempt=2, card=card)
+        store.reserve_planning_attempt("plan", *retry)
+        current = store.load_planning("plan")
+        assert store.apply_planning("plan", review_pair[1]) == Disposition.HISTORY_ONLY
+        assert store.load_planning("plan") == current
+        assert prepared_for(current.current("review")) == retry[1].event
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        "source",
+        "timeout",
+        "executable",
+        "budget",
+        "owner-root",
+        "owner-token",
+        "owner-identity",
+        "owner-manifest",
+        "context-path",
+        "context-identity",
+        "context-token",
+    ],
+)
+def test_planning_reservation_cannot_change_frozen_execution_or_reuse_context(
+    tmp_path, change
+):
+    with PlanningStore(tmp_path / "frozen-execution.db") as store:
+        value, card, source, pair = create_reservable_plan(store)
+        store.reserve_planning_attempt("plan", *pair)
+        finish_reserved_draft(store, value, card)
+        started, prepared = reservation(value, source, stage="review", card=card)
+        event = prepared.event
+        if change == "source":
+            other = replace(
+                source, files=(replace(source.files[0], text="other frozen source\n"),)
+            )
+            store.save_snapshot(other.snapshot_id, other.to_dict())
+            event = replace(event, source_snapshot_id=other.snapshot_id)
+        elif change == "timeout":
+            event = replace(event, policy=replace(event.policy, timeout=100.0))
+        elif change in ("executable", "budget"):
+            provider = event.policy.providers[1]
+            provider = replace(
+                provider,
+                **(
+                    {"executable": "/different/codex"}
+                    if change == "executable"
+                    else {"max_attempts": 3}
+                ),
+            )
+            event = replace(
+                event,
+                policy=replace(
+                    event.policy, providers=(event.policy.providers[0], provider)
+                ),
+            )
+        elif change.startswith("owner-"):
+            field = {
+                "owner-root": "root",
+                "owner-token": "token",
+                "owner-identity": "identity",
+                "owner-manifest": "manifest_sha256",
+            }[change]
+            replacement = (99, 99) if field == "identity" else "replacement"
+            event = replace(
+                event, run_owner=replace(event.run_owner, **{field: replacement})
+            )
+        else:
+            field = change.removeprefix("context-")
+            original = getattr(pair[1].event.attempt_context, field)
+            event = replace(
+                event,
+                attempt_context=replace(event.attempt_context, **{field: original}),
+            )
+        before = store.load_planning("plan")
+        history = store.load_planning_history("plan")
+        with pytest.raises(ValueError):
+            store.reserve_planning_attempt(
+                "plan", started, replace(prepared, event=event)
+            )
+        assert store.load_planning("plan") == before
+        assert store.load_planning_history("plan") == history
+        store.reserve_planning_attempt(
+            "plan", *reservation(value, source, stage="review", card=card)
+        )
+
+
+@pytest.mark.parametrize("stage", ["draft", "review"])
+def test_planning_reservation_preflight_failure_consumes_provider_budget(
+    tmp_path, stage
+):
+    policy = execution_policy(draft_attempts=1, review_attempts=1)
+    path = tmp_path / "budget.db"
+    with PlanningStore(path) as store:
+        value, card, source, pair = create_reservable_plan(store, policy=policy)
+        store.reserve_planning_attempt("plan", *pair)
+        if stage == "review":
+            finish_reserved_draft(store, value, card)
+            store.reserve_planning_attempt(
+                "plan",
+                *reservation(value, source, stage="review", card=card, policy=policy),
+            )
+        fail_reserved_attempt(store, stage, 1)
+    with PlanningStore(path) as store:
+        before = store.load_planning("plan")
+        history = store.load_planning_history("plan")
+        with pytest.raises(ValueError, match="budget"):
+            store.reserve_planning_attempt(
+                "plan",
+                *reservation(
+                    value, source, stage=stage, attempt=2, card=card, policy=policy
+                ),
+            )
+        assert store.load_planning("plan") == before
+        assert store.load_planning_history("plan") == history
+        assert store.load_planning("plan").current(stage).stopped
+
+
+def test_planning_reservation_rejects_legacy_attempt_chain(tmp_path):
+    with PlanningStore(tmp_path / "legacy-chain.db") as store:
+        value, card, source, _ = create_reservable_plan(store)
+        for envelope in sequence(value, card)[:8]:
+            store.apply_planning("plan", envelope)
+        before = store.load_planning("plan")
+        history = store.load_planning_history("plan")
+        with pytest.raises(ValueError, match="legacy"):
+            store.reserve_planning_attempt(
+                "plan", *reservation(value, source, stage="review", card=card)
+            )
+        assert store.load_planning("plan") == before
+        assert store.load_planning_history("plan") == history
+
+
+def test_legacy_planning_provenance_hash_survives_execution_events(tmp_path):
+    expected_hash = "f74d97b94e76d526dce7ff4ca6a65bad03a5b367b07313ed5e4a49ad9fbbcd7e"
+    path = tmp_path / "legacy-hash.db"
+    with PlanningStore(path) as store:
+        value, card, _ = ready(store, run_id="legacy")
+        original = store.load_planning("legacy").provenance()
+        assert original.plan_hash == expected_hash
+        store.create_planned_task("legacy-task", "legacy", "bound-at")
+        source = planning_source(value)
+        store.save_snapshot(source.snapshot_id, source.to_dict())
+        store.create_planning("prepared", value, "created")
+        pair = reservation(value, source)
+        store.reserve_planning_attempt("prepared", *pair)
+        assert store.apply_planning("legacy", pair[1]) == Disposition.HISTORY_ONLY
+        assert store.load_task_provenance("legacy-task") == original
+    with PlanningStore(path) as store:
+        assert store.load_planning("legacy").provenance().plan_hash == expected_hash
+        assert store.load_task_provenance("legacy-task").plan_hash == expected_hash
+        assert "planning_execution_prepared" not in encode_planning_provenance(original)
+        assert (
+            decode_planning_provenance(encode_planning_provenance(original)).plan_hash
+            == expected_hash
+        )
+        assert store.load_planning("legacy").card == card
+        assert store.load_planning_history("legacy")[-1] == (
+            pair[1],
+            Disposition.HISTORY_ONLY,
+        )

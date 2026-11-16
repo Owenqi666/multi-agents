@@ -19,10 +19,17 @@ from multi_agent.core.planning_events import (
     PlanningDraftValidated,
     PlanningEnvelope,
     PlanningEvent,
+    PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
     PlanningTaskBound,
     PlanningValidationRejected,
+)
+from multi_agent.core.planning_execution import (
+    PlanningAttemptContext,
+    PlanningExecutionPolicy,
+    PlanningProviderPolicy,
+    PlanningRunOwner,
 )
 from multi_agent.core.tasks import FrozenProjectRules, TaskCard
 
@@ -77,10 +84,48 @@ def _reconciled(value: dict[str, Any]) -> PlanningReconciled:
     )
 
 
+def _prepared(value: dict[str, Any]) -> PlanningExecutionPrepared:
+    policy = value["policy"]
+    owner = value["run_owner"]
+    context = value["attempt_context"]
+    return PlanningExecutionPrepared(
+        source_snapshot_id=value["source_snapshot_id"],
+        policy=PlanningExecutionPolicy(
+            providers=tuple(
+                PlanningProviderPolicy(
+                    provider=item["provider"],
+                    executable=item["executable"],
+                    executable_identity=tuple(item["executable_identity"]),
+                    executable_sha256=item["executable_sha256"],
+                    max_attempts=item["max_attempts"],
+                )
+                for item in policy["providers"]
+            ),
+            timeout=policy["timeout"],
+            grace=policy["grace"],
+        ),
+        run_owner=PlanningRunOwner(
+            root=owner["root"],
+            identity=tuple(owner["identity"]),
+            token=owner["token"],
+            manifest_sha256=owner["manifest_sha256"],
+        ),
+        attempt_context=PlanningAttemptContext(
+            path=context["path"],
+            identity=tuple(context["identity"]),
+            token=context["token"],
+            digest=context["digest"],
+            manifest_sha256=context["manifest_sha256"],
+        ),
+    )
+
+
 def _planning_event(value: dict[str, Any]) -> PlanningEvent:
     kind = value["kind"]
     if kind == PlanningAttemptStarted.kind:
         return _started(value)
+    if kind == PlanningExecutionPrepared.kind:
+        return _prepared(value)
     if kind == PlanningDraftValidated.kind:
         return PlanningDraftValidated(TaskCard.from_dict(value["card"]))
     if kind == PlanningReviewValidated.kind:

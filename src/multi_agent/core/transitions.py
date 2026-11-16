@@ -18,18 +18,26 @@ from .events import (
     Usage,
     thaw_json,
 )
-from .planning import PlanningAttempt, PlanningPhase, PlanningState, planning_value
+from .planning import (
+    PlanningAttempt,
+    PlanningPhase,
+    PlanningState,
+    planning_hash,
+    planning_value,
+)
 from .planning_events import (
     PlanningAttemptStarted,
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
     PlanningEvent,
+    PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
     PlanningTaskBound,
     PlanningValidationRejected,
 )
+from .planning_execution import prepared_attempts, prepared_for
 from .state import (
     AttemptState,
     AttemptStatus,
@@ -512,6 +520,56 @@ def _planning_start(
     )
 
 
+def _planning_prepare(
+    state: PlanningState, envelope: PlanningEnvelope
+) -> tuple[PlanningState, Disposition]:
+    """Reserve immutable host inputs before any runtime observation exists."""
+    event = envelope.event
+    assert isinstance(event, PlanningExecutionPrepared)
+    current = state.current(envelope.stage)
+    assert current is not None
+    existing = prepared_for(current)
+    if existing is not None:
+        if planning_hash(existing) != planning_hash(event):
+            raise ValueError("current planning preparation is immutable")
+        return state, Disposition.HISTORY_ONLY
+    if (
+        state.phase not in (PlanningPhase.DRAFTING, PlanningPhase.REVIEWING)
+        or current.events != (current.request,)
+        or current.request.environment is not None
+    ):
+        raise ValueError("planning preparation must immediately follow a fresh start")
+    previous_attempts = tuple(
+        attempt
+        for stage in ("draft", "review")
+        for attempt in state.attempts(stage)
+        if not (stage == envelope.stage and attempt.number == envelope.attempt)
+    )
+    if any(prepared_for(attempt) is None for attempt in previous_attempts):
+        raise ValueError("legacy planning attempts have no complete preparation chain")
+    previous = prepared_attempts(state)
+    if previous:
+        first = previous[0]
+        if (
+            event.source_snapshot_id != first.source_snapshot_id
+            or planning_hash(event.policy) != planning_hash(first.policy)
+            or event.run_owner != first.run_owner
+        ):
+            raise ValueError("planning source, policy and run owner are frozen")
+    selected = event.policy.for_provider(current.request.request.provider)
+    if len(state.attempts(envelope.stage)) > selected.max_attempts:
+        raise ValueError("planning provider attempt budget is exhausted")
+    context = event.attempt_context
+    if any(
+        context.path == item.attempt_context.path
+        or context.identity == item.attempt_context.identity
+        or context.token == item.attempt_context.token
+        for item in previous
+    ):
+        raise ValueError("planning attempts require a fresh owned context")
+    return _planning_record(state, envelope, current), Disposition.APPLIED
+
+
 def _planning_runtime(
     state: PlanningState, envelope: PlanningEnvelope
 ) -> tuple[PlanningState, Disposition]:
@@ -700,6 +758,7 @@ _PLANNING_ACTIVE: dict[type[PlanningEvent], PlanningTransition | None] = {
 }
 _PLANNING_ACTIVE.update(
     {
+        PlanningExecutionPrepared: _planning_prepare,
         ProcessExited: _planning_exit,
         PlanningReconciled: _planning_reconcile,
         PlanningDiagnostic: _planning_diagnostic,
@@ -715,6 +774,7 @@ _PLANNING_CLOSED: dict[type[PlanningEvent], PlanningTransition | None] = {
     ProcessExited: _planning_exit,
     PlanningReconciled: _planning_reconcile,
     PlanningDiagnostic: _planning_diagnostic,
+    PlanningExecutionPrepared: _planning_prepare,
 }
 _PLANNING_TRANSITIONS: dict[
     PlanningPhase, dict[type[PlanningEvent], PlanningTransition | None]

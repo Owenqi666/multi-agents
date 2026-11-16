@@ -5,6 +5,11 @@ from typing import ClassVar
 
 from .events import AdapterEvent, CancelRequested, Error, JSONValue, freeze_json
 from .planning import PlanningRequest, PlanningReview
+from .planning_execution import (
+    PlanningAttemptContext,
+    PlanningExecutionPolicy,
+    PlanningRunOwner,
+)
 from .tasks import TaskCard
 
 
@@ -21,6 +26,15 @@ class PlanningAttemptStarted:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "environment", freeze_json(self.environment))
+
+
+@dataclass(frozen=True, slots=True)
+class PlanningExecutionPrepared:
+    kind: ClassVar[str] = "planning_execution_prepared"
+    source_snapshot_id: str
+    policy: PlanningExecutionPolicy
+    run_owner: PlanningRunOwner
+    attempt_context: PlanningAttemptContext
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +78,7 @@ class PlanningTaskBound:
 
 type PlanningEvent = (
     PlanningAttemptStarted
+    | PlanningExecutionPrepared
     | PlanningDraftValidated
     | PlanningReviewValidated
     | PlanningValidationRejected

@@ -26,10 +26,19 @@ from multi_agent.core.planning_events import (
     PlanningDiagnostic,
     PlanningDraftValidated,
     PlanningEnvelope,
+    PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
     PlanningValidationRejected,
 )
+from multi_agent.core.planning_execution import (
+    PlanningAttemptContext,
+    PlanningExecutionPolicy,
+    PlanningProviderPolicy,
+    PlanningRunOwner,
+    prepared_for,
+)
+from multi_agent.core.snapshot import FrozenFile, FrozenSnapshot
 from multi_agent.core.state import Disposition
 from multi_agent.core.tasks import (
     FrozenProjectRules,
@@ -48,6 +57,8 @@ REQUIRED_SCENARIOS = {
     "planning-missing-exit",
     "planning-cancel-diagnostic",
     "planning-reconcile-revoked",
+    "planning-prepared-reservation",
+    "planning-prepared-late",
 }
 
 
@@ -96,6 +107,48 @@ def _review(values):
     return PlanningReview(_card(variant).task_hash, **fields)
 
 
+def _source(inputs):
+    rules = inputs.frozen_rules
+    return FrozenSnapshot(
+        rules.repository,
+        rules.baseline_commit,
+        rules.baseline_commit,
+        "",
+        inputs.requirements,
+        ("Source context for planning, not executed test evidence",),
+        (),
+        tuple(
+            FrozenFile(side, "source.py", "ORIGINAL = True\n", "d" * 40, "100644")
+            for side in ("baseline", "candidate")
+        ),
+    )
+
+
+def _prepared(values, inputs):
+    fields = dict(values)
+    if fields["source_snapshot_id"] == "$source_snapshot_id":
+        fields["source_snapshot_id"] = _source(inputs).snapshot_id
+    policy = dict(fields["policy"])
+    policy["providers"] = tuple(
+        PlanningProviderPolicy(
+            **{
+                **provider,
+                "executable_identity": tuple(provider["executable_identity"]),
+            }
+        )
+        for provider in policy["providers"]
+    )
+    fields["policy"] = PlanningExecutionPolicy(**policy)
+    for name, constructor in (
+        ("run_owner", PlanningRunOwner),
+        ("attempt_context", PlanningAttemptContext),
+    ):
+        fields[name] = constructor(
+            **{**fields[name], "identity": tuple(fields[name]["identity"])}
+        )
+    return PlanningExecutionPrepared(**fields)
+
+
 def _event(stage, fields, inputs):
     values = dict(fields)
     kind = values.pop("type")
@@ -109,6 +162,8 @@ def _event(stage, fields, inputs):
         )
     if kind == PlanningDraftValidated.kind:
         return PlanningDraftValidated(_card(values["card_variant"]))
+    if kind == PlanningExecutionPrepared.kind:
+        return _prepared(values, inputs)
     if kind == PlanningReviewValidated.kind:
         return PlanningReviewValidated(_review(values))
     if kind == Completed.kind:
@@ -154,6 +209,17 @@ class CoreBackend:
         self.history.append((envelope, disposition))
         return disposition
 
+    def reserve(self, started, prepared):
+        # Match the store's transaction boundary: neither event is visible
+        # unless both folds succeed. The source fixture is already frozen.
+        state, started_disposition = apply_planning(self.state, started)
+        state, prepared_disposition = apply_planning(state, prepared)
+        assert started_disposition == prepared_disposition == Disposition.APPLIED
+        self.state = state
+        self.history.extend(
+            ((started, started_disposition), (prepared, prepared_disposition))
+        )
+
     def load(self):
         return self.state
 
@@ -168,18 +234,24 @@ class CoreBackend:
 
 
 class StoreBackend:
-    def __init__(self, path, inputs):
+    def __init__(self, path, inputs, *, source=False):
         self.path = path
         self.inputs = inputs
         self.store = PlanningStore(path)
         try:
             self.store.create_planning("replay", inputs, "2026-11-16T00:00:00Z")
+            if source:
+                snapshot = _source(inputs)
+                self.store.save_snapshot(snapshot.snapshot_id, snapshot.to_dict())
         except BaseException:
             self.store.close()
             raise
 
     def apply(self, envelope):
         return self.store.apply_planning("replay", envelope)
+
+    def reserve(self, started, prepared):
+        assert self.store.reserve_planning_attempt("replay", started, prepared) is None
 
     def load(self):
         return self.store.load_planning("replay")
@@ -242,6 +314,25 @@ def _replay(backend, scenario, inputs):
         if step["op"] == "reopen":
             backend.reopen()
             assert (backend.load(), backend.load_history()) == before
+        elif step["op"] == "reserve":
+            envelopes = tuple(
+                PlanningEnvelope(
+                    fields["stage"],
+                    fields["attempt"],
+                    _event(fields["stage"], fields["event"], inputs),
+                    fields["occurred_at"],
+                )
+                for fields in (step["started"], step["prepared"])
+            )
+            if step.get("error") == "ValueError":
+                with pytest.raises(ValueError):
+                    backend.reserve(*envelopes)
+                assert (backend.load(), backend.load_history()) == before
+            else:
+                backend.reserve(*envelopes)
+                history.extend(
+                    (envelope, Disposition.APPLIED) for envelope in envelopes
+                )
         else:
             assert step["op"] == "event"
             fields = step["envelope"]
@@ -262,6 +353,8 @@ def _replay(backend, scenario, inputs):
                 if disposition == Disposition.HISTORY_ONLY:
                     assert backend.load() == before[0]
         assert _observation(backend.load()) == step["expect"]
+        if "prepared_contexts" in step:
+            assert _prepared_contexts(backend.load()) == step["prepared_contexts"]
         assert backend.load_history() == tuple(history)
         trace.append((backend.load(), backend.load_history()))
     assert _final(backend.load()) == scenario["final"]
@@ -269,6 +362,16 @@ def _replay(backend, scenario, inputs):
     assert _final(backend.load()) == scenario["final"]
     assert backend.load_history() == tuple(history)
     return tuple(trace)
+
+
+def _prepared_contexts(state):
+    return {
+        stage: [
+            record.attempt_context.token if (record := prepared_for(attempt)) else None
+            for attempt in state.attempts(stage)
+        ]
+        for stage in ("draft", "review")
+    }
 
 
 @pytest.mark.parametrize(
@@ -281,7 +384,11 @@ def test_planning_scenario(name, tmp_path):
     expected = _replay(CoreBackend(inputs), scenario, inputs)
     assert _replay(CoreBackend(inputs), scenario, inputs) == expected
     for index in range(2):
-        backend = StoreBackend(tmp_path / f"{name}-{index}.sqlite", inputs)
+        backend = StoreBackend(
+            tmp_path / f"{name}-{index}.sqlite",
+            inputs,
+            source=scenario.get("source", False),
+        )
         try:
             assert _replay(backend, scenario, inputs) == expected
         finally:

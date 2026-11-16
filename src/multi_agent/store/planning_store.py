@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from typing import cast
+from typing import Any, cast
 
 from multi_agent.core import Disposition, transitions
 from multi_agent.core.planning import (
@@ -12,7 +12,13 @@ from multi_agent.core.planning import (
     PlanningState,
     planning_json,
 )
-from multi_agent.core.planning_events import PlanningEnvelope, PlanningTaskBound
+from multi_agent.core.planning_events import (
+    PlanningAttemptStarted,
+    PlanningEnvelope,
+    PlanningExecutionPrepared,
+    PlanningTaskBound,
+)
+from multi_agent.core.snapshot import FrozenSnapshot
 from multi_agent.core.task_state import TaskInput
 from multi_agent.core.tasks import TaskCard
 
@@ -64,6 +70,60 @@ class PlanningStore(TaskStore):
                 self._write_planning(run_id, updated)
             self._append_planning_history(run_id, envelope, disposition)
         return disposition
+
+    def reserve_planning_attempt(
+        self,
+        run_id: str,
+        started: PlanningEnvelope,
+        prepared: PlanningEnvelope,
+    ) -> None:
+        """Persist a current launch and its frozen inputs in one reservation."""
+        if not isinstance(started.event, PlanningAttemptStarted) or not isinstance(
+            prepared.event, PlanningExecutionPrepared
+        ):
+            raise TypeError("reservation requires Started and Prepared envelopes")
+        if (started.stage, started.attempt) != (prepared.stage, prepared.attempt):
+            raise ValueError("reservation envelopes must identify the same attempt")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            state = self._read_planning(run_id)
+            source_id = prepared.event.source_snapshot_id
+            snapshot = FrozenSnapshot.from_dict(
+                cast(dict[str, Any], self.load_snapshot(source_id))
+            )
+            rules = state.planning_input.frozen_rules
+            if (
+                snapshot.snapshot_id != source_id
+                or snapshot.repository != rules.repository
+                or snapshot.baseline != rules.baseline_commit
+                or snapshot.candidate != rules.baseline_commit
+                or snapshot.requirements != state.planning_input.requirements
+                or snapshot.tests
+                or snapshot.required_tests
+                or snapshot.diff
+            ):
+                raise ValueError(
+                    "planning source snapshot does not match frozen inputs"
+                )
+            updated, start_disposition = transitions.apply_planning(state, started)
+            if start_disposition != Disposition.APPLIED:
+                raise ValueError("reservation must start a current planning attempt")
+            reserved, prepare_disposition = transitions.apply_planning(
+                updated, prepared
+            )
+            current = reserved.current(started.stage)
+            if (
+                prepare_disposition != Disposition.APPLIED
+                or reserved.stage != started.stage
+                or current is None
+                or current.number != started.attempt
+            ):
+                raise ValueError(
+                    "reservation must prepare the current planning attempt"
+                )
+            self._write_planning(run_id, reserved)
+            self._append_planning_history(run_id, started, start_disposition)
+            self._append_planning_history(run_id, prepared, prepare_disposition)
 
     def load_planning(self, run_id: str) -> PlanningState:
         with self._connection:
