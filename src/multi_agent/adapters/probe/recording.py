@@ -1,11 +1,16 @@
 """Write ordered probe records after applying the task card's redaction rules."""
 
+import hashlib
 import json
+import os
 import re
+import stat
 from pathlib import Path
 from time import monotonic
 from types import TracebackType
-from typing import Self, cast
+from typing import BinaryIO, Self, cast
+
+from ..ownership import Acquisition, LogOwnership
 
 _PRIVATE_KEYS = {
     "email",
@@ -225,13 +230,54 @@ def _config_read_audit(
 class Recorder:
     """Flush each redacted JSONL record before returning to the event loop."""
 
-    def __init__(self, path: Path, redactor: Redactor) -> None:
+    def __init__(
+        self,
+        path: Path,
+        redactor: Redactor,
+        *,
+        acquisition: Acquisition | None = None,
+    ) -> None:
         self.redactor = redactor
         self._started = monotonic()
         self._count = 0
         self._rpc_methods: dict[tuple[str | None, str | int], str] = {}
         self._pending_config_reads: dict[str | None, set[str | int]] = {}
-        self._stream = path.open("x", encoding="utf-8")
+        self._path = path.absolute()
+        self._identity: tuple[int, int] | None = None
+        self._mode: int | None = None
+        self._fd: int | None = None
+        self._stream: BinaryIO | None = None
+        self._closed = False
+        self._healthy = True
+        self._byte_count = 0
+        self._digest = hashlib.sha256()
+        try:
+            try:
+                self._fd = os.open(
+                    self._path,
+                    os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                    0o666,
+                )
+            except OSError:
+                if acquisition is not None:
+                    acquisition.not_created()
+                raise
+            # Local ownership precedes publication, fstat and stream wrapping.
+            # A failing publisher still leaves a real descriptor to close.
+            if acquisition is not None:
+                acquisition.publish(self)
+            info = os.fstat(self._fd)
+            self._identity = info.st_dev, info.st_ino
+            self._mode = info.st_mode
+            self._stream = os.fdopen(self._fd, "wb")
+            self._fd = None  # The binary stream now owns the descriptor.
+        except BaseException:
+            self._healthy = False
+            self.close()
+            raise
+        finally:
+            if acquisition is not None:
+                acquisition.finish()
 
     @property
     def count(self) -> int:
@@ -242,6 +288,13 @@ class Recorder:
         return monotonic() - self._started
 
     def emit(self, kind: str, **fields: object) -> None:
+        try:
+            self._emit(kind, **fields)
+        except BaseException:
+            self._healthy = False
+            raise
+
+    def _emit(self, kind: str, **fields: object) -> None:
         message = fields.get("message")
         proc = fields.get("proc")
         if isinstance(message, dict) and (proc is None or isinstance(proc, str)):
@@ -309,14 +362,90 @@ class Recorder:
             "t": self.seconds,
             "kind": kind,
         }
-        self._stream.write(
+        encoded = (
             json.dumps(self.redactor.redact(record), ensure_ascii=False) + "\n"
-        )
+        ).encode("utf-8")
+        assert self._stream is not None
+        if self._stream.write(encoded) != len(encoded):
+            raise OSError("log record write was incomplete")
         self._stream.flush()
+        self._digest.update(encoded)
+        self._byte_count += len(encoded)
         self._count += 1
 
     def close(self) -> None:
-        self._stream.close()
+        try:
+            if self._stream is not None:
+                self._stream.close()
+            elif self._fd is not None:
+                os.close(self._fd)
+                self._fd = None
+            self._closed = True
+        except BaseException:
+            self._healthy = False
+            if self._stream is not None:
+                self._closed = self._stream.closed
+            raise
+
+    @staticmethod
+    def _file_state(info: os.stat_result) -> tuple[int, ...]:
+        return (
+            info.st_dev,
+            info.st_ino,
+            info.st_mode,
+            info.st_size,
+            info.st_mtime_ns,
+            info.st_ctime_ns,
+        )
+
+    def _matches_closed_file(self) -> bool:
+        """Read a stable original file only after successful recording closes."""
+        before = self._path.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or (before.st_dev, before.st_ino) != self._identity
+            or before.st_mode != self._mode
+            or before.st_size != self._byte_count
+        ):
+            return False
+        descriptor = os.open(self._path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        try:
+            if self._file_state(os.fstat(descriptor)) != self._file_state(before):
+                return False
+            digest = hashlib.sha256()
+            count = 0
+            while block := os.read(descriptor, 1024 * 1024):
+                digest.update(block)
+                count += len(block)
+            return (
+                count == self._byte_count
+                and digest.digest() == self._digest.digest()
+                and self._file_state(os.fstat(descriptor)) == self._file_state(before)
+                and self._file_state(self._path.lstat()) == self._file_state(before)
+            )
+        finally:
+            os.close(descriptor)
+
+    def ownership_record(self, resource_id: str) -> LogOwnership:
+        sealed = False
+        if self._closed and self._healthy:
+            try:
+                sealed = self._matches_closed_file()
+            except OSError:
+                sealed = False
+            if not sealed:
+                self._healthy = False
+        return LogOwnership(
+            resource_id,
+            str(self._path),
+            self._identity,
+            self._count,
+            self._closed,
+            self._healthy,
+            self._byte_count if sealed else None,
+            self._digest.hexdigest() if sealed else None,
+            sealed,
+        )
 
     def __enter__(self) -> Self:
         return self

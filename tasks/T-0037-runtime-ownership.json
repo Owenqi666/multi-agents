@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "id": "T-0037",
+  "goal": "给每次运行提供明确的进程、隔离资源与已关闭日志收据，规划不能把成功终态或父进程退出冒充完整清理。",
+  "baseline_commit": "6c6be6e7ef644ecdc6d8f481746b2cfa0c8bbe53",
+  "write_scope": [
+    "src/multi_agent/adapters/ownership.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/codex_isolation.py",
+    "src/multi_agent/adapters/implementation_runtime.py",
+    "src/multi_agent/adapters/probe/process.py",
+    "src/multi_agent/adapters/probe/recording.py",
+    "tests/unit/test_runtime_ownership.py",
+    "tests/unit/test_adapters_probe.py",
+    "tests/unit/test_codex_isolation.py",
+    "tests/unit/test_runtime.py",
+    "tests/unit/runtime_fakes/fake_cli.py",
+    "docs/runtime-ownership-receipts.md",
+    "docs/deliveries/T-0037.md",
+    "tasks/T-0037-runtime-ownership.json"
+  ],
+  "depends_on": [
+    "T-0036"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and stable runtime contracts",
+      "definition": "T36已冻结上下文及预留；本卡拆出T38规划runner的停止证明前置，只做adapter事实收据和必要底层停止修复，不新增planning event/phase/SQL/CLI命令，不执行真实探测。RuntimeAdapter新增ownership_receipt()->不可变RuntimeOwnershipReceipt；base.Adapter保持原接口，ImplementationRuntimeAdapter继承同能力但权限argv/配置不变。旧result/normalized terminal/实际ProcessExited与请求/报告模型effort字段保持原语义，不能为收据改写已观察到的Completed。 收据只覆盖由该RuntimeAdapter实例创建的资源：runtime._spawn负责Claude version/auth/model及Codex辅助入口，codex_isolation.spawn最终调用Process.start；独立probe steps不发RuntimeAdapter收据。implementation_runtime仅补owner发布接线。测试helpers在已列test_runtime/test_adapters_probe/test_codex_isolation及runtime_fakes/fake_cli.py；如需新fake模式只能显式追加，真实fixtures/replay/protected配置不改。"
+    },
+    {
+      "name": "receipt facts and instance ownership",
+      "definition": "ownership.py定义只含宿主事实的不可变receipt与内部ledger。每adapter实例有随机owner_id；登记operation数量/active，所有acquisition及pending/unknown。每process含label/实际pid、实际exit_code或None、是否owned group及确认消失、watcher/readers收集、stdout/stderr是否真实EOF（deadline取消drain不能当EOF）。每isolation含path、pending/unknown spawn、owned processes状态、实际removed。每log含path/dev+ino、成功记录数、closed、sticky healthy、实际字节数/hash或None。分别派生processes_stopped/resources_released/logs_sealed并保留outputs_complete，不压成一个success；无operation的新空adapter不能证明旧运行停止。receipt不等待、不发signal、不清理、不从rawlog缺项/异常类型猜停止；只在closed日志上读取并核对hash。它只覆盖本实例的受管进程组，主动脱组后代仍不在证明范围。 正向产物门槛是operation数>0、active/pending/unknown均为0，并且processes_stopped && resources_released && logs_sealed && outputs_complete；T38决定如何使用，T37不自动accept。processes_stopped还要求每个已发布process有实际exit、group已确认消失、watcher/readers完成；resources_released另要求所有已分配isolation实际removed；logs_sealed要求至少一份日志且全closed/healthy/实际文件核对通过；outputs_complete要求每个实际stdout/stderr真实EOF而非取消收集。零资源的已登记失败操作仍可分别报告实际无child/无owner，不能冒充正向模型产物。"
+    },
+    {
+      "name": "acquisition publication and failure",
+      "definition": "真正创建资源前登记pending acquisition；明确未创建、已发布对象、创建结果未知分开。Process在获得child构造handle后、返回或任何清理前登记，正常路径与取消期间finish_creation共用，包含version/auth/AppServer全部辅助进程，不只_Turn.process。已开始acquisition但未完成发布不得以空集合当全停；通用异常不得当SpawnFailed无子进程。publisher同步且在factory清理保护内；先本地所有权再可能失败发布，publisher失败仍用真实handle受取消保护地清理，失败保留unknown/handle。CodexIsolation在分配root与最小实例后、chmod/auth/config/emit前发布，分配后的resolve/构造也在清理保护内；只有实际移除才removed。spawn先登记本地_processes再外部发布；已知对象清理成功要正确更新bookkeeping，不能无条件unknown或重置为False。"
+    },
+    {
+      "name": "bounded process stop proof",
+      "definition": "Process._stop_group所有路径均在有限预算内确认实际child exit和owned group消失才置_group_stopped。TERM及KILL后都不可仅等parent exit就宣称组已停；EPERM仍为存在/未知，沿用T35只在确认消失后的例外。实际group仍存在/信号拒绝/退出未知必须有限失败并保留观察与所有权，不无界await exit/watcher。停止错误优先级和窄RuntimeJSONError清理处理保留；read/wait仍报告原输入错误。不扩大为追杀任意脱组进程。 使用现有可注入Process.grace/RuntimeAdapter.grace（默认2秒），TERM等待最多grace，KILL后确认最多另一个grace；stop失败后的watcher等待仍最多grace。操作系统调度不保证精确墙钟上限，测试以注入状态/gate和宽裕外围deadline判有界，不靠sleep碰时序。局部清理耗尽用明确停止未确认错误，不冒充模型TIMEOUT；T38共享模型deadline另接。 已确认停止后的watcher允许Process自身_grace输出drain加调用者grace收尾预算；停止失败仍仅等待调用者grace。两个阶段分别有界，避免与已有drain截止同时到期而误报正常未换行尾部收集失败。"
+    },
+    {
+      "name": "closed log evidence",
+      "definition": "Recorder跟踪成功emit的精确UTF8字节数/hash、初始identity、记录数和sticky写入/flush/close/序列化失败。只有成功关闭、路径为原regular file、实际内容/size/hash与已成功记录字节相符且检查期间稳定，才能sealed；同路径换inode、symlink、追加/截断/原inode内容改动均拒绝。失败不能再close或恢复文件后变healthy。不得hash尚在写的文件，不记录未脱敏payload/异常cause。只新增宿主receipt，不改旧raw事件字段的含义，保持既有脱敏config/read断言。"
+    },
+    {
+      "name": "runtime activity coverage",
+      "definition": "RuntimeAdapter在整个check_environment和每turn的创建前登记operation，直到实际finally清理/日志close完成才解除active；调用者取消不能先结束activity。所有preflight与turn资源归本实例ledger，创建中途失败也可获取不完整receipt。已知无child的启动失败可报告无进程但不能伪造model ProcessExited。Completed+exit且cleanup失败时仍保留其原值，receipt明确不完整。receipt计算不靠result返回即完成，不把已取消reader当真实EOF。"
+    },
+    {
+      "name": "verification",
+      "definition": "只用假CLI、原始字节、临时凭据和真实临时进程，不运行真实模型/权限case。测试创建返回前取消（成功及失败清理）、preflight第二进程失败、isolation创建中途失败、publisher失败、Completed+exit而cleanup未知、KILL后group短暂仍在/始终在、reader截断与实际EOF、Recorder写/关失败及日志篡改、active/pending阻收据、新空adapter不承接旧owner。原READ_ONLY/WORKSPACE_WRITE权限、登录、取消/terminal/exit和长行/JSON脱敏断言全部保留；必要旧fake签名适配单列原因；五步verify和正常提交。"
+    },
+    {
+      "name": "operation log and preflight directory coverage",
+      "definition": "每个operation开始即预留一份log acquisition，workspace校验或临时目录创建先失败仍保留not_created，不能用旧preflight日志满足新操作logs_sealed。预检临时cwd也是本实例拥有的资源：DirectoryOwnership记录root及实际cleanup成功的removed；resources_released同时要求所有directory已移除。临时目录创建前登记acquisition，分配后立即发布，发布失败仍清理已知对象，结果不明保留unknown。仅停止/输出清理耗尽使用明确ProcessCleanupIncomplete子类，已观察Completed时保留原终态与实际退出；普通RuntimeError及协议错误仍是失败。"
+    }
+  ],
+  "deliverables": [
+    "显式RuntimeOwnershipReceipt与本实例资源登记，不替换运行时终态。",
+    "受限时间内的进程组停止证明及可核验关闭日志收据。",
+    "离线回归、边界文档与独立交付回执。"
+  ],
+  "acceptance_criteria": [
+    "test_runtime_ownership_tracks_preflight_and_turn_resources：两家所有辅助/模型进程、owner与closed日志归同实例，不用只有父进程的事件替代清理。",
+    "test_runtime_ownership_cancel_during_creation_preserves_resources：handle返回前取消和发布失败保留/清理正确，未知创建不冒称无child。",
+    "test_runtime_ownership_success_does_not_hide_cleanup_failure：Completed+exit保留，但有未知进程/owner/日志失败不能给完整收据。",
+    "test_process_stop_waits_for_group_disappearance：所有TERM/KILL路径有界，未消失组不置stopped，原JSON/reader/stop错误优先级保留。",
+    "test_recorder_receipt_rejects_unsealed_or_changed_logs：open/IO错误/同路径替换/追加/截断/坏模式或symlink拒seal，正常closed实际bytes/hash与已记录值一致且不泄密。",
+    "test_runtime_ownership_receipt_is_instance_local_and_immutable：active/pending/unknown及空新实例不能替旧attempt证明停止，快照不随后续活动改值。",
+    "完整lint/format/typecheck/unit/replay、原断言保留、无真实请求、逐项交付与正常提交。",
+    "test_isolation_receipt_requires_actual_removal：create中途失败与rmtree失败保留owner，不能由终态或returncode填removed。",
+    "test_isolation_publication_failure_keeps_known_process_bookkeeping：发布失败后的已知handle清理与unknown区分，成功清理不永久假报unknown。",
+    "test_process_receipt_distinguishes_eof_from_cancelled_drain：reader收集结束与真实EOF分开，截断输出不满足正向产物门槛。",
+    "test_runtime_ownership_missing_turn_log_cannot_borrow_preflight 与 test_runtime_ownership_missing_environment_log_cannot_borrow_prior_check：日志创建前失败也阻止正向日志收据。",
+    "test_runtime_ownership_environment_directory_cleanup_failure：两家预检临时cwd移除失败时，进程和日志事实可各自成功，但resources_released为false。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

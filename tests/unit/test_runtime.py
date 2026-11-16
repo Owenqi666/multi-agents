@@ -14,7 +14,11 @@ import pytest
 
 from multi_agent.adapters.base import Permission, SessionConfig
 from multi_agent.adapters.codex_isolation import CodexIsolation
-from multi_agent.adapters.probe.process import Process, SpawnFailed
+from multi_agent.adapters.probe.process import (
+    Process,
+    ProcessCleanupIncomplete,
+    SpawnFailed,
+)
 from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.runtime import RuntimeAdapter, RuntimeFailure
 from multi_agent.adapters.runtime_decode import CodexDecoder, claude_events
@@ -1903,3 +1907,324 @@ def test_pending_config_bad_json_never_exposes_unregistered_payload_or_stderr(
     )
     assert all("message" not in row for row in diagnostics)
     assert_strict_json_safe_decode_record(rows, stdout[0], error)
+
+
+@pytest.mark.parametrize(
+    "provider,process_count,isolation_count", [("claude", 3, 0), ("codex", 4, 2)]
+)
+def test_runtime_ownership_tracks_preflight_and_turn_resources(
+    tmp_path, monkeypatch, provider, process_count, isolation_count
+):
+    adapter, config, _ = setup(tmp_path, monkeypatch, provider)
+    empty = adapter.ownership_receipt()
+    assert not empty.settled and not empty.logs_sealed
+
+    async def run():
+        await adapter.check_environment()
+        preflight = adapter.ownership_receipt()
+        assert preflight.resources_released and preflight.logs_sealed
+        session = await adapter.start_session(config)
+        turn = await adapter.submit_turn(session, "synthetic ownership integration")
+        active = adapter.ownership_receipt()
+        assert active.active_operations == 1
+        assert active.pending_acquisitions == 1
+        assert not active.processes_stopped and not active.logs_sealed
+        events = [event async for event in adapter.events(turn)]
+        return preflight, active, events, await adapter.result(turn)
+
+    preflight, active, events, result = asyncio.run(run())
+    receipt = adapter.ownership_receipt()
+    assert isinstance(result.terminal, Completed)
+    assert result.process_exit.exit_code == 0
+    assert isinstance(events[-1], ProcessExited)
+    assert len(receipt.processes) == process_count
+    assert len(receipt.isolations) == isolation_count
+    assert len(receipt.directories) == 1
+    assert receipt.directories[0].removed
+    assert len(receipt.logs) == 2
+    assert receipt.processes_stopped and receipt.resources_released
+    assert receipt.logs_sealed and receipt.outputs_complete
+    assert all(item.exit_code == 0 for item in receipt.processes)
+    assert all(item.group_gone for item in receipt.processes)
+    for log in receipt.logs:
+        path = Path(log.path)
+        data = path.read_bytes()
+        assert log.byte_count == len(data)
+        assert log.sha256 == hashlib.sha256(data).hexdigest()
+        assert log.records == len(data.splitlines())
+        assert log.identity == (path.stat().st_dev, path.stat().st_ino)
+    assert len(preflight.logs) == 1 and len(preflight.operations) == 1
+    assert active.active_operations == 1 and not active.logs_sealed
+    assert empty.operations == () and empty.processes == ()
+    another = RuntimeAdapter(provider, log_dir=tmp_path / "unused-logs")
+    other = another.ownership_receipt()
+    assert other.owner_id != receipt.owner_id
+    assert not other.processes_stopped and not other.resources_released
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_runtime_ownership_missing_turn_log_cannot_borrow_preflight(
+    tmp_path, monkeypatch, provider
+):
+    adapter, config, _ = setup(tmp_path, monkeypatch, provider)
+
+    def reject_workspace(state):
+        raise ValueError("injected changed workspace before log creation")
+
+    async def run():
+        await adapter.check_environment()
+        assert adapter.ownership_receipt().logs_sealed
+        monkeypatch.setattr(adapter, "_validate_turn_workspace", reject_workspace)
+        return await collect(adapter, config)
+
+    _, result = asyncio.run(run())
+    receipt = adapter.ownership_receipt()
+    assert isinstance(result.terminal, Error)
+    assert result.process_exit is None
+    assert len(receipt.logs) == 1
+    assert receipt.processes_stopped and receipt.resources_released
+    assert not receipt.logs_sealed
+    assert [item.outcome for item in receipt.acquisitions if item.kind == "log"] == [
+        "published",
+        "not_created",
+    ]
+
+
+def test_runtime_ownership_missing_environment_log_cannot_borrow_prior_check(
+    tmp_path, monkeypatch
+):
+    from multi_agent.adapters import runtime
+
+    adapter, _, _ = setup(tmp_path, monkeypatch, "claude")
+    asyncio.run(adapter.check_environment())
+    assert adapter.ownership_receipt().logs_sealed
+
+    def fail_directory(*args, **kwargs):
+        raise OSError("injected directory allocation failure")
+
+    monkeypatch.setattr(runtime, "OwnedTemporaryDirectory", fail_directory)
+    with pytest.raises(RuntimeFailure, match="directory allocation failure"):
+        asyncio.run(adapter.check_environment())
+    receipt = adapter.ownership_receipt()
+    assert len(receipt.operations) == 2 and receipt.active_operations == 0
+    assert len(receipt.logs) == 1 and not receipt.logs_sealed
+
+
+def test_runtime_ownership_preflight_second_spawn_failure_keeps_first_process(
+    tmp_path, monkeypatch
+):
+    adapter, _, _ = setup(tmp_path, monkeypatch, "claude")
+    original_spawn = asyncio.create_subprocess_exec
+    spawn_calls = 0
+
+    async def fail_second(*args, **kwargs):
+        nonlocal spawn_calls
+        spawn_calls += 1
+        if spawn_calls == 2:
+            raise FileNotFoundError("injected executable missing for auth")
+        return await original_spawn(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fail_second)
+    with pytest.raises(RuntimeFailure, match="SpawnFailed") as failure:
+        asyncio.run(adapter.check_environment())
+    launch_error = failure.value.__cause__
+    assert isinstance(launch_error, SpawnFailed)
+    assert isinstance(launch_error.__cause__, FileNotFoundError)
+    assert str(launch_error.__cause__) == "injected executable missing for auth"
+    receipt = adapter.ownership_receipt()
+    assert spawn_calls == 2 and len(receipt.processes) == 1
+    assert receipt.processes[0].exit_code == 0
+    assert receipt.processes_stopped and receipt.resources_released
+    assert receipt.outputs_complete and receipt.logs_sealed
+    assert [
+        item.outcome for item in receipt.acquisitions if item.kind == "process"
+    ] == ["published", "not_created"]
+
+
+def test_runtime_ownership_success_does_not_hide_cleanup_failure(tmp_path, monkeypatch):
+    adapter, config, _ = setup(tmp_path, monkeypatch, "codex")
+    retained = []
+    original = CodexIsolation.cleanup
+
+    def retain(owner):
+        retained.append(owner)
+        return False
+
+    monkeypatch.setattr(CodexIsolation, "cleanup", retain)
+    try:
+        _, result = asyncio.run(collect(adapter, config))
+        receipt = adapter.ownership_receipt()
+        assert isinstance(result.terminal, Completed)
+        assert result.process_exit.exit_code == 0
+        assert receipt.processes_stopped and receipt.logs_sealed
+        assert receipt.outputs_complete and not receipt.resources_released
+        assert retained and all(not item.removed for item in receipt.isolations)
+    finally:
+        monkeypatch.setattr(CodexIsolation, "cleanup", original)
+        for index, owner in enumerate(retained):
+            with Recorder(
+                tmp_path / f"retained-owner-cleanup-{index}.jsonl", Redactor()
+            ) as recorder:
+                owner.recorder = recorder
+                assert owner.cleanup()
+    assert adapter.ownership_receipt().resources_released
+    assert not receipt.resources_released
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_runtime_ownership_terminal_survives_unconfirmed_group_cleanup(
+    tmp_path, monkeypatch, provider
+):
+    mode = "hang-after-result" if provider == "claude" else "success"
+    adapter, config, _ = setup(tmp_path, monkeypatch, provider, mode)
+    original_spawn = adapter._spawn
+    original_group_exists = Process._group_exists
+    original_close_finished = Process.close_finished
+    main_processes = []
+
+    async def track_main(argv, *args, **kwargs):
+        process = await original_spawn(argv, *args, **kwargs)
+        if "--version" not in argv:
+            main_processes.append(process)
+        return process
+
+    def group_remains_unconfirmed(process):
+        if process in main_processes:
+            return True
+        return original_group_exists(process)
+
+    async def stop_waiting_codex(process, grace):
+        if provider == "codex" and process in main_processes:
+            # Keep the actual synthetic app-server waiting on stdin after its
+            # terminal. Exercise real signal/exit cleanup, not a mocked error.
+            assert process.child.returncode is None
+            assert isinstance(
+                next(iter(adapter._turns.values())).observed_terminal, Completed
+            )
+            await process.terminate(grace)
+        else:
+            await original_close_finished(process, grace)
+
+    monkeypatch.setattr(adapter, "_spawn", track_main)
+    monkeypatch.setattr(Process, "_group_exists", group_remains_unconfirmed)
+    monkeypatch.setattr(Process, "close_finished", stop_waiting_codex)
+
+    async def run():
+        try:
+            events, result = await collect(adapter, config)
+            receipt = adapter.ownership_receipt()
+            assert len(main_processes) == 1
+            process = main_processes[0]
+            owned = next(
+                item for item in receipt.processes if item.pid == process.child.pid
+            )
+            assert isinstance(result.terminal, Completed)
+            assert (
+                result.terminal is next(iter(adapter._turns.values())).observed_terminal
+            )
+            assert result.process_exit is not None
+            assert result.process_exit.exit_code == process.child.returncode
+            assert result.process_exit.exit_code != 0
+            assert (
+                isinstance(events[-2], Completed) and events[-1] == result.process_exit
+            )
+            assert owned.exit_code == result.process_exit.exit_code
+            assert not owned.group_gone and not owned.stopped
+            assert owned.watcher_settled and owned.readers_settled
+            assert receipt.outputs_complete and receipt.logs_sealed
+            assert not receipt.processes_stopped and not receipt.resources_released
+            assert any(
+                row["kind"] == "cleanup_incomplete"
+                for row in strict_json_log_rows(tmp_path)
+            )
+            if provider == "codex":
+                assert len(receipt.isolations) == 1
+                assert receipt.isolations[0].unstopped_processes == 1
+                assert not receipt.isolations[0].removed
+            return receipt
+        finally:
+            monkeypatch.setattr(Process, "_group_exists", original_group_exists)
+            monkeypatch.setattr(Process, "close_finished", original_close_finished)
+            # The child has really exited but the injected probe withheld group
+            # confirmation. Restore that observation and release retained owners.
+            with Recorder(tmp_path / "group-cleanup.jsonl", Redactor()) as recorder:
+                for state in adapter._turns.values():
+                    if state.isolation is not None:
+                        state.isolation.recorder = recorder
+                    if state.process is not None:
+                        state.process._recorder = recorder
+                        if state.isolation is not None:
+                            await state.isolation.terminate(
+                                state.process, adapter.grace
+                            )
+                        else:
+                            await state.process.terminate(adapter.grace)
+                    if state.isolation is not None:
+                        assert state.isolation.cleanup()
+
+    receipt = asyncio.run(run())
+    assert adapter.ownership_receipt().resources_released
+    assert not receipt.processes_stopped and not receipt.resources_released
+
+
+@pytest.mark.parametrize(
+    "reported_terminal,error_type",
+    [(False, ProcessCleanupIncomplete), (True, RuntimeError)],
+)
+def test_runtime_ownership_cleanup_exception_does_not_hide_boundary_failure(
+    tmp_path, monkeypatch, reported_terminal, error_type
+):
+    adapter, config, _ = setup(tmp_path, monkeypatch, "claude")
+
+    async def boundary_failure(state, recorder):
+        if reported_terminal:
+            adapter._observe(state, Completed({"summary": "ok"}))
+        raise error_type("injected boundary failure")
+
+    monkeypatch.setattr(adapter, "_claude", boundary_failure)
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.detail == (
+        f"runtime boundary failure: {error_type.__name__}: injected boundary failure"
+    )
+    assert result.terminal.raw_type is None
+    assert result.process_exit is None
+    assert events == [result.terminal]
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_runtime_ownership_environment_directory_cleanup_failure(
+    tmp_path, monkeypatch, provider
+):
+    from tempfile import TemporaryDirectory
+
+    from multi_agent.adapters.ownership import OwnedTemporaryDirectory
+
+    adapter, _, _ = setup(tmp_path, monkeypatch, provider)
+    original = TemporaryDirectory.cleanup
+    owner_cleanup = OwnedTemporaryDirectory.cleanup
+    retained = []
+
+    def fail_cleanup(directory):
+        if Path(directory.name).name.startswith("multi-agent-environment-"):
+            raise PermissionError("injected preflight directory removal failure")
+        original(directory)
+
+    def capture_cleanup(owner):
+        retained.append(owner)
+        owner_cleanup(owner)
+
+    monkeypatch.setattr(TemporaryDirectory, "cleanup", fail_cleanup)
+    monkeypatch.setattr(OwnedTemporaryDirectory, "cleanup", capture_cleanup)
+    try:
+        with pytest.raises(RuntimeFailure, match="preflight directory removal failure"):
+            asyncio.run(adapter.check_environment())
+        receipt = adapter.ownership_receipt()
+        assert receipt.processes_stopped and receipt.logs_sealed
+        assert receipt.outputs_complete and not receipt.resources_released
+        assert len(receipt.directories) == 1 and not receipt.directories[0].removed
+    finally:
+        monkeypatch.setattr(TemporaryDirectory, "cleanup", original)
+        for owner in retained:
+            owner_cleanup(owner)
+    assert adapter.ownership_receipt().resources_released

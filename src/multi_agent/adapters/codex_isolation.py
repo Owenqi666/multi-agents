@@ -18,6 +18,7 @@ from typing import Any
 from multi_agent.core.events import Error, FailureCategory
 from multi_agent.core.workspaces import WorkspaceRecord
 
+from .ownership import Acquisition, IsolationOwnership, OwnershipLedger
 from .probe.process import Process, SpawnFailed
 from .probe.recording import Recorder, Redactor
 from .runtime_decode import RuntimeFailure
@@ -278,6 +279,7 @@ class CodexIsolation:
     config: dict[str, Any]
     environment: dict[str, str]
     recorder: Recorder
+    _ownership: OwnershipLedger | None = field(default=None, repr=False)
     _processes: dict[Process, bool] = field(
         default_factory=dict, init=False, repr=False
     )
@@ -289,6 +291,17 @@ class CodexIsolation:
     def codex_home(self) -> Path:
         return self.root / "codex"
 
+    def ownership_record(self, resource_id: str) -> IsolationOwnership:
+        return IsolationOwnership(
+            resource_id,
+            str(self.root),
+            self._pending_spawns,
+            self._unknown_spawns,
+            len(self._processes),
+            sum(not stopped for stopped in self._processes.values()),
+            self._removed,
+        )
+
     @classmethod
     def create(
         cls,
@@ -298,6 +311,7 @@ class CodexIsolation:
         *,
         log_dir: Path,
         workspace: WorkspaceRecord | None = None,
+        ownership: OwnershipLedger | None = None,
     ) -> "CodexIsolation":
         config = None
         if workspace is None:
@@ -320,15 +334,21 @@ class CodexIsolation:
                 raise _implementation_error(
                     "implementation isolation logs must be outside Git administrative directories"
                 )
-        root = Path(mkdtemp(prefix="multi-agent-codex-")).resolve()
-        instance = cls(
-            cwd,
-            root,
-            policy_config(cwd) if config is None else config,
-            dict(environment),
-            recorder,
-        )
+        # Resolve the policy before allocating private files. From the first
+        # returned root onward, even publication/resolve/construction failures
+        # remain under this factory's cleanup ownership.
+        config = policy_config(cwd) if config is None else config
+        owned_environment = dict(environment)
+        acquisition = ownership.acquire("isolation") if ownership is not None else None
+        root: Path | None = None
+        instance: CodexIsolation | None = None
         try:
+            root = Path(mkdtemp(prefix="multi-agent-codex-"))
+            instance = cls(cwd, root, config, owned_environment, recorder, ownership)
+            if acquisition is not None:
+                acquisition.publish(instance)
+            root = root.resolve()
+            instance.root = root
             root.chmod(0o700)
             if not cwd.is_dir() or any(
                 _overlaps(left, right)
@@ -374,7 +394,15 @@ class CodexIsolation:
             return instance
         except BaseException as original:
             try:
-                removed = instance.cleanup()
+                if instance is not None:
+                    removed = instance.cleanup()
+                elif root is not None:
+                    shutil.rmtree(root)
+                    removed = True
+                else:
+                    # An allocator that did not return a path has not supplied
+                    # enough evidence to declare an acquisition uncreated.
+                    raise
             except (OSError, ValueError) as cleanup_error:
                 # Retained resources take priority over a retryable creation
                 # failure. Keep that original cause and cleanup's owner log.
@@ -397,6 +425,9 @@ class CodexIsolation:
                     )
                 ) from original
             raise
+        finally:
+            if acquisition is not None:
+                acquisition.finish()
 
     def _incomplete(self, reason: str) -> None:
         self.recorder.emit(
@@ -411,25 +442,53 @@ class CodexIsolation:
             ),
         )
 
-    async def _finish_spawn(self, launch: asyncio.Task[Process]) -> Process:
+    async def _finish_spawn(
+        self,
+        launch: asyncio.Task[Process],
+        created: list[Process],
+        grace: float,
+        acquisition: Acquisition | None,
+    ) -> Process:
         try:
             process = await launch
         except SpawnFailed:
+            if created:
+                for process in created:
+                    await self.terminate(process, grace)
+                raise
             self.recorder.emit(
                 "isolation_spawn_failed", owner=str(self.root), child_created=False
             )
             raise
         except BaseException:
-            self._unknown_spawns += 1
-            self._incomplete("spawn_outcome_unknown")
+            if created:
+                # Low-level creation may publish a real Process and then fail
+                # or be cancelled before returning it. Reconfirm its stop here
+                # so successful low-level cleanup also updates local ownership.
+                for process in created:
+                    await self.terminate(process, grace)
+            elif acquisition is None or acquisition.outcome != "not_created":
+                self._unknown_spawns += 1
+                self._incomplete("spawn_outcome_unknown")
             raise
-        self._processes[process] = False
+        self._processes.setdefault(process, False)
         return process
 
     async def spawn(self, argv: list[str], *, pipe: bool, grace: float) -> Process:
         """Own creation through cancellation; never release auth for a live child."""
         if self._removed:
             raise RuntimeError("Codex isolation resources have already been removed")
+        acquisition: Acquisition | None = (
+            self._ownership.acquire("process") if self._ownership is not None else None
+        )
+        created: list[Process] = []
+
+        def on_created(process: Process) -> None:
+            # This callback runs before the external publisher can fail.
+            self._processes.setdefault(process, False)
+            if process not in created:
+                created.append(process)
+
         self._pending_spawns += 1
         launch = asyncio.create_task(
             Process.start(
@@ -441,9 +500,13 @@ class CodexIsolation:
                 grace=grace,
                 env=self.environment,
                 start_new_session=True,
+                acquisition=acquisition,
+                on_created=on_created,
             )
         )
-        owned = asyncio.create_task(self._finish_spawn(launch))
+        owned = asyncio.create_task(
+            self._finish_spawn(launch, created, grace, acquisition)
+        )
         try:
             try:
                 return await asyncio.shield(owned)
@@ -466,6 +529,8 @@ class CodexIsolation:
                 raise
         finally:
             self._pending_spawns -= 1
+            if acquisition is not None:
+                acquisition.finish()
 
     async def terminate(self, process: Process, grace: float) -> None:
         if process not in self._processes:

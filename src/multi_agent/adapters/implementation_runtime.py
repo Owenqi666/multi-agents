@@ -100,6 +100,7 @@ class ImplementationRuntimeAdapter(RuntimeAdapter):
             self._environment(),
             log_dir=self.log_dir,
             workspace=self.workspace,
+            ownership=self._ownership,
         )
 
     def _claude_argv(self, state: _Turn) -> list[str]:

@@ -10,10 +10,11 @@ from pathlib import Path
 
 import pytest
 
+from multi_agent.adapters.ownership import OwnershipLedger
 from multi_agent.adapters.probe import cli
 from multi_agent.adapters.probe.cli import main
 from multi_agent.adapters.probe.config import Options, claude_argv
-from multi_agent.adapters.probe.process import Process
+from multi_agent.adapters.probe.process import Process, SpawnFailed
 from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.probe.runner import run_step
 from multi_agent.adapters.runtime_decode import RuntimeJSONError
@@ -1938,5 +1939,488 @@ def test_process_live_group_signal_denial_fails_without_waiting_for_exit(
             assert all(reader.done() for reader in process._readers)
             with pytest.raises(ProcessLookupError):
                 os.killpg(process.child.pid, 0)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_runtime_ownership_cancel_during_creation_preserves_resources(
+    tmp_path, monkeypatch, cleanup_fails
+):
+    argv = raw_process_program(tmp_path, "import time\ntime.sleep(60)\n")
+    original_spawn = asyncio.create_subprocess_exec
+
+    async def run():
+        ledger = OwnershipLedger()
+        operation = ledger.begin_operation("test")
+        ticket = ledger.acquire("process")
+        created = asyncio.Event()
+        release = asyncio.Event()
+        owned = []
+        failure = OSError("injected stop failure")
+
+        async def delayed_spawn(*args, **kwargs):
+            child = await original_spawn(*args, **kwargs)
+            created.set()
+            await release.wait()
+            return child
+
+        async def fail_stop(process, grace):
+            raise failure
+
+        def local_owner(process):
+            assert ticket.outcome == "pending"
+            owned.append(process)
+
+        with Recorder(tmp_path / "creation.jsonl", Redactor()) as recorder:
+            with monkeypatch.context() as patcher:
+                patcher.setattr(asyncio, "create_subprocess_exec", delayed_spawn)
+                if cleanup_fails:
+                    patcher.setattr(Process, "_stop_child", fail_stop)
+                starting = asyncio.create_task(
+                    Process.start(
+                        "creation",
+                        argv,
+                        tmp_path,
+                        recorder,
+                        grace=0.05,
+                        start_new_session=True,
+                        acquisition=ticket,
+                        on_created=local_owner,
+                    )
+                )
+                try:
+                    async with asyncio.timeout(3):
+                        await created.wait()
+                        pending = ledger.snapshot()
+                        assert pending.pending_acquisitions == 1
+                        assert not pending.processes_stopped
+                        starting.cancel()
+                        release.set()
+                        if cleanup_fails:
+                            with pytest.raises(OSError) as caught:
+                                await starting
+                            assert caught.value is failure
+                        else:
+                            with pytest.raises(asyncio.CancelledError):
+                                await starting
+                        ledger.finish_operation(operation)
+                        receipt = ledger.snapshot()
+                        assert len(owned) == len(receipt.processes) == 1
+                        assert receipt.acquisitions[0].outcome == "published"
+                        assert receipt.processes[0].pid == owned[0].child.pid
+                        assert receipt.processes_stopped is not cleanup_fails
+                        if cleanup_fails:
+                            assert owned[0].child.returncode is None
+                            assert not receipt.processes[0].watcher_settled
+                        else:
+                            assert receipt.processes[0].group_gone
+                            assert receipt.outputs_complete
+                finally:
+                    release.set()
+                    if not starting.done():
+                        starting.cancel()
+                    await asyncio.gather(starting, return_exceptions=True)
+                    for process in owned:
+                        await cleanup_raw_process(process)
+            for process in owned:
+                await process.terminate(0.1)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("publisher", ["local", "ledger"])
+def test_process_publication_failure_cleans_real_handle_and_keeps_acquisition(
+    tmp_path, monkeypatch, publisher
+):
+    argv = raw_process_program(tmp_path, "import time\ntime.sleep(60)\n")
+
+    async def run():
+        ledger = OwnershipLedger()
+        operation = ledger.begin_operation("test")
+        ticket = ledger.acquire("process")
+        owned = []
+        failure = RuntimeError("injected publication failure")
+
+        def local_owner(process):
+            assert ticket.outcome == "pending"
+            owned.append(process)
+            if publisher == "local":
+                raise failure
+
+        def fail_publish(process):
+            assert owned == [process]
+            raise failure
+
+        if publisher == "ledger":
+            monkeypatch.setattr(ticket, "publish", fail_publish)
+        with Recorder(tmp_path / "publish.jsonl", Redactor()) as recorder:
+            try:
+                async with asyncio.timeout(3):
+                    with pytest.raises(RuntimeError) as caught:
+                        await Process.start(
+                            "publication",
+                            argv,
+                            tmp_path,
+                            recorder,
+                            grace=0.1,
+                            start_new_session=True,
+                            acquisition=ticket,
+                            on_created=local_owner,
+                        )
+                    assert caught.value is failure
+                    assert len(owned) == 1
+                    process_receipt = owned[0].ownership_record("test-process")
+                    assert process_receipt.stopped
+                    assert process_receipt.output_complete
+                    ledger.finish_operation(operation)
+                    receipt = ledger.snapshot()
+                    assert receipt.pending_acquisitions == 0
+                    if publisher == "local":
+                        assert receipt.acquisitions[0].outcome == "published"
+                        assert receipt.processes_stopped
+                    else:
+                        assert receipt.acquisitions[0].outcome == "unknown"
+                        assert not receipt.processes_stopped
+            finally:
+                for process in owned:
+                    await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("failure_point", ["record", "os", "unknown"])
+def test_process_acquisition_distinguishes_known_no_child_from_unknown(
+    tmp_path, monkeypatch, failure_point
+):
+    async def run():
+        ledger = OwnershipLedger()
+        operation = ledger.begin_operation("test")
+        ticket = ledger.acquire("process")
+        spawned = []
+        failure = (
+            RuntimeError("unknown launch outcome")
+            if failure_point == "unknown"
+            else OSError("known precreation failure")
+        )
+
+        async def failed_spawn(*args, **kwargs):
+            spawned.append(True)
+            raise failure
+
+        def failed_record(*args, **kwargs):
+            raise failure
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", failed_spawn)
+        with Recorder(tmp_path / "no-child.jsonl", Redactor()) as recorder:
+            if failure_point == "record":
+                monkeypatch.setattr(recorder, "emit", failed_record)
+            expected = SpawnFailed if failure_point == "os" else type(failure)
+            with pytest.raises(expected) as caught:
+                await Process.start(
+                    "failed", ["fake-none"], tmp_path, recorder, acquisition=ticket
+                )
+            if failure_point == "os":
+                assert caught.value.__cause__ is failure
+            else:
+                assert caught.value is failure
+        ledger.finish_operation(operation)
+        receipt = ledger.snapshot()
+        assert spawned == ([] if failure_point == "record" else [True])
+        assert not receipt.processes
+        assert receipt.pending_acquisitions == 0
+        assert receipt.acquisitions[0].outcome == (
+            "unknown" if failure_point == "unknown" else "not_created"
+        )
+        assert receipt.processes_stopped is (failure_point != "unknown")
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("disappears", [False, True])
+def test_process_stop_waits_for_group_disappearance(tmp_path, monkeypatch, disappears):
+    argv = raw_process_program(tmp_path, "import os\nos._exit(7)\n")
+
+    async def run():
+        with Recorder(tmp_path / "kill-confirmation.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "group", argv, tmp_path, recorder, grace=0.03, start_new_session=True
+            )
+            terminating = None
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 7
+                killed = asyncio.Event()
+                may_disappear = asyncio.Event()
+                signals = []
+
+                def record_signal(signum):
+                    signals.append(signum)
+                    if signum == signal.SIGKILL:
+                        killed.set()
+                    return True
+
+                def group_exists():
+                    return not may_disappear.is_set()
+
+                with monkeypatch.context() as patcher:
+                    patcher.setattr(process, "signal", record_signal)
+                    patcher.setattr(process, "_group_exists", group_exists)
+                    terminating = asyncio.create_task(process.terminate(0.03))
+                    async with asyncio.timeout(3):
+                        await killed.wait()
+                    # The parent already exited, but the owned group is still
+                    # observed. Sending KILL must not mark the group stopped.
+                    during = process.ownership_record("group")
+                    assert during.exit_code == 7
+                    assert not during.group_gone and not during.stopped
+                    assert not terminating.done()
+                    if disappears:
+                        may_disappear.set()
+                    done, _ = await asyncio.wait((terminating,), timeout=1)
+                    assert terminating in done, "KILL confirmation was unbounded"
+                    if disappears:
+                        terminating.result()
+                    else:
+                        with pytest.raises(RuntimeError, match="stop unconfirmed"):
+                            terminating.result()
+                    assert process.ownership_record("group").stopped is disappears
+                assert signals == [signal.SIGTERM, signal.SIGKILL]
+            finally:
+                await cleanup_raw_process(process)
+                if terminating is not None:
+                    await asyncio.gather(terminating, return_exceptions=True)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("owns_group", [False, True])
+def test_process_stop_never_infers_child_exit_from_successful_signals(
+    tmp_path, monkeypatch, owns_group
+):
+    argv = raw_process_program(
+        tmp_path,
+        "import os, time\nos.write(1, b'{\"ready\":true}\\n')\ntime.sleep(60)\n",
+    )
+
+    async def run():
+        with Recorder(tmp_path / "live-child.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "live",
+                argv,
+                tmp_path,
+                recorder,
+                grace=0.02,
+                start_new_session=owns_group,
+            )
+            terminating = None
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.read() == {"ready": True}
+                signals = []
+
+                def ineffective_signal(signum):
+                    signals.append(signum)
+                    return True
+
+                with monkeypatch.context() as patcher:
+                    patcher.setattr(process, "signal", ineffective_signal)
+                    # Even a reported missing group cannot substitute for an
+                    # actual child exit in the stop proof.
+                    patcher.setattr(process, "_group_exists", lambda: False)
+                    terminating = asyncio.create_task(process.terminate(0.02))
+                    done, _ = await asyncio.wait((terminating,), timeout=1)
+                    assert terminating in done, "stop waited forever for child exit"
+                    with pytest.raises(RuntimeError, match="stop unconfirmed"):
+                        terminating.result()
+                    receipt = process.ownership_record("live")
+                    assert receipt.exit_code is None
+                    assert not receipt.stopped
+                    assert not receipt.watcher_settled
+                    assert not receipt.readers_settled
+                    assert not receipt.output_complete
+                    assert signals == [signal.SIGTERM, signal.SIGKILL]
+            finally:
+                await cleanup_raw_process(process)
+                if terminating is not None:
+                    await asyncio.gather(terminating, return_exceptions=True)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("truncated_stream", [None, "stdout", "stderr"])
+def test_process_receipt_distinguishes_eof_from_cancelled_drain(
+    tmp_path, monkeypatch, truncated_stream
+):
+    argv = raw_process_program(
+        tmp_path,
+        "import os\nos.write(1, b'stdout tail')\nos.write(2, b'stderr tail')\nos._exit(7)\n",
+    )
+
+    async def run():
+        original_read_stream = Process._read_stream
+        actual_eof = asyncio.Event()
+        release = asyncio.Event()
+
+        async def gate_eof(process, reader, stream):
+            if stream == truncated_stream:
+                original_read = reader.read
+
+                async def hold_empty_read(size):
+                    data = await original_read(size)
+                    if not data:
+                        actual_eof.set()
+                        await release.wait()
+                    return data
+
+                monkeypatch.setattr(reader, "read", hold_empty_read)
+            await original_read_stream(process, reader, stream)
+
+        monkeypatch.setattr(Process, "_read_stream", gate_eof)
+        with Recorder(tmp_path / "eof.jsonl", Redactor()) as recorder:
+            process = await Process.start("eof", argv, tmp_path, recorder, grace=0.05)
+            try:
+                initial = process.ownership_record("eof")
+                assert not initial.output_complete
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 7
+                    await process.terminate(0.05)
+                receipt = process.ownership_record("eof")
+                assert receipt.stopped
+                assert receipt.readers_settled and receipt.watcher_settled
+                assert receipt.stdout_eof is (truncated_stream != "stdout")
+                assert receipt.stderr_eof is (truncated_stream != "stderr")
+                assert receipt.output_complete is (truncated_stream is None)
+                assert not initial.output_complete, "receipt must be immutable"
+                if truncated_stream is not None:
+                    assert actual_eof.is_set()
+                    index = 0 if truncated_stream == "stdout" else 1
+                    assert process._readers[index].cancelled()
+                records = read_records(tmp_path / "eof.jsonl")
+                assert {"stdout tail", "stderr tail"} <= {
+                    record["text"] for record in records if "text" in record
+                }
+            finally:
+                release.set()
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_successful_stop_preserves_independent_output_drain_budget(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(
+        tmp_path,
+        "import os\nos.write(1, b'preserved unterminated tail')\nos._exit(7)\n",
+    )
+
+    async def run():
+        original_read_stream = Process._read_stream
+        original_stop_child = Process._stop_child
+        stop_confirmed = asyncio.Event()
+        draining = asyncio.Event()
+        release_eof = asyncio.Event()
+
+        async def hold_stdout_eof(process, reader, stream):
+            if stream == "stdout":
+                original_read = reader.read
+
+                async def hold_empty_read(size):
+                    data = await original_read(size)
+                    if not data:
+                        draining.set()
+                        await release_eof.wait()
+                    return data
+
+                monkeypatch.setattr(reader, "read", hold_empty_read)
+            await original_read_stream(process, reader, stream)
+
+        async def observe_stop(process, grace):
+            await original_stop_child(process, grace)
+            stop_confirmed.set()
+
+        # Start the independent drain only after terminate confirms the stop.
+        # Child startup and watcher scheduling cannot consume its budget first.
+        original_wait_exited = Process.wait_exited
+
+        async def wait_for_stop_before_final_drain(process):
+            result = await original_wait_exited(process)
+            if asyncio.current_task() is process._watcher:
+                await stop_confirmed.wait()
+            return result
+
+        monkeypatch.setattr(Process, "_read_stream", hold_stdout_eof)
+        monkeypatch.setattr(Process, "_stop_child", observe_stop)
+        monkeypatch.setattr(Process, "wait_exited", wait_for_stop_before_final_drain)
+        path = tmp_path / "independent-drain.jsonl"
+        with Recorder(path, Redactor()) as recorder:
+            process = await Process.start("drain", argv, tmp_path, recorder, grace=0.1)
+            try:
+                async with asyncio.timeout(3):
+                    await draining.wait()
+                    assert await process.wait_exited() == 7
+                    # Stopping grace is shorter than the independent drain
+                    # grace. Successful collection must still preserve tails.
+                    await process.terminate(0.02)
+                receipt = process.ownership_record("drain")
+                assert receipt.stopped
+                assert not receipt.stdout_eof
+                assert receipt.stderr_eof
+                assert not receipt.output_complete
+                assert process._readers[0].cancelled()
+                records = read_records(path)
+                assert any(
+                    record.get("text") == "preserved unterminated tail"
+                    for record in records
+                )
+                assert any(
+                    record.get("name") == "output_not_closed" for record in records
+                )
+            finally:
+                stop_confirmed.set()
+                release_eof.set()
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_stopped_child_does_not_wait_forever_for_watcher(tmp_path, monkeypatch):
+    argv = raw_process_program(tmp_path, "import os\nos._exit(7)\n")
+
+    async def run():
+        original_watch = Process._watch
+        before_watch = asyncio.Event()
+        release = asyncio.Event()
+
+        async def delayed_watch(process):
+            before_watch.set()
+            await release.wait()
+            return await original_watch(process)
+
+        monkeypatch.setattr(Process, "_watch", delayed_watch)
+        with Recorder(tmp_path / "watcher.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "watcher", argv, tmp_path, recorder, grace=0.02
+            )
+            terminating = None
+            try:
+                async with asyncio.timeout(3):
+                    await before_watch.wait()
+                    assert await process.wait_exited() == 7
+                terminating = asyncio.create_task(process.terminate(0.02))
+                done, _ = await asyncio.wait((terminating,), timeout=1)
+                assert terminating in done, "confirmed stop waited forever for watcher"
+                with pytest.raises(RuntimeError, match="output cleanup unconfirmed"):
+                    terminating.result()
+                receipt = process.ownership_record("watcher")
+                assert receipt.exit_code == 7
+                assert not receipt.watcher_settled
+                assert not receipt.stopped
+            finally:
+                release.set()
+                await cleanup_raw_process(process)
+                if terminating is not None:
+                    await asyncio.gather(terminating, return_exceptions=True)
 
     asyncio.run(run())

@@ -7,16 +7,21 @@ import hashlib
 import json
 import os
 import signal
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
+from ..ownership import Acquisition, ProcessOwnership
 from ..runtime_decode import RuntimeJSONError, strict_json_loads
 from .recording import Recorder
 
 
 class SpawnFailed(Exception):
     """Only failure of the executable launch, not subsequent recording or I/O."""
+
+
+class ProcessCleanupIncomplete(RuntimeError):
+    """Bounded cleanup could not confirm process stop or output settlement."""
 
 
 class _GroupSignalDenied(PermissionError):
@@ -41,6 +46,7 @@ class Process:
         self._grace = grace
         self._stdout: asyncio.Queue[dict[str, Any] | str | None] = asyncio.Queue()
         self._stdin_closed = False
+        self._eof = {"stdout": False, "stderr": False}
         assert child.stdout is not None and child.stderr is not None
         self._readers = [
             asyncio.create_task(self._read_stream(child.stdout, "stdout")),
@@ -61,47 +67,97 @@ class Process:
         grace: float = 15,
         env: Mapping[str, str] | None = None,
         start_new_session: bool = False,
+        acquisition: Acquisition | None = None,
+        on_created: Callable[[Process], None] | None = None,
     ) -> Process:
-        # Record the launch attempt before acquiring an OS process, so a failed
-        # recording cannot leave an unregistered child behind.
-        recorder.emit("spawn", proc=name, argv=argv, cwd=str(cwd))
-        creation = asyncio.create_task(
-            asyncio.create_subprocess_exec(
-                *argv,
-                cwd=cwd,
-                stdin=asyncio.subprocess.PIPE
-                if piped_stdin
-                else asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env,
-                start_new_session=start_new_session,
-            )
-        )
-        try:
-            child = await asyncio.shield(creation)
-        except OSError as error:
-            raise SpawnFailed from error
-        except asyncio.CancelledError:
-            # Creation owns the OS process even if the step stops awaiting it.
-            async def finish_creation() -> None:
+        async def publish(child: asyncio.subprocess.Process) -> Process:
+            process = cls(name, child, recorder, grace, start_new_session)
+            try:
+                if on_created is not None:
+                    on_created(process)
+            except BaseException:
+                # Retain the known handle even if local registration fails.
+                # A second publication failure must still clean the child.
                 try:
-                    child = await creation
-                except OSError:
-                    return
-                process = cls(name, child, recorder, grace, start_new_session)
+                    if acquisition is not None:
+                        acquisition.publish(process)
+                finally:
+                    await process.terminate(grace)
+                raise
+            try:
+                if acquisition is not None:
+                    acquisition.publish(process)
+            except BaseException:
                 await process.terminate(grace)
+                raise
+            return process
 
-            cleanup = asyncio.create_task(finish_creation())
-            while not cleanup.done():
-                try:
-                    await asyncio.shield(cleanup)
-                except asyncio.CancelledError:
-                    continue
-            cleanup.result()
-            raise
-        process = cls(name, child, recorder, grace, start_new_session)
-        return process
+        try:
+            # Before this record succeeds no launch has been attempted.
+            try:
+                recorder.emit("spawn", proc=name, argv=argv, cwd=str(cwd))
+            except BaseException:
+                if acquisition is not None:
+                    acquisition.not_created()
+                raise
+            creation = asyncio.create_task(
+                asyncio.create_subprocess_exec(
+                    *argv,
+                    cwd=cwd,
+                    stdin=asyncio.subprocess.PIPE
+                    if piped_stdin
+                    else asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env,
+                    start_new_session=start_new_session,
+                )
+            )
+            try:
+                child = await asyncio.shield(creation)
+            except OSError as error:
+                if acquisition is not None:
+                    acquisition.not_created()
+                raise SpawnFailed from error
+            except asyncio.CancelledError:
+                # The launch still owns its child when the caller stops waiting.
+                # Both paths publish before attempting any resource cleanup.
+                async def finish_creation() -> None:
+                    try:
+                        child = await creation
+                    except OSError:
+                        if acquisition is not None:
+                            acquisition.not_created()
+                        return
+                    process = await publish(child)
+                    await process.terminate(grace)
+
+                cleanup = asyncio.create_task(finish_creation())
+                while not cleanup.done():
+                    try:
+                        await asyncio.shield(cleanup)
+                    except asyncio.CancelledError:
+                        continue
+                cleanup.result()
+                raise
+            return await publish(child)
+        finally:
+            if acquisition is not None:
+                acquisition.finish()
+
+    def ownership_record(self, resource_id: str) -> ProcessOwnership:
+        return ProcessOwnership(
+            resource_id=resource_id,
+            label=self.name,
+            pid=self.child.pid,
+            exit_code=self.child.returncode,
+            owns_group=self._owns_group,
+            group_gone=self._group_stopped,
+            watcher_settled=self._watcher.done(),
+            readers_settled=all(reader.done() for reader in self._readers),
+            stdout_eof=self._eof["stdout"],
+            stderr_eof=self._eof["stderr"],
+        )
 
     def _line(self, data: bytes, stream: str) -> None:
         extra: dict[str, Any] = {}
@@ -170,6 +226,7 @@ class Process:
                     for line in parts[1:-1]:
                         self._line(line, stream)
                     buffered.extend(parts[-1])
+            self._eof[stream] = True
         finally:
             # A drain deadline is not EOF, but bytes already read remain evidence.
             if buffered:
@@ -341,33 +398,36 @@ class Process:
             signal_denied = error
         except OSError as error:
             recording_error = error
-        deadline = asyncio.get_running_loop().time() + grace
-        while self._group_exists() and asyncio.get_running_loop().time() < deadline:
-            await asyncio.sleep(0.005)
-        if self._group_exists():
+        stopped = await self._confirm_stop(grace)
+        if not stopped:
             try:
                 self.signal(signal.SIGKILL)
             except _GroupSignalDenied as error:
                 signal_denied = error
             except OSError as error:
                 recording_error = recording_error or error
-        if signal_denied is not None:
-            # macOS may briefly deny signals to a zombie-only owned group.
-            # Ignore that denial only after actual exit AND group disappearance;
-            # a live inaccessible group must not cause an unbounded _exit wait.
-            deadline = asyncio.get_running_loop().time() + grace
-            while (
-                self.child.returncode is None or self._group_exists()
-            ) and asyncio.get_running_loop().time() < deadline:
-                await asyncio.sleep(0.005)
-            if self.child.returncode is None or self._group_exists():
-                if recording_error is not None:
-                    raise recording_error
+            stopped = await self._confirm_stop(grace)
+        if not stopped:
+            if recording_error is not None:
+                raise recording_error
+            if signal_denied is not None:
                 raise signal_denied
-        await asyncio.shield(self._exit)
+            raise ProcessCleanupIncomplete("process group stop unconfirmed")
+        # A transient EPERM is tolerable only after actual exit and group absence.
         self._group_stopped = True
         if recording_error is not None:
             raise recording_error
+
+    async def _confirm_stop(self, grace: float) -> bool:
+        deadline = asyncio.get_running_loop().time() + grace
+        while True:
+            group_gone = not self._owns_group or not self._group_exists()
+            if self.child.returncode is not None and group_gone:
+                return True
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.005, remaining))
 
     async def wait_for_exit(self, seconds: float) -> bool:
         if self.child.returncode is not None:
@@ -387,16 +447,17 @@ class Process:
             self.signal(signal.SIGTERM)
         except OSError as error:
             recording_error = error
-        try:
-            await asyncio.wait_for(asyncio.shield(self._exit), grace)
-        except TimeoutError:
+        stopped = await self._confirm_stop(grace)
+        if not stopped:
             try:
                 self.signal(signal.SIGKILL)
             except OSError as error:
                 recording_error = recording_error or error
-            await asyncio.shield(self._exit)
+            stopped = await self._confirm_stop(grace)
         if recording_error is not None:
             raise recording_error
+        if not stopped:
+            raise ProcessCleanupIncomplete("process stop unconfirmed")
 
     async def terminate(self, grace: float) -> None:
         async def cleanup() -> None:
@@ -407,14 +468,21 @@ class Process:
                 stop_error = error
                 raise
             finally:
-                if stop_error is not None and not self._watcher.done():
+                if not self._watcher.done():
                     # A refused signal can leave a live child. Do not turn the
                     # bounded stop failure into an unbounded wait for its EOF.
-                    # Keep the observation tasks and ownership intact: a timeout
-                    # here is not evidence of exit, EOF or successful cleanup.
-                    _, pending = await asyncio.wait((self._watcher,), timeout=grace)
+                    # After a confirmed stop the watcher still owns its separate
+                    # output-drain budget, then needs time to cancel readers and
+                    # record unterminated tails. Do not race that same deadline.
+                    # An expired wait never proves exit, EOF or successful cleanup.
+                    budget = grace if stop_error is not None else self._grace + grace
+                    _, pending = await asyncio.wait((self._watcher,), timeout=budget)
                     if pending:
-                        raise stop_error
+                        if stop_error is not None:
+                            raise stop_error
+                        raise ProcessCleanupIncomplete(
+                            "process output cleanup unconfirmed"
+                        )
                 try:
                     await self.wait()
                 except RuntimeJSONError:

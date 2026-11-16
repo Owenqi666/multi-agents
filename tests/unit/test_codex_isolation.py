@@ -6,6 +6,7 @@ import json
 import stat
 import sys
 import tempfile
+from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,7 @@ import pytest
 
 from multi_agent.adapters import codex_isolation
 from multi_agent.adapters.codex_isolation import CodexIsolation, isolated_environment
+from multi_agent.adapters.ownership import Acquisition, OwnershipLedger
 from multi_agent.adapters.probe.process import Process, SpawnFailed
 from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.runtime import _Rpc
@@ -893,3 +895,352 @@ def test_cancel_during_termination_preserves_cancel_and_confirms_cleanup(
             await original(0.05)
 
     asyncio.run(scenario())
+
+
+def create_owned_isolation(context, ledger):
+    return CodexIsolation.create(
+        context.cwd,
+        context.recorder,
+        isolated_environment(),
+        log_dir=context.logs,
+        ownership=ledger,
+    )
+
+
+def test_isolation_owner_is_published_before_private_configuration(
+    isolation_context, monkeypatch
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    operation = ledger.begin_operation("synthetic-create")
+    original = Acquisition.publish
+    observed = []
+
+    def observe_publication(ticket, resource):
+        if ticket.kind == "isolation":
+            assert resource.root.is_dir()
+            assert tuple(resource.root.iterdir()) == ()
+            assert ticket.outcome == "pending"
+            assert not resource._removed
+            observed.append(resource)
+        original(ticket, resource)
+
+    monkeypatch.setattr(Acquisition, "publish", observe_publication)
+    isolation = create_owned_isolation(context, ledger)
+    try:
+        assert observed == [isolation]
+        snapshot = ledger.snapshot()
+        assert len(snapshot.isolations) == 1
+        owner = snapshot.isolations[0]
+        assert owner.root == str(isolation.root)
+        assert owner.pending_spawns == owner.unknown_spawns == owner.process_count == 0
+        assert owner.unstopped_processes == 0
+        assert not owner.removed
+        assert snapshot.acquisitions[0].outcome == "published"
+        with pytest.raises(FrozenInstanceError):
+            owner.removed = True
+    finally:
+        assert isolation.cleanup()
+    ledger.finish_operation(operation)
+    assert ledger.snapshot().resources_released
+    assert ledger.snapshot().isolations[0].removed
+    assert not owner.removed, "an earlier immutable receipt must not change"
+
+
+@pytest.mark.parametrize("failed_step", ["resolve", "chmod", "auth", "config"])
+def test_isolation_creation_failure_publishes_owner_and_records_real_removal(
+    isolation_context, monkeypatch, failed_step
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    operation = ledger.begin_operation("synthetic-create")
+    injected = OSError("injected isolation creation failure")
+    original_resolve = Path.resolve
+    original_chmod = Path.chmod
+    original_open = Path.open
+
+    def fail_resolve(path, *args, **kwargs):
+        if path.parent == context.temporary:
+            assert ledger.snapshot().isolations
+            raise injected
+        return original_resolve(path, *args, **kwargs)
+
+    def fail_chmod(path, *args, **kwargs):
+        if path.parent == context.temporary:
+            assert ledger.snapshot().isolations
+            raise injected
+        return original_chmod(path, *args, **kwargs)
+
+    def fail_config(path, *args, **kwargs):
+        if path.name == "config.toml" and path.is_relative_to(context.temporary):
+            assert ledger.snapshot().isolations
+            assert (path.parent / "auth.json").is_file()
+            raise injected
+        return original_open(path, *args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        if failed_step == "resolve":
+            patcher.setattr(Path, "resolve", fail_resolve)
+        elif failed_step == "chmod":
+            patcher.setattr(Path, "chmod", fail_chmod)
+        elif failed_step == "config":
+            patcher.setattr(Path, "open", fail_config)
+        else:
+            context.auth_file.unlink()
+        with pytest.raises(RuntimeFailure if failed_step == "auth" else OSError):
+            create_owned_isolation(context, ledger)
+    ledger.finish_operation(operation)
+    receipt = ledger.snapshot()
+    assert len(receipt.isolations) == 1
+    owner = receipt.isolations[0]
+    assert owner.removed and not Path(owner.root).exists()
+    assert receipt.resources_released
+    assert receipt.acquisitions[0].outcome == "published"
+    assert tuple(context.temporary.iterdir()) == ()
+    records = [json.loads(line) for line in context.path.read_text().splitlines()]
+    assert not any(record["kind"] == "isolation_created" for record in records)
+    assert any(record["kind"] == "isolation_removed" for record in records)
+
+
+def test_isolation_constructor_failure_cleans_allocated_directory(
+    isolation_context, monkeypatch
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    failure = OSError("injected constructor failure after allocation")
+
+    def reject_construction(*args, **kwargs):
+        assert len(tuple(context.temporary.iterdir())) == 1
+        assert ledger.snapshot().pending_acquisitions == 1
+        raise failure
+
+    monkeypatch.setattr(CodexIsolation, "__init__", reject_construction)
+    with pytest.raises(OSError) as caught:
+        create_owned_isolation(context, ledger)
+    assert caught.value is failure
+    assert tuple(context.temporary.iterdir()) == ()
+    receipt = ledger.snapshot()
+    assert receipt.pending_acquisitions == 0
+    assert receipt.unknown_acquisitions == 1
+    assert not receipt.resources_released
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_isolation_owner_publisher_failure_does_not_leave_private_files(
+    isolation_context, monkeypatch, published
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    original = Acquisition.publish
+    failure = OSError("injected owner publisher failure")
+    owners = []
+
+    def failed_publish(ticket, resource):
+        assert ticket.kind == "isolation"
+        owners.append(resource)
+        if published:
+            original(ticket, resource)
+        raise failure
+
+    monkeypatch.setattr(Acquisition, "publish", failed_publish)
+    with pytest.raises(OSError) as caught:
+        create_owned_isolation(context, ledger)
+    assert caught.value is failure
+    assert len(owners) == 1
+    assert owners[0]._removed and not owners[0].root.exists()
+    assert tuple(context.temporary.iterdir()) == ()
+    receipt = ledger.snapshot()
+    assert receipt.pending_acquisitions == 0
+    if published:
+        assert receipt.isolations[0].removed
+        assert receipt.acquisitions[0].outcome == "published"
+    else:
+        assert receipt.unknown_acquisitions == 1
+
+
+@pytest.mark.parametrize("during_creation", [False, True])
+def test_isolation_receipt_requires_actual_removal(
+    isolation_context, monkeypatch, during_creation
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    operation = ledger.begin_operation("synthetic-create")
+    isolation = None
+    if not during_creation:
+        isolation = create_owned_isolation(context, ledger)
+    else:
+        context.auth_file.unlink()
+
+    def cannot_remove(path):
+        raise OSError("injected actual removal failure")
+
+    try:
+        with monkeypatch.context() as patcher:
+            patcher.setattr(codex_isolation.shutil, "rmtree", cannot_remove)
+            if during_creation:
+                with pytest.raises(RuntimeFailure) as caught:
+                    create_owned_isolation(context, ledger)
+                assert caught.value.event.raw_type == "adapter.cleanup_incomplete"
+                isolation = ledger._acquisitions[0].resource
+                assert isinstance(isolation, CodexIsolation)
+            else:
+                with pytest.raises(OSError, match="actual removal"):
+                    isolation.cleanup()
+            ledger.finish_operation(operation)
+            receipt = ledger.snapshot()
+            assert len(receipt.isolations) == 1
+            assert not receipt.isolations[0].removed
+            assert not receipt.resources_released
+            assert isolation.root.is_dir()
+    finally:
+        if isolation is not None:
+            assert isolation.cleanup()
+    assert ledger.snapshot().isolations[0].removed
+    assert ledger.snapshot().resources_released
+    assert not receipt.isolations[0].removed
+
+
+@pytest.mark.parametrize("published", [False, True])
+def test_isolation_publication_failure_keeps_known_process_bookkeeping(
+    isolation_context, monkeypatch, published
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    operation = ledger.begin_operation("synthetic-spawn")
+    isolation = create_owned_isolation(context, ledger)
+    original = Acquisition.publish
+    failure = OSError("injected process publisher failure")
+    created = []
+
+    def failed_publish(ticket, resource):
+        if ticket.kind == "process":
+            assert resource in isolation._processes
+            if resource not in created:
+                created.append(resource)
+            if published:
+                original(ticket, resource)
+            raise failure
+        original(ticket, resource)
+
+    monkeypatch.setattr(Acquisition, "publish", failed_publish)
+
+    async def scenario():
+        try:
+            with pytest.raises(OSError) as caught:
+                await isolation.spawn(
+                    [sys.executable, "-c", "import time; time.sleep(60)"],
+                    pipe=False,
+                    grace=0.05,
+                )
+            assert caught.value is failure
+            assert len(created) == 1
+            process = created[0]
+            assert process.child.returncode is not None
+            assert process._watcher.done()
+            assert all(reader.done() for reader in process._readers)
+            assert isolation._processes == {process: True}
+            owner = isolation.ownership_record("isolation-test")
+            assert owner.pending_spawns == owner.unknown_spawns == 0
+            assert owner.process_count == 1 and owner.unstopped_processes == 0
+            assert isolation.cleanup()
+        finally:
+            for process in created:
+                await isolation.terminate(process, 0.05)
+            isolation.cleanup()
+
+    asyncio.run(scenario())
+    ledger.finish_operation(operation)
+    receipt = ledger.snapshot()
+    assert receipt.isolations[0].removed
+    assert receipt.pending_acquisitions == 0
+    if published:
+        assert len(receipt.processes) == 1
+        assert receipt.processes[0].stopped
+        assert receipt.resources_released
+    else:
+        assert receipt.unknown_acquisitions == 1
+        assert not receipt.resources_released
+
+
+@pytest.mark.parametrize("stop_fails", [False, True])
+def test_isolation_known_process_cancel_before_return_is_not_unknown_spawn(
+    isolation_context, monkeypatch, stop_fails
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    isolation = create_owned_isolation(context, ledger)
+    original_start = Process.start
+    created = []
+    original_stops = []
+
+    async def created_then_cancelled(*args, **kwargs):
+        process = await original_start(*args, **kwargs)
+        created.append(process)
+        original_stops.append(process.terminate)
+        if stop_fails:
+
+            async def failed_stop(grace):
+                raise OSError("injected known process stop failure")
+
+            process.terminate = failed_stop
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(Process, "start", created_then_cancelled)
+
+    async def scenario():
+        try:
+            with pytest.raises(OSError if stop_fails else asyncio.CancelledError):
+                await isolation.spawn(
+                    [sys.executable, "-c", "import time; time.sleep(60)"],
+                    pipe=False,
+                    grace=0.05,
+                )
+            assert len(created) == 1
+            owner = isolation.ownership_record("isolation-test")
+            assert owner.pending_spawns == owner.unknown_spawns == 0
+            assert owner.process_count == 1
+            assert owner.unstopped_processes == int(stop_fails)
+            assert isolation.cleanup() is (not stop_fails)
+            receipt = ledger.snapshot()
+            assert len(receipt.processes) == 1
+            assert receipt.processes[0].stopped is (not stop_fails)
+            if stop_fails:
+                assert created[0].child.returncode is None
+                assert isolation.root.is_dir()
+        finally:
+            for process, original_stop in zip(created, original_stops, strict=True):
+                process.terminate = original_stop
+                await isolation.terminate(process, 0.05)
+            assert isolation.cleanup()
+
+    asyncio.run(scenario())
+
+
+def test_isolation_prelaunch_log_failure_is_known_not_created(
+    isolation_context, monkeypatch
+):
+    context = isolation_context
+    ledger = OwnershipLedger()
+    isolation = create_owned_isolation(context, ledger)
+    original_emit = context.recorder.emit
+    failure = OSError("injected log failure before process launch")
+
+    def fail_spawn_record(kind, **fields):
+        if kind == "spawn":
+            raise failure
+        return original_emit(kind, **fields)
+
+    monkeypatch.setattr(context.recorder, "emit", fail_spawn_record)
+    with pytest.raises(OSError) as caught:
+        asyncio.run(
+            isolation.spawn(
+                [sys.executable, "-c", "raise AssertionError('must not launch')"],
+                pipe=False,
+                grace=0.05,
+            )
+        )
+    assert caught.value is failure
+    owner = isolation.ownership_record("isolation-test")
+    assert owner.pending_spawns == owner.unknown_spawns == owner.process_count == 0
+    assert ledger.snapshot().acquisitions[-1].outcome == "not_created"
+    assert isolation.cleanup()

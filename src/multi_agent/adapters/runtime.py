@@ -31,7 +31,6 @@ from collections import deque
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import uuid4
 
@@ -56,7 +55,13 @@ from .base import (
     TurnResult,
 )
 from .codex_isolation import VERSION, CodexIsolation, isolated_environment
-from .probe.process import Process, SpawnFailed
+from .ownership import (
+    Acquisition,
+    OwnedTemporaryDirectory,
+    OwnershipLedger,
+    RuntimeOwnershipReceipt,
+)
+from .probe.process import Process, ProcessCleanupIncomplete, SpawnFailed
 from .probe.recording import Recorder, Redactor
 from .runtime_decode import (
     CodexDecoder,
@@ -348,6 +353,8 @@ class _Turn:
     isolation: CodexIsolation | None = None
     redactor: Redactor | None = None
     implementation_policy_reported: bool = False
+    ownership_operation: int | None = None
+    log_acquisition: Acquisition | None = None
 
 
 class RuntimeAdapter(Adapter):
@@ -383,6 +390,11 @@ class RuntimeAdapter(Adapter):
         self._sessions: dict[SessionHandle, SessionConfig] = {}
         self._used: set[SessionHandle] = set()
         self._turns: dict[TurnHandle, _Turn] = {}
+        self._ownership = OwnershipLedger()
+
+    def ownership_receipt(self) -> RuntimeOwnershipReceipt:
+        """Snapshot this instance's owned resources; never adopt a prior runtime."""
+        return self._ownership.snapshot()
 
     def _environment(self) -> dict[str, str]:
         if self.provider == "codex":
@@ -393,11 +405,26 @@ class RuntimeAdapter(Adapter):
             env.pop("ANTHROPIC_AUTH_TOKEN", None)
         return env
 
-    def _recorder(self, identifier: str, cwd: Path) -> Recorder:
-        self.log_dir.mkdir(parents=True, exist_ok=True)
-        redactor = Redactor()
-        redactor.add_workdir(cwd)
-        return Recorder(self.log_dir / f"{self.provider}-{identifier}.jsonl", redactor)
+    def _recorder(
+        self, identifier: str, cwd: Path, *, acquisition: Acquisition
+    ) -> Recorder:
+        opening = False
+        try:
+            self.log_dir.mkdir(parents=True, exist_ok=True)
+            redactor = Redactor()
+            redactor.add_workdir(cwd)
+            opening = True
+            return Recorder(
+                self.log_dir / f"{self.provider}-{identifier}.jsonl",
+                redactor,
+                acquisition=acquisition,
+            )
+        except BaseException:
+            if not opening:
+                acquisition.not_created()
+            raise
+        finally:
+            acquisition.finish()
 
     async def start_session(self, config: SessionConfig) -> SessionHandle:
         if config.permission != Permission.READ_ONLY:
@@ -424,7 +451,17 @@ class RuntimeAdapter(Adapter):
         handle = TurnHandle(uuid4().hex, session)
         state = _Turn(config, text)
         self._turns[handle] = state
-        state.task = asyncio.create_task(self._run(handle, state))
+        operation = self._ownership.begin_operation("turn")
+        state.ownership_operation = operation
+        state.log_acquisition = self._ownership.acquire("log")
+        execution = self._run(handle, state)
+        try:
+            state.task = asyncio.create_task(execution)
+        except BaseException:
+            execution.close()
+            state.log_acquisition.not_created()
+            self._ownership.finish_operation(operation)
+            raise
         return handle
 
     def _observe(self, state: _Turn, event: AdapterEvent) -> None:
@@ -466,31 +503,52 @@ class RuntimeAdapter(Adapter):
         if isolation is not None:
             executable = shutil.which(argv[0])
             if executable is None:
+                acquisition = self._ownership.acquire("process")
+                acquisition.not_created()
                 raise SpawnFailed("executable unavailable")
             return await isolation.spawn(
                 [str(Path(executable).resolve()), *argv[1:]],
                 pipe=pipe,
                 grace=self.grace,
             )
-        return await Process.start(
-            self.provider,
-            argv,
-            cwd,
-            recorder,
-            piped_stdin=pipe,
-            grace=self.grace,
-            env=self._environment(),
-            start_new_session=True,
-        )
+        acquisition = self._ownership.acquire("process")
+        try:
+            return await Process.start(
+                self.provider,
+                argv,
+                cwd,
+                recorder,
+                piped_stdin=pipe,
+                grace=self.grace,
+                env=self._environment(),
+                start_new_session=True,
+                acquisition=acquisition,
+            )
+        finally:
+            acquisition.finish()
 
     async def _run(self, handle: TurnHandle, state: _Turn) -> None:
+        assert state.ownership_operation is not None
+        assert state.log_acquisition is not None
+        try:
+            await self._run_owned(handle, state)
+        finally:
+            if state.log_acquisition.outcome == "pending":
+                state.log_acquisition.not_created()
+            state.log_acquisition.finish()
+            self._ownership.finish_operation(state.ownership_operation)
+
+    async def _run_owned(self, handle: TurnHandle, state: _Turn) -> None:
         recorder: Recorder | None = None
         failure: Error | None = None
         cleanup_problem: Error | None = None
         isolation_incomplete = False
         try:
             self._validate_turn_workspace(state)
-            recorder = self._recorder(handle.identifier, state.config.cwd)
+            assert state.log_acquisition is not None
+            recorder = self._recorder(
+                handle.identifier, state.config.cwd, acquisition=state.log_acquisition
+            )
             state.redactor = recorder.redactor
             recorder.emit(
                 "requested",
@@ -516,7 +574,7 @@ class RuntimeAdapter(Adapter):
         except asyncio.CancelledError:
             state.cancelled = True
             failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
-        except OSError as error:
+        except (OSError, ProcessCleanupIncomplete) as error:
             if state.observed_terminal is not None:
                 cleanup_problem = Error(
                     f"runtime cleanup failure: {error}",
@@ -614,7 +672,11 @@ class RuntimeAdapter(Adapter):
 
     def _create_isolation(self, state: _Turn, recorder: Recorder) -> CodexIsolation:
         return CodexIsolation.create(
-            state.config.cwd, recorder, self._environment(), log_dir=self.log_dir
+            state.config.cwd,
+            recorder,
+            self._environment(),
+            log_dir=self.log_dir,
+            ownership=self._ownership,
         )
 
     async def _codex(self, state: _Turn, recorder: Recorder) -> None:
@@ -1049,12 +1111,22 @@ class RuntimeAdapter(Adapter):
             requirements=requirements["requirements"],
         )
 
-    async def _check_codex_environment(self) -> EnvironmentInfo:
-        with TemporaryDirectory(prefix="multi-agent-environment-") as directory:
+    async def _check_codex_environment(
+        self, log_acquisition: Acquisition
+    ) -> EnvironmentInfo:
+        with OwnedTemporaryDirectory(
+            self._ownership, prefix="multi-agent-environment-"
+        ) as directory:
             cwd = Path(directory).resolve()
-            with self._recorder("environment-" + uuid4().hex, cwd) as recorder:
+            with self._recorder(
+                "environment-" + uuid4().hex, cwd, acquisition=log_acquisition
+            ) as recorder:
                 isolation = CodexIsolation.create(
-                    cwd, recorder, self._environment(), log_dir=self.log_dir
+                    cwd,
+                    recorder,
+                    self._environment(),
+                    log_dir=self.log_dir,
+                    ownership=self._ownership,
                 )
                 process = None
                 try:
@@ -1172,12 +1244,29 @@ class RuntimeAdapter(Adapter):
 
     async def check_environment(self) -> EnvironmentInfo:
         """Record version/login/catalog separately; never starts a model turn."""
+        operation = self._ownership.begin_operation("environment")
+        log_acquisition = self._ownership.acquire("log")
+        try:
+            return await self._check_environment_owned(log_acquisition)
+        finally:
+            if log_acquisition.outcome == "pending":
+                log_acquisition.not_created()
+            log_acquisition.finish()
+            self._ownership.finish_operation(operation)
+
+    async def _check_environment_owned(
+        self, log_acquisition: Acquisition
+    ) -> EnvironmentInfo:
         try:
             if self.provider == "codex":
-                return await self._check_codex_environment()
-            with TemporaryDirectory(prefix="multi-agent-environment-") as directory:
+                return await self._check_codex_environment(log_acquisition)
+            with OwnedTemporaryDirectory(
+                self._ownership, prefix="multi-agent-environment-"
+            ) as directory:
                 cwd = Path(directory)
-                with self._recorder("environment-" + uuid4().hex, cwd) as recorder:
+                with self._recorder(
+                    "environment-" + uuid4().hex, cwd, acquisition=log_acquisition
+                ) as recorder:
                     async with asyncio.timeout(self.timeout):
                         version_text, version_exit = await self._collect(
                             [self.executable, "--version"], cwd, recorder
