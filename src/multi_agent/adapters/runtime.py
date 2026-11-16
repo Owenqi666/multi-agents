@@ -227,6 +227,10 @@ async def _read(process: Process) -> dict[str, Any] | str | None:
     return value
 
 
+class _ExecutionDeadlineExpired(TimeoutError):
+    """The host rejected new I/O before attempting any process creation."""
+
+
 class _Rpc:
     def __init__(self, process: Process) -> None:
         self.process = process
@@ -343,6 +347,7 @@ class _Turn:
     thread_id: str | None = None
     turn_id: str | None = None
     cancelled: bool = False
+    timed_out: bool = False
     cancel_sent: bool = False
     reader_started: bool = False
     observed_terminal: Completed | Error | None = None
@@ -350,6 +355,7 @@ class _Turn:
     exit_event: ProcessExited | None = None
     cancel_task: asyncio.Task[None] | None = None
     deadline: asyncio.Timeout | None = None
+    deadline_active: bool = False
     isolation: CodexIsolation | None = None
     redactor: Redactor | None = None
     implementation_policy_reported: bool = False
@@ -364,12 +370,24 @@ class RuntimeAdapter(Adapter):
         *,
         executable: str | None = None,
         timeout: float = 180,
+        deadline_at: float | None = None,
         grace: float = 2,
         log_dir: Path,
         output_schema: dict[str, Any] | None = None,
     ) -> None:
         if provider not in ("codex", "claude"):
             raise ValueError("provider must be codex or claude")
+        if deadline_at is not None:
+            if isinstance(deadline_at, bool) or not isinstance(
+                deadline_at, (int, float)
+            ):
+                raise ValueError("deadline_at must be a finite non-bool number")
+            try:
+                finite_deadline = math.isfinite(deadline_at)
+            except OverflowError as error:
+                raise ValueError("deadline_at must be finite") from error
+            if not finite_deadline:
+                raise ValueError("deadline_at must be finite")
         if (
             not math.isfinite(timeout)
             or timeout <= 0
@@ -380,6 +398,7 @@ class RuntimeAdapter(Adapter):
         self.provider = provider
         self.executable = executable or provider
         self.timeout = timeout
+        self.deadline_at = deadline_at
         self.grace = grace
         self.log_dir = log_dir.resolve()
         self.output_schema = (
@@ -391,6 +410,27 @@ class RuntimeAdapter(Adapter):
         self._used: set[SessionHandle] = set()
         self._turns: dict[TurnHandle, _Turn] = {}
         self._ownership = OwnershipLedger()
+
+    def _execution_timer(self) -> asyncio.Timeout:
+        return (
+            asyncio.timeout(self.timeout)
+            if self.deadline_at is None
+            else asyncio.timeout_at(self.deadline_at)
+        )
+
+    def _check_execution_deadline(self) -> None:
+        if (
+            self.deadline_at is not None
+            and asyncio.get_running_loop().time() >= self.deadline_at
+        ):
+            raise _ExecutionDeadlineExpired("execution deadline already passed")
+
+    def _resume_execution_timer(self, timer: asyncio.Timeout) -> None:
+        # Explicit deadlines remain fixed while cleanup is allowed to finish.
+        # A later I/O phase cannot borrow time from a new relative timeout.
+        self._check_execution_deadline()
+        if self.deadline_at is not None:
+            timer.reschedule(self.deadline_at)
 
     def ownership_receipt(self) -> RuntimeOwnershipReceipt:
         """Snapshot this instance's owned resources; never adopt a prior runtime."""
@@ -500,12 +540,14 @@ class RuntimeAdapter(Adapter):
         pipe: bool = False,
         isolation: CodexIsolation | None = None,
     ) -> Process:
+        self._check_execution_deadline()
         if isolation is not None:
             executable = shutil.which(argv[0])
             if executable is None:
                 acquisition = self._ownership.acquire("process")
                 acquisition.not_created()
                 raise SpawnFailed("executable unavailable")
+            self._check_execution_deadline()
             return await isolation.spawn(
                 [str(Path(executable).resolve()), *argv[1:]],
                 pipe=pipe,
@@ -513,6 +555,12 @@ class RuntimeAdapter(Adapter):
             )
         acquisition = self._ownership.acquire("process")
         try:
+            environment = self._environment()
+            try:
+                self._check_execution_deadline()
+            except _ExecutionDeadlineExpired:
+                acquisition.not_created()
+                raise
             return await Process.start(
                 self.provider,
                 argv,
@@ -520,7 +568,7 @@ class RuntimeAdapter(Adapter):
                 recorder,
                 piped_stdin=pipe,
                 grace=self.grace,
-                env=self._environment(),
+                env=environment,
                 start_new_session=True,
                 acquisition=acquisition,
             )
@@ -561,19 +609,36 @@ class RuntimeAdapter(Adapter):
                     "cancelled before process launch", FailureCategory.CANCELLED
                 )
             else:
-                async with asyncio.timeout(self.timeout) as deadline:
+                async with self._execution_timer() as deadline:
                     state.deadline = deadline
-                    if self.provider == "codex":
-                        await self._codex(state, recorder)
-                    else:
-                        await self._claude(state, recorder)
+                    state.deadline_active = True
+                    try:
+                        self._check_execution_deadline()
+                        if self.provider == "codex":
+                            await self._codex(state, recorder)
+                        else:
+                            await self._claude(state, recorder)
+                    finally:
+                        state.deadline_active = False
         except TimeoutError:
-            failure = Error("runtime deadline exceeded", FailureCategory.TIMEOUT)
+            if state.cancelled:
+                failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
+            else:
+                state.timed_out = True
+                failure = Error("runtime deadline exceeded", FailureCategory.TIMEOUT)
         except RuntimeFailure as error:
             failure = error.event
         except asyncio.CancelledError:
-            state.cancelled = True
-            failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
+            if (
+                not state.cancelled
+                and state.deadline is not None
+                and state.deadline.expired()
+            ):
+                state.timed_out = True
+                failure = Error("runtime deadline exceeded", FailureCategory.TIMEOUT)
+            else:
+                state.cancelled = True
+                failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
         except (OSError, ProcessCleanupIncomplete) as error:
             if state.observed_terminal is not None:
                 cleanup_problem = Error(
@@ -686,6 +751,7 @@ class RuntimeAdapter(Adapter):
             state.config.cwd,
             recorder,
             isolation=isolation,
+            cleanup_timer=state.deadline,
         )
         if code != 0 or version.strip() != VERSION:
             raise RuntimeFailure(
@@ -700,6 +766,8 @@ class RuntimeAdapter(Adapter):
                     "cancelled before review process launch", FailureCategory.CANCELLED
                 )
             )
+        assert state.deadline is not None
+        self._resume_execution_timer(state.deadline)
         self._validate_turn_workspace(state)
         process = await self._spawn(
             [self.executable, "app-server", "--strict-config"],
@@ -733,7 +801,12 @@ class RuntimeAdapter(Adapter):
                     raw_type="adapter.isolation_failed",
                 )
             )
+        if state.cancelled:
+            raise RuntimeFailure(
+                Error("cancelled before thread submission", FailureCategory.CANCELLED)
+            )
         self._validate_turn_workspace(state)
+        self._check_execution_deadline()
         response = await rpc.request(
             "thread/start",
             {
@@ -773,6 +846,7 @@ class RuntimeAdapter(Adapter):
         if self.output_schema is not None:
             params["outputSchema"] = self.output_schema
         self._validate_turn_workspace(state)
+        self._check_execution_deadline()
         response = await rpc.request("turn/start", params)
         state.turn_id = string_value(
             object_value(response.get("turn"), "turn").get("id"), "turn.id"
@@ -862,13 +936,46 @@ class RuntimeAdapter(Adapter):
             ):
                 await process.terminate(self.grace)
 
-    async def _send_cancel(self, state: _Turn) -> None:
+    def _ensure_cancel_cleanup(self, state: _Turn) -> None:
         process = state.process
-        if process is None and state.isolation is not None and state.task is not None:
-            # Version/audit setup owns processes before the review handle exists.
-            # Cancelling that coroutine preserves its shielded ownership cleanup.
-            state.task.cancel()
+        if process is None:
+            # An executing turn can own a creation/version subprocess before
+            # its model handle is returned. Keep Process.start's shielded
+            # creation cleanup responsible for it. Do not cancel an _run task
+            # that has not started: it still owes logs, events and settlement.
+            if (
+                state.deadline_active
+                and state.task is not None
+                and not state.task.cancelling()
+            ):
+                state.task.cancel()
             return
+        if state.cancel_task is None:
+
+            async def stop_after_grace() -> None:
+                await asyncio.sleep(self.grace)
+                try:
+                    await process.terminate(self.grace)
+                except (OSError, ValueError, RuntimeError):
+                    # The model timer was disarmed when cancellation was
+                    # accepted. A failed stop must still wake a reader waiting
+                    # on a live child, so the normal finally can report the
+                    # unconfirmed cleanup without inventing an OS exit.
+                    if (
+                        state.observed_terminal is None
+                        and state.task is not None
+                        and not state.task.done()
+                    ):
+                        state.task.cancel()
+                    raise
+
+            # Merely scheduling this task performs no signal/write before the
+            # synchronous acceptance callback. It also survives callback error.
+            state.cancel_task = asyncio.create_task(stop_after_grace())
+
+    async def _send_cancel(self, state: _Turn) -> None:
+        self._ensure_cancel_cleanup(state)
+        process = state.process
         if process is None or state.cancel_sent or state.observed_terminal is not None:
             return
         if self.provider == "codex":
@@ -877,21 +984,15 @@ class RuntimeAdapter(Adapter):
                 and state.thread_id is not None
                 and state.turn_id is not None
             ):
-                await state.rpc.send(
-                    "turn/interrupt",
-                    {"threadId": state.thread_id, "turnId": state.turn_id},
-                )
+                async with asyncio.timeout(self.grace):
+                    await state.rpc.send(
+                        "turn/interrupt",
+                        {"threadId": state.thread_id, "turnId": state.turn_id},
+                    )
                 state.cancel_sent = True
         else:
             process.signal(signal.SIGINT)
             state.cancel_sent = True
-        if state.cancel_task is None:
-
-            async def stop_after_grace() -> None:
-                await asyncio.sleep(self.grace)
-                await process.terminate(self.grace)
-
-            state.cancel_task = asyncio.create_task(stop_after_grace())
 
     async def cancel(
         self, turn: TurnHandle, *, on_accepted: Callable[[], None] | None = None
@@ -902,6 +1003,9 @@ class RuntimeAdapter(Adapter):
             or state.observed_terminal is not None
             or state.exit_event is not None
             or state.cancelled
+            or state.timed_out
+            or state.deadline is not None
+            and state.deadline.expired()
             or state.process is not None
             and state.process.child.returncode is not None
         ):
@@ -909,6 +1013,9 @@ class RuntimeAdapter(Adapter):
         # Decide before the first await: a subsequent runtime terminal must not
         # turn an already accepted request into a rejected late cancellation.
         state.cancelled = True
+        self._ensure_cancel_cleanup(state)
+        if state.deadline is not None and state.deadline_active:
+            state.deadline.reschedule(None)
         if on_accepted is not None:
             on_accepted()
         try:
@@ -940,10 +1047,11 @@ class RuntimeAdapter(Adapter):
         recorder: Recorder,
         *,
         isolation: CodexIsolation | None = None,
+        cleanup_timer: asyncio.Timeout | None = None,
     ) -> tuple[str, int]:
         try:
             process = await self._spawn(argv, cwd, recorder, isolation=isolation)
-        except SpawnFailed:
+        except (SpawnFailed, _ExecutionDeadlineExpired):
             # Process.start distinguishes a confirmed executable-launch failure
             # from failure while owning or cleaning up a newly created child.
             raise
@@ -967,6 +1075,15 @@ class RuntimeAdapter(Adapter):
                 lines.append(json.dumps(value) if isinstance(value, dict) else value)
             return "\n".join(lines), await process.wait_exited()
         finally:
+            if (
+                self.deadline_at is not None
+                and cleanup_timer is not None
+                and not cleanup_timer.expired()
+            ):
+                # The completed read or its failure is already known. Cleanup
+                # has the transport's bounded grace, never the execution timer.
+                # The caller rearms the original D only before its next I/O.
+                cleanup_timer.reschedule(None)
             try:
                 if isolation is not None:
                     await isolation.terminate(process, self.grace)
@@ -1121,6 +1238,7 @@ class RuntimeAdapter(Adapter):
             with self._recorder(
                 "environment-" + uuid4().hex, cwd, acquisition=log_acquisition
             ) as recorder:
+                self._check_execution_deadline()
                 isolation = CodexIsolation.create(
                     cwd,
                     recorder,
@@ -1130,12 +1248,13 @@ class RuntimeAdapter(Adapter):
                 )
                 process = None
                 try:
-                    async with asyncio.timeout(self.timeout):
+                    async with self._execution_timer() as deadline:
                         version, code = await self._collect(
                             [self.executable, "--version"],
                             cwd,
                             recorder,
                             isolation=isolation,
+                            cleanup_timer=deadline,
                         )
                         if code != 0 or version.strip() != VERSION:
                             raise RuntimeFailure(
@@ -1144,6 +1263,7 @@ class RuntimeAdapter(Adapter):
                                     raw_type="adapter.isolation_failed",
                                 )
                             )
+                        self._resume_execution_timer(deadline)
                         process = await self._spawn(
                             [self.executable, "app-server", "--strict-config"],
                             cwd,
@@ -1267,15 +1387,22 @@ class RuntimeAdapter(Adapter):
                 with self._recorder(
                     "environment-" + uuid4().hex, cwd, acquisition=log_acquisition
                 ) as recorder:
-                    async with asyncio.timeout(self.timeout):
+                    async with self._execution_timer() as deadline:
                         version_text, version_exit = await self._collect(
-                            [self.executable, "--version"], cwd, recorder
+                            [self.executable, "--version"],
+                            cwd,
+                            recorder,
+                            cleanup_timer=deadline,
                         )
                         if version_exit != 0:
                             raise ValueError("version check exited unsuccessfully")
                         version = string_value(version_text.strip(), "CLI version")
+                        self._resume_execution_timer(deadline)
                         auth_text, auth_exit = await self._collect(
-                            [self.executable, "auth", "status"], cwd, recorder
+                            [self.executable, "auth", "status"],
+                            cwd,
+                            recorder,
+                            cleanup_timer=deadline,
                         )
                         auth = object_value(
                             strict_json_loads(auth_text),

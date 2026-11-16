@@ -26,3 +26,13 @@ Process 拿到实际 handle 后先登记本地所有权，再发布给 ledger；
 Recorder 只累计成功写入并 flush 的脱敏 UTF-8 字节、记录数及 SHA256。序列化、write、flush、close 失败会永久标记不健康。文件还在写时不读取或 hash；关闭后核对原 regular file 的 dev/inode、模式、字节数、hash 及读取前后的稳定元数据。同路径替换、软链、追加、截断、改写或模式变化均不能 seal；已观察到篡改后恢复文件也不能恢复健康。
 
 快照保留当时的值。以后再次真实清理可产生新的资源事实，但不会改写旧快照或使失败日志重新健康。持久化、当前尝试事务门禁和产物采纳由后续 planning runner 负责；T37 仅提供实例内收据，没有执行真实产品权限探测。
+
+## T39：共享截止时间
+
+`RuntimeAdapter` 与 `ImplementationRuntimeAdapter` 可显式接收 `deadline_at`，它是调用者事件循环 `loop.time()` 的绝对时刻。构造时拒绝非数值、bool、NaN 和无穷值；有限但已过期的值合法，操作开始后产生 TIMEOUT。`None` 保持每次预检或 turn 各自的原 timeout。后续 runner 在预检之前只计算一次 D，并为同一实例后续调用保留原 D，不持久化 monotonic 数字。
+
+显式 D 已过时，在实际 spawn、Codex thread/start 和 turn/start 前同步拒绝，不能依靠 timeout 的下一次调度。操作仍登记日志和 ledger，辅助进程只进入 receipt，不制造模型 ProcessExited。
+
+显式 D 的 active I/O 与清理分开：版本收集完成后暂解除当前 timer，清理结束时在下一次认证/App Server I/O 前重查并恢复原 D；最终预检结果取得后不再重新计时，清理可以越过 D 并返回真实环境。D 不随清理延长，后续模型仍可能已无执行预算。模型首次终态继续解除计时，尾部解析和清理沿用独立 grace；矛盾输出仍是协议错误。
+
+取消接受先于 I/O，并保持同步回调语义。取消先被接受时解除模型 timer，另行安排 grace 停止任务；回调异常仍传播，但不能抹掉已安排的停止。模型 handle 尚未返回时，由已启动任务的取消进入既有 shielded 创建清理。Codex interrupt 发送也有 grace 限制，不允许 writer.drain 挂起使停止无限等待。停止任务失败会唤醒仍等待活进程的 reader，使原 finally 明确记录 cleanup_incomplete；不能伪造退出。超时先确定后，迟来的 cancel 返回 false，保持 TIMEOUT。

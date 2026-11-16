@@ -36,6 +36,15 @@ def emit_raw(data, stream="stdout"):
     os.write(1 if stream == "stdout" else 2, data)
 
 
+def deadline_terminal_gate():
+    # T39 only: the host observes the actual first terminal before releasing
+    # contradictory wire output. Existing modes do not use this gate.
+    release = Path(os.environ["FAKE_DEADLINE_RELEASE"])
+    capture("deadline-terminal-gate", pid=os.getpid())
+    while not release.exists():
+        time.sleep(0.005)
+
+
 capture(
     "spawn",
     argv=args,
@@ -239,6 +248,16 @@ if provider == "claude":
         result.pop("structured_output")
         result["result"] = '{"summary":"shadowed value","summary":"ok","findings":[]}'
     emit(result)
+    if mode == "deadline-late-contradictory":
+        deadline_terminal_gate()
+        emit(
+            {
+                **result,
+                "is_error": True,
+                "terminal_reason": "api_error",
+                "result": "late failure",
+            }
+        )
     if implementation and mode == "implementation-signal-exit":
         os.kill(os.getpid(), signal.SIGTERM)
     if mode == "duplicate":
@@ -646,6 +665,25 @@ for line in sys.stdin:
                 "params": {"threadId": thread_id, "turn": turn},
             }
         )
+        if mode == "deadline-late-contradictory":
+            deadline_terminal_gate()
+            emit(
+                {
+                    "method": "turn/completed",
+                    "params": {
+                        "threadId": thread_id,
+                        "turn": {
+                            **turn,
+                            "status": "failed",
+                            "items": [],
+                            "error": {
+                                "message": "late failure",
+                                "codexErrorInfo": "other",
+                            },
+                        },
+                    },
+                }
+            )
         if implementation and mode == "implementation-signal-exit":
             os.kill(os.getpid(), signal.SIGTERM)
         if mode == "mcp-after-terminal":

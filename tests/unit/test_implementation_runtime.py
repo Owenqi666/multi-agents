@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from multi_agent.adapters import codex_isolation
+from multi_agent.adapters import runtime as runtime_module
 from multi_agent.adapters.base import Permission, SessionConfig
 from multi_agent.adapters.codex_isolation import CodexIsolation
 from multi_agent.adapters.implementation_runtime import ImplementationRuntimeAdapter
@@ -115,7 +116,14 @@ def synthetic_environment(tmp_path, monkeypatch):
 
 
 def _runtime(
-    tmp_path, monkeypatch, workspace, provider, mode="success", *, schema=True
+    tmp_path,
+    monkeypatch,
+    workspace,
+    provider,
+    mode="success",
+    *,
+    schema=True,
+    deadline_at=None,
 ):
     monkeypatch.setenv("FAKE_RUNTIME_MODE", mode)
     capture = tmp_path / "capture.jsonl"
@@ -134,6 +142,7 @@ def _runtime(
         output_schema={"type": "object"} if schema else None,
         timeout=3,
         grace=0.05,
+        deadline_at=deadline_at,
     )
     config = SessionConfig(
         "requested-model", "high", Permission.WORKSPACE_WRITE, Path(workspace.root)
@@ -735,3 +744,232 @@ def test_implementation_runtime_invalid_policy_allocates_no_isolation_owner(
         if location == "control":
             control.unlink()
             parked_control.rename(control)
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize("absolute", [False, True], ids=["default-none", "absolute"])
+def test_implementation_runtime_passes_shared_deadline(
+    owned_workspace, tmp_path, monkeypatch, provider, absolute
+):
+    async def run():
+        loop = asyncio.get_running_loop()
+        deadline_at = loop.time() + 60 if absolute else None
+        adapter, config, capture = _runtime(
+            tmp_path, monkeypatch, owned_workspace, provider, deadline_at=deadline_at
+        )
+        assert adapter.deadline_at == deadline_at
+        assert adapter.timeout == 3
+        observed = []
+        execute = getattr(adapter, f"_{provider}")
+
+        async def observe_timer(state, recorder):
+            # Capture the active timer before Completed legitimately disables it.
+            observed.append((state.deadline.when(), loop.time()))
+            await execute(state, recorder)
+
+        monkeypatch.setattr(adapter, f"_{provider}", observe_timer)
+        environment = await adapter.check_environment()
+        assert environment.logged_in is True
+        results = []
+        for _ in range(2):
+            before = loop.time()
+            events, result = await _collect(adapter, config)
+            when, observed_at = observed[-1]
+            if absolute:
+                assert when == deadline_at
+            else:
+                assert before + adapter.timeout <= when <= observed_at + adapter.timeout
+            assert adapter.deadline_at == deadline_at
+            results.append((events, result))
+        assert len(observed) == 2
+        if not absolute:
+            assert observed[1][0] > observed[0][0]
+        return adapter, config, capture, results
+
+    adapter, config, capture, results = asyncio.run(run())
+    for events, result in results:
+        assert isinstance(result.terminal, Completed)
+        assert result.terminal.reported_model == (
+            "actual-claude" if provider == "claude" else None
+        )
+        started = next(event for event in events if isinstance(event, SessionStarted))
+        assert started.reported_model is None and started.reported_effort is None
+        assert result.process_exit is not None
+        assert events[-1] == result.process_exit
+        assert result.process_exit.exit_code == 0
+        assert not any(isinstance(event, Error) for event in events)
+    assert not (config.cwd / "nope").exists()
+    records = _records(capture)
+    model_spawns = [
+        row
+        for row in records
+        if row["kind"] == "spawn"
+        and row["cwd"] == owned_workspace.root
+        and row["argv"][:1] in (["-p"], ["app-server"])
+    ]
+    assert len(model_spawns) == 2
+    if provider == "claude":
+        for spawn in model_spawns:
+            argv = spawn["argv"]
+            assert argv[:2] == ["-p", "literal ; `touch nope` $(touch nope)"]
+            assert argv[argv.index("--tools") + 1] == ",".join(TOOLS)
+            assert argv[argv.index("--permission-mode") + 1] == "acceptEdits"
+            assert argv[argv.index("--permission-prompts") + 1] == "none"
+            assert {"--restricted", "--safe-mode", "--strict-mcp-config"} <= set(argv)
+    else:
+        policies = [
+            row["config"] for row in records if row["kind"] == "implementation-config"
+        ]
+        assert policies[0]["default_permissions"] == "multi-agent-frozen-review"
+        writes = [
+            policy for policy in policies if policy["default_permissions"] == PROFILE
+        ]
+        assert len(writes) == 2
+        for policy in writes:
+            assert policy["permissions"] == {
+                PROFILE: {
+                    "filesystem": {
+                        ":minimal": "read",
+                        owned_workspace.root: "write",
+                        str(Path(owned_workspace.root) / ".git"): "deny",
+                        owned_workspace.git_directory: "deny",
+                        owned_workspace.repository: "deny",
+                    },
+                    "network": {"enabled": False},
+                }
+            }
+        requests = [row["message"] for row in records if row["kind"] == "request"]
+        for method in ("thread/start", "turn/start"):
+            matching = [
+                request["params"]
+                for request in requests
+                if request.get("method") == method
+            ]
+            assert len(matching) == 2
+            for params in matching:
+                assert params["approvalPolicy"] == "never"
+                assert not {"sandbox", "sandboxPolicy"} & params.keys()
+    receipt = adapter.ownership_receipt()
+    assert receipt.processes_stopped and receipt.resources_released
+    assert receipt.logs_sealed and receipt.outputs_complete
+    assert all(not Path(isolation.root).exists() for isolation in receipt.isolations)
+    assert all(not Path(directory.root).exists() for directory in receipt.directories)
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+@pytest.mark.parametrize(
+    "invalid",
+    [float("nan"), float("inf"), -float("inf"), True, False, "123.0", object()],
+    ids=[
+        "nan",
+        "positive-infinity",
+        "negative-infinity",
+        "true",
+        "false",
+        "string",
+        "object",
+    ],
+)
+def test_implementation_runtime_rejects_invalid_deadline_before_resources(
+    tmp_path, monkeypatch, provider, invalid
+):
+    touched = []
+
+    def forbidden(*args, **kwargs):
+        touched.append((args, kwargs))
+        raise AssertionError("invalid deadline allocated runtime resources")
+
+    monkeypatch.setattr(runtime_module, "OwnershipLedger", forbidden)
+    monkeypatch.setattr(runtime_module, "Recorder", forbidden)
+    monkeypatch.setattr(RuntimeAdapter, "_spawn", forbidden)
+    with pytest.raises(ValueError, match="deadline"):
+        ImplementationRuntimeAdapter(
+            provider,
+            workspace=object(),
+            executable="must-not-execute",
+            log_dir=tmp_path / "logs",
+            deadline_at=invalid,
+        )
+    assert touched == []
+    assert not (tmp_path / "logs").exists()
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_implementation_runtime_expired_deadline_reports_timeout_without_spawn(
+    owned_workspace, tmp_path, monkeypatch, provider
+):
+    spawns = []
+
+    async def forbidden_spawn(*args, **kwargs):
+        spawns.append((args, kwargs))
+        raise AssertionError("expired deadline spawned a process")
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", forbidden_spawn)
+
+    async def run():
+        deadline_at = asyncio.get_running_loop().time() - 1
+        adapter, config, capture = _runtime(
+            tmp_path, monkeypatch, owned_workspace, provider, deadline_at=deadline_at
+        )
+        assert adapter.deadline_at == deadline_at
+        assert adapter.ownership_receipt().operations == ()
+        with pytest.raises(RuntimeFailure) as failed:
+            await adapter.check_environment()
+        assert failed.value.event.failure_category == FailureCategory.TIMEOUT
+        assert failed.value.event.raw_type != "adapter.cleanup_incomplete"
+        events, result = await _collect(adapter, config)
+        return adapter, capture, events, result
+
+    adapter, capture, events, result = asyncio.run(run())
+    assert spawns == []
+    assert not capture.exists()
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category == FailureCategory.TIMEOUT
+    assert result.terminal.raw_type != "adapter.cleanup_incomplete"
+    assert result.process_exit is None
+    assert not any(
+        isinstance(event, (Completed, SessionStarted, ProcessExited))
+        for event in events
+    )
+    receipt = adapter.ownership_receipt()
+    assert len(receipt.operations) == 2
+    assert receipt.processes == ()
+    assert (
+        receipt.processes_stopped and receipt.resources_released and receipt.logs_sealed
+    )
+    assert len(receipt.logs) == 2
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_implementation_runtime_shared_deadline_preserves_session_boundaries(
+    owned_workspace, tmp_path, monkeypatch, provider
+):
+    async def run():
+        deadline_at = asyncio.get_running_loop().time() + 60
+        adapter, config, capture = _runtime(
+            tmp_path, monkeypatch, owned_workspace, provider, deadline_at=deadline_at
+        )
+        review = RuntimeAdapter(
+            provider, log_dir=tmp_path / "review-logs", deadline_at=deadline_at
+        )
+        with pytest.raises(ValueError, match="read-only"):
+            await review.start_session(config)
+        with pytest.raises(ValueError, match="workspace-write"):
+            await adapter.start_session(
+                replace(config, permission=Permission.READ_ONLY)
+            )
+        with pytest.raises(ValueError, match="owned root"):
+            await adapter.start_session(
+                replace(config, cwd=Path(owned_workspace.source))
+            )
+        nested = config.cwd / "nested"
+        nested.mkdir()
+        with pytest.raises(ValueError, match="owned root"):
+            await adapter.start_session(replace(config, cwd=nested))
+        await adapter.start_session(replace(config, cwd=nested / ".."))
+        assert not capture.exists()
+        assert adapter.ownership_receipt().operations == ()
+        assert review.ownership_receipt().operations == ()
+        assert not adapter.log_dir.exists() and not review.log_dir.exists()
+
+    asyncio.run(run())
