@@ -59,3 +59,21 @@ Git common directory 下的 `multi-agent-task-preparations` 是宿主 registry�
 创建失败、CAS 冲突或提交后抛错都不能产生 launch。T43 保留负向 marker 和实际残留及异常路径，不额外清理；T31 自身已有的安全失败清理保持。旧 Prepared 只可 inspect，不能重新派发。context 的控制 hash 也不提供 Completed、ProcessExited、process_stopped 或结束执行 manifest 的资格。
 
 遇到未知残留时，保留数据库、registry、工作区及原异常，停止继续派发，核对原 controller 的资源记录和实际文件身份。锁可取得或 PID 消失不证明进程组已经停止；手工删除 marker 也不能替代核对。证据绑定的人工恢复入口留给 S8，当前不提供绕过或自动收养流程。
+
+## 一次性执行证据（T44）
+
+`bind_task_execution` 在 T43 作用域内把尚未使用的 launch 交给同一个全新 ImplementationRuntimeAdapter。它验证完整准备记录和公开配置，要求实际 ownership receipt 没有 operation 或 resource，再 claim launch。binding 的普通副本共享一次消费状态；数据库归档不能恢复 binding，也不能换一个同路径 adapter 继续封存。
+
+`seal_task_execution` 只读取该 adapter 的实际 result 与 receipt，不运行、取消或清理进程，也不写数据库。首次调用立即消费资格，分别独占写入原 logs 下的 `.seal-attempt.json` 和 `execution.json`；失败残留原地保留，不能取第二份更有利的收据重封。manifest 保存实际终态与退出、环境观察、runtime 报告字段及其来源、所有权收据、派生事实、最终摘要和输出解析结果。未知 model/effort 继续为 null；环境能力列表和请求不能代替生效值。实际非零退出也不改写模型 Completed。
+
+轻检查只核 live lease、数据库和目录身份、当前 Started/Prepared 及公开配置。只有首份实际 receipt 已确认 processes_stopped，才调用完整 context 检查与工作区扫描；否则 final_digest 为 null 且不具备 qualified。停止为 true 后扫描失败仍保留原 receipt，后续 writer 必须独立保存真实停止事实，不能用初始摘要顶替未知结束摘要。
+
+原始日志必须先通过目录范围检查。未 sealed、未关闭、不健康或缺少实际元数据的日志不读取、不补 hash；完整 sealed 日志按 receipt 中的 byte_count 有界读取，核对 regular file、身份、模式、大小和 hash。控制文件还限制为 16 MiB。这个有界保证只针对本模块的核验；既有 Recorder 的 receipt getter 对 closed file 仍有自己的 EOF 检查。
+
+输出只接受最多 1 MiB UTF-8 的严格四字段 JSON，task_hash 必须匹配当前卡。completed 的 required_paths 必须为空；scope_blocked 需要非空说明和具体安全相对路径。路径保留字面量 `[slug]`、`(group)`，拒绝 glob、逃逸、控制字符、Git 元数据及规范化后重复的别名。这是模型报告，不能自动扩写入范围或证明代码、测试结果。
+
+qualified 另需当前尝试仍 awaiting_delivery、实际成功及退出、与 Observed 一致的环境、完整且停止的资源与封存日志、稳定 context/最终工作区及合法输出。scope_blocked 可 qualified，但 delivery_eligible 为 false。接受的取消或 EvidenceRejected 永久撤销资格。核验实际 terminal/exit 使用同 attempt 的完整历史，包括 HISTORY_ONLY，取消后晚到的 Completed 仍如实保存。manifest 绑定首次样本时的历史前缀，允许随后追加无害的迟到结果，同时重新检查实际事件冲突、当前尝试和撤销。
+
+writer 应先持久化实际事件与环境，完成停止核对，再 seal。TaskReconciled 始终写实际 stop 与实际扫描得到的 final_digest；只有 qualified 且没有宿主错误时，才写执行 manifest 的 path/hash。合法 scope_blocked 随后按 report 原样写 TaskScopeBlocked；不合格的成功产物只在 awaiting_delivery 写 TaskEvidenceRejected，其他阶段保存 Diagnostic。T44 提供上述边界，运行与持久化编排由后续 writer 实现。
+
+`inspect_task_execution` 只核正向归档：要求最新 Reconciled 的真实停止、已知最终摘要及精确执行 path/hash，再核 marker、manifest、原始日志、原 context、实际最终工作区及完整历史。负向或缺锚点记录直接拒绝，不扫描其工作区。后续 planning_required 只允许与原 scope_blocked 报告完全一致的 handback；旧工作区、context 和 logs 必须原地保留，任何变化使核验失败。归档不产生 live owner；候选消费者仍须检查当前状态与 delivery_eligible。

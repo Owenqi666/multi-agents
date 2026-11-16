@@ -1,0 +1,123 @@
+{
+  "schema_version": 1,
+  "id": "T-0044",
+  "goal": "将本次managed实现的真实运行结果、所有权收据、最终工作区扫描和严格输出解析绑定到独占执行manifest，拒绝旧运行、取消或不完整证据重新取得候选交付资格。",
+  "baseline_commit": "7ff2e5ad2f63da2c7caf384485773e2c8126eaba",
+  "write_scope": [
+    "src/multi_agent/cli/task_output.py",
+    "src/multi_agent/cli/task_evidence.py",
+    "tests/unit/test_task_output.py",
+    "tests/unit/test_task_evidence.py",
+    "docs/task-execution.md",
+    "docs/deliveries/T-0044.md",
+    "tasks/T-0044-task-evidence.json"
+  ],
+  "depends_on": [
+    "T-0043"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and unchanged runtime",
+      "definition": "继续S5b，新增输出解析和执行证据边界；不启动CLI、预检、模型、测试或审核，不发取消/信号，不等待cleanup、不自动重试，不冻结candidate或增加状态/表。本卡的bind/seal/inspect不写DB；测试及后续writer通过既有Task事件持久实际值。只读复用T43、T40及现ImplementationRuntimeAdapter public ownership/result API，不改core/store/adapters/既有planning证据/hash。"
+    },
+    {
+      "name": "strict implementation report",
+      "definition": "cli/task_output.py定义frozen TaskImplementationReport(task_hash,outcome,summary,required_paths:tuple[str,...])，parse_task_output(text:str,card:TaskCard)严格解析单个最多1MiB UTF8 JSON object。复用现strict_json_loads的重复键/非有限/Unicode/depth128约束及T43 task_output_schema；exact四字段、task_hash等card.task_hash。completed required_paths必须空；scope_blocked summary.strip非空且required_paths非空，每项具体安全repo相对路径，不允许glob/绝对/反斜杠/点段/控制字符/Git metadata别名，NFC+casefold后不得重复，保留原文本与顺序。原summary只是模型报告，不能变成测试/变更范围证明，不自动扩scope。"
+    },
+    {
+      "name": "fresh live binding",
+      "definition": "bind_task_execution(launch:TaskLaunch,run_id:str,adapter:ImplementationRuntimeAdapter)->TaskExecutionBinding只接受该实际类或子类及尚在T43 live scope的本次launch。先核当前exact run/attempt/Started/Prepared、完整context、provider/runtime映射、workspace完整记录、真实exe路径/identity/hash、output_schema、T43派生logdir及身份；adapter.ownership_receipt必须尚无operations/acquisitions/processes/isolations/logs/directories，再调用launch.claim一次。缓存同一launch/store/lease/adapter对象、实际owner_id、DB/root/logdir身份、exactpair hashes及原prepared。不能只在seal时接受同路径新adapter；不能从DB路径恢复binding或创建/替换logs。binding记录的model/effort仍是requested，future writer须由prepared构造SessionConfig；本卡不访问private _turns/_sessions或把请求视为实际报告。"
+    },
+    {
+      "name": "one actual sample and one seal",
+      "definition": "async seal_task_execution(binding,*,turn:TurnHandle|None,environment:EnvironmentInfo|None)->TaskExecutionManifest只从binding.adapter取实际result(turn)及ownership_receipt；turn None时result为空且不冒充预检exit为model exit。只能封存一次，普通binding副本共享消费状态，首次调用即消费；unique .seal-attempt.json记录第一份实际receipt/result/binding，execution.json随后独占写入，均0400/canonical/self inode/hash验证。失败和partial marker保留，不允许后续更稳定receipt重封。函数不调用环境、start_session、submit_turn、events、cancel，不改变DB；actualenv来自caller先前实际预检结果，必须与本attempt的Observed吻合，不从policy或catalog默认填actual model/effort。"
+    },
+    {
+      "name": "light guard before workspace access",
+      "definition": "无需改T43：bind时完整check并缓存身份。seal在await前后校验live lease/锁fd身份、实际DB inode、current exact attempt/pair、root/logdir canonical身份和派生路径，这些轻检查不扫描workspace。取第一份actual receipt/result后，仅receipt.processes_stopped为true才可调用launch.check/inspect_task_context及实际inspect_workspace取得final_digest；false分支绝不调用它们，final_digest=None且qualified=false，只写负向取证。stoptrue后context或workspace检查失败可抛原异常并保留marker；future writer仍须独立记录actual stop，不把该事实改false、不用initialdigest顶替。原context manifest不修改，不作为结束receipt。"
+    },
+    {
+      "name": "actual facts and artifact qualification",
+      "definition": "manifest分别绑定task/rules/plan hashes、exact Started/Prepared hashes、context/workspace/policy/full dispatch、实际owner_id/logdir身份；保存实际完整TurnResult/EnvironmentInfo/RuntimeOwnershipReceipt、派生独立stop/released/EOF/log gates、initialdigest、真实finaldigest|null、从actual Completed.result解析的report或validation_error。qualified要求当前原attempt未被APPLIED取消/证据拒绝、实际runtime成功与真实model exit、exact environment+turn operations、非空实际processes、settled/stop/resources/EOF/sealed logs全真、context/文件稳定、finaldigest已知、report合法绑定exact task。非零exit原样保留，不覆盖Completed或推断失败。合法scope_blocked是qualified执行报告但delivery_eligible=false；仅qualified且outcome completed时delivery_eligible=true，仍不是候选/测试/审核/接受证据。"
+    },
+    {
+      "name": "cancellation and full actual history",
+      "definition": "实际adapter TurnResult原样保存，不以core已应用runtime替换。accepted CancelRequested之后实际Completed可因先收到exit成为HISTORY_ONLY，须在同attempt完整load_task_history中核确切actualterminal/exit（含HISTORY_ONLY），不能丢弃/改成Error以对齐APPLIED-only events。qualified只采用APPLIED取消/证据拒绝作为撤销，不把晚到HISTORY_ONLY CancelRequested视为已接受。取消、failed、EvidenceRejected、缺原实际event或冲突events都不qualified；读取归档不能复活。任一真实字段缺失仍None，不能用request/初始workspace/辅助进程报告填补。"
+    },
+    {
+      "name": "sealed logs and filesystem discipline",
+      "definition": "使用T43已有logs目录/绑定inode，不mkdir或收养。先拒所有日志path越界/重复/与marker或manifest冲突，不能打开外部路径。未sealed/未closed/不healthy/缺actual identity-byte_count-sha的日志仅保留真实receipt并标未核验，不能读取增长中的JSONL到EOF或为其补封存hash。仅完整sealed日志按已报告byte_count作有界流式读取并检查实际identity/mode/size/hash；不设旧原始日志总量截断，但不能无限追增长文件。控制index/marker最大16MiB；读取NOFOLLOW|NONBLOCK/regular/稳定身份，写EXCL/fsync/0400，用目录fd绑定。marker写后在所有await/读取后复查currentpair、lease、rawlog/receipt一致性，禁止用第二份新receipt提升资格。"
+    },
+    {
+      "name": "archive inspector and reconciliation anchor",
+      "definition": "inspect_task_execution(store,run_id,attempt,lease)->TaskExecutionManifest只核持久化归档，不返回binding或实际活owner。正向核验要求该attempt最新TaskReconciled具有process_stoppedtrue、非空finaldigest及精确派生execution.json path/hash，读取唯一marker/index并校验当前控制/工作区最终digest、原owner/receipt schema/全部正向事实、rawlogs、actualevent/fullhistory和report。不能仅凭文件路径或core.delivery_ready判断。允许后续合法TaskScopeBlocked阶段核历史qualified报告，但delivery_eligible仍false；APPLIED EvidenceRejected/取消永久失去资格。负向manifest无合格DB receipt时不授予归档正向资格；不能依其派生路径猜记录已被DB信任。"
+    },
+    {
+      "name": "receipt codec and owner lifetime",
+      "definition": "可只读调用T40 planning_evidence._receipt作通用RuntimeOwnershipReceipt schema/links验证（以及纯facts派生），但不复用planning state/request/qualification语义、不构造假PlanningLogDirectory，不改该文件。任务的文件allowlist与binding独立实现，禁止宽泛shared framework。binding/scope结束即失效；同一owner不能替换成新adapter或把空receipt当停止。实际stop与resources/log qualification分开，日志写/扫描失败由原异常暴露且保留已写marker；清理错误不掩盖首异常。"
+    },
+    {
+      "name": "future writer consumption and offline tests",
+      "definition": "后续writer负责先持久化实际runtime事件与Observed、完全消费/停止后调用seal，再TaskReconciled写actualstop和实际扫描finaldigest；只有qualified且无宿主问题时写execution path/hash，否则保持logpairNone，防止core门槛暂时冒进。合法scope_blocked在正向receipt后发TaskScopeBlocked；非法输出或不合格成功只在AWAITING_DELIVERY发TaskEvidenceRejected，其它phase用Diagnostic。T44测试可手动发既有事件验证消费，但不实现writer。使用T43实际tmpGit/context与synthetic ImplementationRuntimeAdapter子类/真实Recorder，明确所有虚构process ownership；可有固定本地Python child验证资源日志，不运行模型CLI。完整verify与正常commit，不改旧检查。"
+    },
+    {
+      "name": "scope handback remains exact report",
+      "definition": "seal正向资格仅在当前AWAITING_DELIVERY且尚无ScopeBlocked/EvidenceRejected接受；归档inspect可在后续PLANNING_REQUIRED核原合法scope_blocked，但该attempt APPLIED TaskScopeBlocked必须精确等于report.summary/required_paths，且report outcome为scope_blocked。不能用completed report配宿主另造scope reason恢复delivery_eligible；完成报告的候选consumer仍须当前core状态允许并使用inspect的delivery_eligible，不仅读取manifest布尔值。"
+    },
+    {
+      "name": "exact files and negative inspector result",
+      "definition": "本attempt logs固定为Path(prepared.context.path).parent / logs（也是launch.log_dir），T43保证每attempt全新根。唯一文件为该目录下.seal-attempt.json与execution.json；index一词仅指execution.json，不新增第三文件或按stage重建目录。inspect遇无最新Reconciled、stopfalse、缺finaldigest/path/hash、负向manifest或qualifiedfalse一律ValueError，不返回看似受信的negative归档；先拒这些门禁，负向路径不扫描workspace。实际filesystem I/O错误可保留原异常链。合法scopeblocked消费顺序为seal(qualifiedtrue,deliveryeligiblefalse)→TaskReconciled(真实finaldigest,True,detail,execution path/hash)→TaskScopeBlocked(report.summary,report.required_paths)，正向receipt就是这对已qualified执行index path/hash，不是context hash。"
+    },
+    {
+      "name": "archive retention and concrete report paths",
+      "definition": "每attempt workspace/context/logs原地保留，scope handback不reset/继续写旧workspace，重试/重新规划使用新root；不改原记录或隐藏删除。归档检测到旧工作区变化、删除或重置即拒资格，不承诺修改后仍可验证。required_paths采用安全POSIX具体路径而非scope pattern：允许literal []{}()（例如src/app/[slug]/page.tsx、(group)），这些字符不当glob解析；仍拒*?、绝对、反斜杠、空/点段、尾点/空格、Unicode Cc、NFC+casefold Git元数据段及重复alias。可基于snapshot._path加明确检查，不能复用会误拒literal brackets的validate_path_pattern，也不额外拒目录/子文件同时报告。"
+    },
+    {
+      "name": "manifest return values and public adapter configuration",
+      "definition": "TaskExecutionManifest至少返回path:str/identity tuple/byte_count:int/sha256:str/qualified:bool/receipt:RuntimeOwnershipReceipt/delivery_eligible:bool/final_digest:str|None/report:TaskImplementationReport|None/validation_error:str|None/actual_result:TurnResult/environment:EnvironmentInfo|None，使writer无需再采样或重读JSON。bind核adapter.timeout/grace与policy数值一致并拒bool/非法数值；缓存并在seal前后复核provider/executable/workspace/output_schema/log_dir/timeout/grace及公开deadline_at配置不变。deadline_at只记录实际构造值且有限或None，不推断生效超时或请求model/effort；future writer负责按policy构造共同deadline和SessionConfig。"
+    },
+    {
+      "name": "reported environment and existing recorder limit",
+      "definition": "专测environment与TaskEnvironmentObserved不符/缺失、turn None预检-only、reported model/effort None保留不得被policy/request补齐。T44 byte_count有界保证只适用于本模块的raw-log核验；现T37 Recorder在ownership_receipt中对closed日志的既有_matches_closed_file会读到EOF，本卡不改或宣称已使整个public receipt getter面对恶意宿主持续追加有界。unsealed日志本卡不打开，测试保留真实Recorder而非用mock遮掉此边界。"
+    },
+    {
+      "name": "history snapshot without late-result pollution",
+      "definition": "在actual result await与首receipt取样后捕获当前完整history前缀，marker/index绑定其length/hash；后续只要求此前缀不被改写，append-only后缀允许并重新核current exactpair/actual terminal-exit/撤销事件。旧attempt的late HISTORY_ONLY追加或当前未接受的HISTORY_ONLY cancel不得仅因全history长度变化使当前合格执行失败；当前attempt切换、原prefix改写、actualevent冲突、APPLIED取消/EvidenceRejected则拒资格。archive也校验原prefix并检查后续同attempt永久撤销/精确ScopeBlocked。不同raw_type或任一actual字段视为冲突；完全相同terminal/exit重复可canonical去重。"
+    },
+    {
+      "name": "runtime observations remain reported",
+      "definition": "manifest另外保存从选中attempt.runtime取得的runtime_observations（含reported_model/effort及各EvidenceSource，未知None原样）。它与实际TurnResult分列：取消后core result可能None而actual Completed.result仍保留；不把late history-only或requested值回填到原runtime snapshot。正向归档核原实际运行观察一致，EnvironmentInfo.model_efforts只是报告的能力列表，不作为生效effort。"
+    }
+  ],
+  "deliverables": [
+    "严格绑定任务的四字段实现输出解析器。",
+    "fresh live adapter绑定及一次性执行证据封存；停止、最终workspace与artifact资格独立。",
+    "仅归档的manifest核验和完整离线故障/取消/迟到结果测试。"
+  ],
+  "acceptance_criteria": [
+    "test_task_execution_requires_fresh_live_binding：拒read-only adapter/已有operation或resource/替换owner或adapter/过期scope/错误request-workspace-schema-logdir，副本不能重复bind或seal。",
+    "test_task_execution_uses_t43_logs_without_recreating_or_adopting：只用已绑定目录，缺失/替换不重建，原context hash不变且无execution资格偷换。",
+    "test_task_output_rejects_wrong_task_and_invalid_outcome_semantics：严格schema、重复键/非有限/Unicode/depth/1MiB、wrong hash、unknown keys、completed paths和scopeblocked路径/alias语义。",
+    "test_task_execution_preserves_completed_with_nonzero_exit：实际Completed、非零真实model exit、reported未知值及源信息原样封存，资格依独立gates。",
+    "test_task_execution_cancelled_completed_never_qualifies：accepted取消前后两种Complete/exit顺序、HISTORY_ONLY actual成功、EvidenceRejected和晚到未接受cancel正确区分，无复活。",
+    "test_task_execution_keeps_stop_digest_and_log_qualification_independent：stop未知绝不扫描workspace，未封日志不读到EOF；stoptrue但scan/log失败不伪造false/initialdigest。",
+    "test_task_execution_final_digest_is_observed_not_initial：实际合法改动得到不同finaldigest，currentactual扫描与manifest/reconciliation一致才可核。",
+    "test_task_execution_scope_blocked_is_report_not_candidate：合法scopeblocked执行证据可qualified但不能deliveryeligible，core handback保留原成功与report，归档核验不重新派发。",
+    "test_task_execution_seal_is_exclusive_and_rechecks_current_attempt：await期间current/history/owner/receipt变化、两次seal/ordinarycopies/marker残留均不能更换证据或推进状态。",
+    "test_task_execution_rejects_raw_log_escape_symlink_fifo_and_changed_receipt：打开外部文件前拒路径，NOFOLLOW/NONBLOCK有界，id/hash/bytecount与实际ledger严格相同。",
+    "test_task_execution_inspection_is_archive_only：正向DB path/hash anchor、context/finalworkspace/rawlogs/expectedreport任一变化拒，不能制造binding或把user_supplied/legacy记录当managed证据。",
+    "test_task_execution_file_failure_retains_marker_and_never_reseals：marker/index/close失败保留首异常和实际样本路径，不删除/修补/再取更有利receipt。",
+    "完整lint/format/typecheck/unit/replay与正常commit hook通过，实际改动仅card内；无真实模型调用或权限探测。",
+    "test_task_execution_environment_and_reported_unknowns_are_exact：env缺失/与Observed不符不qualified；turn None不伪造model exit/terminal，reported model/effort None按原值保留。",
+    "test_task_execution_public_configuration_is_frozen：timeout/grace/provider/exe/schema/workspace/logdir/deadline配置在bind或seal不一致拒绝，不冒称已验证私有SessionConfig。",
+    "test_task_execution_late_history_only_does_not_pollute_current：允许原prefix后的旧attempt或未接受cancel history-only追加，仍核当前实际event和永久撤销；prefix被改写/current切换/同attemptactual冲突拒绝。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
