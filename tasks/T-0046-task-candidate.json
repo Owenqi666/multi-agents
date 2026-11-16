@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "id": "T-0046",
+  "goal": "保存固定候选与当前受管实现尝试及其执行证据的不可变关联，为独立测试提供可追溯输入，保留旧数据和迟到历史。",
+  "baseline_commit": "a2f9174f9b974d233ee9fcb9604769a6a5fe3d21",
+  "write_scope": [
+    "src/multi_agent/core/task_events.py",
+    "src/multi_agent/core/task_state.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/task_codec.py",
+    "src/multi_agent/store/task_store.py",
+    "tests/unit/test_task_candidate.py",
+    "tests/unit/test_task_candidate_store.py",
+    "tests/replay/test_task_candidates_replay.py",
+    "tests/replay/scenarios/candidates/task_candidate_*.json",
+    "docs/task-candidates.md",
+    "docs/deliveries/T-0046.md",
+    "tasks/T-0046-task-candidate.json"
+  ],
+  "depends_on": [
+    "T-0045"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and sequencing",
+      "definition": "S6第一张卡只做受信宿主候选的core/store契约，不运行Git、文件扫描、test进程或模型，不实现test/review/rework/CLI，不改现FrozenSnapshot/TestEvidence，也不声称记录证明实际Git对象或隔离。T47另卡连接T44 inspect与T31 freeze；阶段2仍单执行者、无自动接受或合并。"
+    },
+    {
+      "name": "immutable candidate event",
+      "definition": "新增frozen slots TaskCandidateFrozen，kind=task_candidate_frozen，字段delivery:WorkspaceDelivery、execution_log_path:str、execution_log_sha256:str，加入TaskEvent union。WorkspaceDelivery已有baseline,candidate,changed_paths,digest,ref,tree六字段直接复用。事件在APPLIED时沿既有managed attempt.events保存，不增加第二个mutable candidate表或TaskAttempt字段。"
+    },
+    {
+      "name": "derived state without invented phase",
+      "definition": "TaskState.current_candidate只从当前attempt APPLIED events返回TaskCandidateFrozen|None；旧attempt候选仍在旧events/历史。candidate_ready是managed、现delivery_ready、current_candidate存在且delivery.baseline==state.baseline_commit、delivery.digest==最新reconciliation.worktree_digest、execution两个字段完全匹配最新Reconciled的组合。现delivery_ready行为保持；不新增phase、不把未运行测试写为TESTING或accepted。"
+    },
+    {
+      "name": "pure transition admission",
+      "definition": "所有转移只登记于transitions.py。首次current candidate要求managed current、Prepared存在、delivery_ready、phase AWAITING_DELIVERY，delivery.baseline匹配task及Prepared.workspace.task_baseline，delivery.digest匹配最新current.reconciliation.worktree_digest，完整非空execution anchor精确等于最新Recon，ref精确为refs/multi-agent/candidates/<Prepared.workspace.owner_token>。这些是状态/来源不变量；core不读文件或验证Git存在。 delivery.digest来自T31 freeze_delivery内部inspect_workspace(...).digest，T44与T45的worktree_digest也来自同一个inspect_workspace算法和范围；本卡只比较这些受信实际值，不另算digest。"
+    },
+    {
+      "name": "single candidate and duplicates",
+      "definition": "每attempt最多一个不可变候选；完整事件相同重复为HISTORY_ONLY，任一delivery字段或anchor不同直接抛ValueError，不能替换已固定候选。重复不恢复撤销的资格。新候选不能在failed/cancelled/planning_required或legacy中发布；已存在同值重发可在终止阶段保留HISTORY_ONLY。候选存在后TaskScopeBlocked拒绝，不能把已冻结candidate改成范围交回。 当前转移判定顺序：先查已存在candidate；相同直接HISTORY_ONLY、不同ValueError；仅不存在时再核phase/资格及来源，不同候选即使处于终止阶段仍报immutable冲突。 PLANNING_REQUIRED当前表使用dict.fromkeys(_TASK_CLOSED)，须显式登记candidate handler而不是默认为None，保证首次不合格发布和不同候选不会被静默当history；回放/单元分别覆盖。"
+    },
+    {
+      "name": "negative reconciliation preserves history",
+      "definition": "候选发布后负向Reconciled的stop=false/digestNone或不同/anchorNone或不同使candidate_ready=false，但不删除原候选/actual runtime或自动改变phase；TaskEvidenceRejected按既有规则转FAILED并保留候选。后续是否能恢复资格仍完全取决于当前精确来源字段及既有phase，不为候选另设自动恢复动作；实际消费者还需T47边界重核。 具体允许AWAITING_DELIVERY之后真实positive Recon恢复完全相同digest/anchor时candidate_ready恢复；EvidenceRejected已改FAILED时不能恢复。"
+    },
+    {
+      "name": "atomic persistence API",
+      "definition": "TaskStore.record_task_candidate(run_id,envelope:TaskEnvelope,*,expected_history_length:int,expected_history_hash:str)->Disposition。只有TaskCandidateFrozen允许；BEGIN IMMEDIATE内读取state、完整ordered history(包括HISTORY_ONLY)，对当前attempt按task_execution_hash(history)及length作exact CAS，调用core.transitions.apply_task（纯函数接受CandidateFrozen，不禁止）、写state及appendhistory在同一事务。任一异常rollback。TaskStore.apply_task（公开持久化入口）禁止CandidateFrozen直接入口，防绕过CAS；继承PlanningStore自动获得此方法。"
+    },
+    {
+      "name": "late and unknown attempts",
+      "definition": "已开始旧attempt的candidate在同一事务内走既有current-attempt路由，保存HISTORY_ONLY且不修改当前/旧APPLIED events；旧结果不要求当时expected history仍一致。当前attempt必须CAS，含相同candidate重发；CAS miss不写state或history，caller用新的实际历史决定是否重发。future/zero/不存在attempt与未知run直接抛错，不产生记录。提交后caller异常不在store补猜；通过实际完整history核结果。 即使旧候选与该旧attempt的原候选不同或来自不合格旧attempt，也一律HISTORY_ONLY而非重审旧资格，完整event保留但不进入APPLIED events；不提前做current专属冲突/qualification检查。"
+    },
+    {
+      "name": "codec compatibility and migrations",
+      "definition": "task_codec显式编码/解码新candidate事件及六字段WorkspaceDelivery；tuple changed_paths roundtrip保持。旧TaskAttempt和旧TaskEnvelope编码JSON逐字兼容，旧无events/managed/logpair数据不填新字段。现JSON payload与history表可容纳新事件，故本卡无SQL schema变更、无迁移；记录理由，不改旧迁移。FrozenSnapshot/TestEvidence及旧snapshot_id不修改，用户提供记录不能变成工作台执行来源。"
+    },
+    {
+      "name": "independent tests and replays",
+      "definition": "新增独立core/store测试及4份合成JSON回放：candidate_published；candidate_revoked；candidate_late_after_retry；candidate_conflict。回放核最终状态与完整history disposition，重复运行同结果，无真实CLI/墙钟。首次red必须在缺接口时留存，然后实现green；race用两SQLite连接/门闩确认事务只有一个winner，不能靠sleep猜。"
+    },
+    {
+      "name": "boundary and validation limits",
+      "definition": "core/store信任已校验的字段形状，不在本卡新增路径语法、hex长度、空白/文件权限等通用防御；但来源等值、单candidate、phase和原子current检查属于状态不变量必须抛错。T47负责真实Git/path/hash/原manifest校验及文件与数据库之间不能原子的失败保留；此卡不得伪造证据来补齐。"
+    },
+    {
+      "name": "delivery and source protection",
+      "definition": "按task-card、state-change、verify；完整五步及正常commit hook，外部保留red/green与逐文件SHA。不改已有测试/回放/配置或protected files；需要scope外改动先交回重写卡。原始需求与本卡交Claude文字复核，正式dispatch前baseline更新实际T45 commit，检查ancestor和scope overlap。"
+    },
+    {
+      "name": "precise failure types",
+      "definition": "错误类型固定：非TaskCandidateFrozen的record_task_candidate输入抛TypeError；未知run沿现接口KeyError；attempt<1/future/无current、current CAS miss、终止阶段首次candidate、资格或来源不匹配、不可变字段冲突均ValueError；成功首次APPLIED、合法same duplicate或older迟到HISTORY_ONLY。普通TaskStore.apply_task遇任何CandidateFrozen抛ValueError且不写历史。core不吞异常；交易发生异常全rollback。"
+    },
+    {
+      "name": "separate replay schema namespace",
+      "definition": "四份新candidate JSON只放tests/replay/scenarios/candidates/，新runner只收集该目录task_candidate_*.json。根scenarios/*.json属于现review replay schema，不能让新schema进入旧glob，也不改旧runner过滤规则。初稿错放根目录导致旧审核回放4失败、包括新回放在内38通过，日志完整保留；修订卡后移动本次尚未提交的新文件并仅改新runner路径，不削弱旧检查。 新runner参数集合使用REQUIRED_SCENARIOS与实际stems的并集，并断言恰为四个指定名称，防止全缺文件空跑。验收根目录无新candidate残留；实际collect-only核原34个case ID不变并仅增4个candidate case。旧文件本次才创建、从未提交，移动前后SHA相同。"
+    }
+  ],
+  "deliverables": [
+    "当前attempt不可变候选事件与派生资格；不改变原runtime事实或旧快照来源。",
+    "原子fullhistory CAS候选持久化及晚到HISTORY_ONLY，旧JSON兼容。",
+    "独立单元/存储/回放验证与完整检查交付记录。"
+  ],
+  "acceptance_criteria": [
+    "test_candidate_requires_current_qualified_managed_attempt：legacy/无Prepared/未成功/无exit/未知stop/digest或anchor/错误baseline,ownerref,anchor等拒绝，原runtime不变。",
+    "test_candidate_record_is_immutable_and_exact_duplicate_is_history_only：六delivery字段和两anchor逐项冲突；相同重发不覆盖或恢复资格。",
+    "test_candidate_ready_tracks_latest_execution_anchor：负向Recon/不同digest/path/hash逐项撤销、原candidate保留；EvidenceRejected转FAILED保留runtime。",
+    "test_candidate_freeze_preserves_delivery_phase_and_blocks_scope_handback：awaiting_delivery未变、没有测试/审核/接受；candidate后scopeblock拒绝。",
+    "test_candidate_codec_roundtrip_and_legacy_bytes：完整event/attempt/history tuple roundtrip，旧payload byte-for-byte及旧snapshot_id golden不变。",
+    "test_candidate_store_requires_full_history_cas：同长度变更hash及仅HISTORY_ONLY尾巴也使CAS失败，current duplicate也核CAS；拒绝普通apply_task直接写Candidate。",
+    "test_candidate_store_rolls_back_state_and_history：写attempt后history注入失败全rollback，未知run/futureattempt不留记录。",
+    "test_candidate_store_two_connections_have_one_winner：两个独立连接冻结同一history只一个APPLIED，另CAS失败，state/history唯一候选。",
+    "test_late_candidate_is_history_only_after_retry：旧结果保留完整历史且新attempt未污染，old expected CAS不阻止记录晚到事件。",
+    "test_candidate_reopen_preserves_anchors_and_unknowns：关闭/重新打开数据库后candidate/qualified/actual未知字段原样，候选没有执行test或新snapshot。",
+    "test_task_candidate_scenario：四个新场景核最终状态与history，旧场景和既有审核行为保持。",
+    "全量lint/format/typecheck/unit/replay、正常hook通过，实际路径仅卡内，无SQL结构变更/旧测试削弱。",
+    "test_late_candidate_conflict_or_unqualified_is_still_history_only：迟到旧attempt不同candidate/旧attempt未合格也完整保留HISTORY_ONLY；当前candidate冲突优先于phase、same duplicate不恢复资格，按合同精确异常类型判定。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

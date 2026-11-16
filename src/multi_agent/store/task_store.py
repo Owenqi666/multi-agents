@@ -9,6 +9,7 @@ from multi_agent.core import Disposition, transitions
 from multi_agent.core.dispatch import resolve_dispatch
 from multi_agent.core.task_events import (
     TaskAttemptStarted,
+    TaskCandidateFrozen,
     TaskEnvelope,
     TaskExecutionPrepared,
     TaskScopeBlocked,
@@ -67,13 +68,45 @@ class TaskStore(ReviewStore):
         )
 
     def apply_task(self, run_id: str, envelope: TaskEnvelope) -> Disposition:
-        if isinstance(envelope.event, TaskExecutionPrepared) or (
+        if isinstance(envelope.event, (TaskExecutionPrepared, TaskCandidateFrozen)) or (
             isinstance(envelope.event, TaskAttemptStarted) and envelope.event.managed
         ):
             raise ValueError("managed task preparation requires atomic reservation")
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             state = self._read_task(run_id)
+            updated, disposition = transitions.apply_task(state, envelope)
+            if updated != state:
+                self._write_task(run_id, updated)
+            self._append_task_history(run_id, envelope, disposition)
+        return disposition
+
+    def record_task_candidate(
+        self,
+        run_id: str,
+        envelope: TaskEnvelope,
+        *,
+        expected_history_length: int,
+        expected_history_hash: str,
+    ) -> Disposition:
+        """Bind a current candidate atomically; retain older arrivals as history."""
+        if not isinstance(envelope.event, TaskCandidateFrozen):
+            raise TypeError(
+                "candidate recording requires a TaskCandidateFrozen envelope"
+            )
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            state = self._read_task(run_id)
+            current = state.current_attempt
+            if current is not None and envelope.attempt == current.number:
+                history = self._read_task_history(run_id)
+                if (
+                    len(history) != expected_history_length
+                    or task_execution_hash(history) != expected_history_hash
+                ):
+                    raise ValueError("task history changed before candidate recording")
+            # The pure reducer routes older attempts before inspecting candidate
+            # eligibility or immutability, and rejects unstarted attempt numbers.
             updated, disposition = transitions.apply_task(state, envelope)
             if updated != state:
                 self._write_task(run_id, updated)

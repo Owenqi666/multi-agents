@@ -10,7 +10,7 @@ from .task_execution import (
     TaskExecutionContext,
     TaskExecutionPolicy,
 )
-from .workspaces import WorkspaceRecord
+from .workspaces import WorkspaceDelivery, WorkspaceRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +68,14 @@ class TaskEvidenceRejected:
 
 
 @dataclass(frozen=True, slots=True)
+class TaskCandidateFrozen:
+    kind: ClassVar[str] = "task_candidate_frozen"
+    delivery: WorkspaceDelivery
+    execution_log_path: str
+    execution_log_sha256: str
+
+
+@dataclass(frozen=True, slots=True)
 class TaskScopeBlocked:
     kind: ClassVar[str] = "task_scope_blocked"
     reason: str
@@ -91,6 +99,7 @@ type TaskEvent = (
     | TaskExecutionPrepared
     | TaskEnvironmentObserved
     | TaskEvidenceRejected
+    | TaskCandidateFrozen
     | TaskReconciled
     | TaskScopeBlocked
     | TaskDiagnostic

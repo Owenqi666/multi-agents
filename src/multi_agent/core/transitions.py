@@ -51,6 +51,7 @@ from .state import (
 )
 from .task_events import (
     TaskAttemptStarted,
+    TaskCandidateFrozen,
     TaskDiagnostic,
     TaskEnvelope,
     TaskEnvironmentObserved,
@@ -511,6 +512,8 @@ def _task_scope_block(
 ) -> tuple[TaskState, Disposition]:
     event = envelope.event
     assert isinstance(event, TaskScopeBlocked)
+    if state.current_candidate is not None:
+        raise ValueError("a frozen task candidate cannot become a scope handback")
     if not state.delivery_ready:
         raise ValueError(
             "scope handback requires a successful terminal and actual exit"
@@ -519,6 +522,43 @@ def _task_scope_block(
         replace(state, phase=TaskPhase.PLANNING_REQUIRED, scope_block=event),
         Disposition.APPLIED,
     )
+
+
+def _task_candidate(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskCandidateFrozen)
+    existing = state.current_candidate
+    if existing is not None:
+        if existing != event:
+            raise ValueError("task candidate is immutable")
+        return state, Disposition.HISTORY_ONLY
+    current = state.attempts[-1]
+    prepared = prepared_for_task(current)
+    if (
+        not current.request.managed
+        or prepared is None
+        or state.phase != TaskPhase.AWAITING_DELIVERY
+        or not state.delivery_ready
+    ):
+        raise ValueError("task candidate requires a qualified managed delivery")
+    reconciliation = current.reconciliation
+    assert reconciliation is not None
+    delivery = event.delivery
+    if (
+        delivery.baseline != state.baseline_commit
+        or delivery.baseline != prepared.workspace.task_baseline
+        or delivery.digest != reconciliation.worktree_digest
+        or not event.execution_log_path
+        or not event.execution_log_sha256
+        or event.execution_log_path != reconciliation.log_path
+        or event.execution_log_sha256 != reconciliation.log_sha256
+        or delivery.ref
+        != f"refs/multi-agent/candidates/{prepared.workspace.owner_token}"
+    ):
+        raise ValueError("task candidate does not match its execution and workspace")
+    return state, Disposition.APPLIED
 
 
 _TASK_ACTIVE: dict[type[TaskEvent], TaskTransition | None] = {
@@ -534,6 +574,7 @@ _TASK_ACTIVE: dict[type[TaskEvent], TaskTransition | None] = {
     TaskExecutionPrepared: _task_prepare,
     TaskEnvironmentObserved: _task_environment,
     TaskEvidenceRejected: _task_reject_evidence,
+    TaskCandidateFrozen: _task_candidate,
 }
 _TASK_CLOSED: dict[type[TaskEvent], TaskTransition | None] = {
     SessionStarted: None,
@@ -548,6 +589,7 @@ _TASK_CLOSED: dict[type[TaskEvent], TaskTransition | None] = {
     TaskExecutionPrepared: _task_prepare,
     TaskEnvironmentObserved: _task_environment,
     TaskEvidenceRejected: _task_reject_evidence,
+    TaskCandidateFrozen: _task_candidate,
 }
 _TASK_TRANSITIONS: dict[TaskPhase, dict[type[TaskEvent], TaskTransition | None]] = {
     TaskPhase.READY: {TaskAttemptStarted: _task_start},
@@ -564,6 +606,7 @@ _TASK_TRANSITIONS: dict[TaskPhase, dict[type[TaskEvent], TaskTransition | None]]
         TaskExecutionPrepared: _task_prepare,
         TaskEnvironmentObserved: _task_environment,
         TaskEvidenceRejected: _task_reject_evidence,
+        TaskCandidateFrozen: _task_candidate,
     },
 }
 
@@ -586,7 +629,10 @@ def apply_task(
     if (
         current is not None
         and current.request.managed
-        and not isinstance(envelope.event, (TaskAttemptStarted, TaskExecutionPrepared))
+        and not isinstance(
+            envelope.event,
+            (TaskAttemptStarted, TaskExecutionPrepared, TaskCandidateFrozen),
+        )
         and prepared_for_task(current) is None
     ):
         raise ValueError("managed task events require execution preparation")

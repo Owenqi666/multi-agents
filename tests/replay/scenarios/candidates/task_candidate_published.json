@@ -1,0 +1,324 @@
+{
+  "cases": [
+    {
+      "name": "published-and-duplicate",
+      "steps": [
+        {
+          "id": "before-reservation",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "before-reservation",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "ready",
+            "attempt": null,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "error": "ValueError"
+        },
+        {
+          "id": "reserve-1",
+          "op": "reserve",
+          "attempt": 1,
+          "at": "reserve-1",
+          "expect": {
+            "phase": "implementing",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          }
+        },
+        {
+          "id": "environment-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "environment-1",
+          "event": {
+            "type": "task_environment_observed",
+            "environment": {
+              "cli_version": "synthetic",
+              "logged_in": null,
+              "models": null,
+              "model_efforts": null
+            }
+          },
+          "expect": {
+            "phase": "implementing",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "completed-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "completed-1",
+          "event": {
+            "type": "completed",
+            "result": {
+              "outcome": "completed",
+              "summary": "reported result 1"
+            },
+            "raw_type": "actual.completed"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "before-exit",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "before-exit",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "error": "ValueError"
+        },
+        {
+          "id": "exit-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "exit-1",
+          "event": {
+            "type": "process_exited",
+            "exit_code": -15,
+            "raw_type": "actual.exit"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "before-reconciliation",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "before-reconciliation",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "error": "ValueError"
+        },
+        {
+          "id": "positive-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "positive-1",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "candidate-1",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "candidate-1",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "candidate-duplicate",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "candidate-duplicate",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "history_only"
+        },
+        {
+          "id": "scope-after-candidate",
+          "op": "event",
+          "attempt": 1,
+          "at": "scope-after-candidate",
+          "event": {
+            "type": "task_scope_blocked",
+            "reason": "cannot change a frozen candidate into a handback",
+            "required_paths": [
+              "other/**"
+            ]
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "error": "ValueError"
+        },
+        {
+          "op": "reopen",
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          }
+        }
+      ],
+      "final": {
+        "phase": "awaiting_delivery",
+        "attempt": 1,
+        "delivery_ready": true,
+        "candidate_ready": true,
+        "candidate": "candidate-1",
+        "attempts": [
+          {
+            "request": "reserve-1.started",
+            "runtime": {
+              "number": 1,
+              "status": "succeeded",
+              "failure_category": null,
+              "detail": null,
+              "retry_after": null,
+              "session_id": null,
+              "reported_model": null,
+              "reported_model_source": null,
+              "reported_effort": null,
+              "reported_effort_source": null,
+              "result": {
+                "outcome": "completed",
+                "summary": "reported result 1"
+              },
+              "exit_code": -15
+            },
+            "reconciliation": "positive-1",
+            "events": [
+              "reserve-1.started",
+              "reserve-1.prepared",
+              "environment-1",
+              "completed-1",
+              "exit-1",
+              "positive-1",
+              "candidate-1"
+            ]
+          }
+        ],
+        "scope_block": null
+      }
+    }
+  ]
+}

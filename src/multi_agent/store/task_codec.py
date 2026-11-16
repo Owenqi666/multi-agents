@@ -28,6 +28,7 @@ from multi_agent.core.events import (
 from multi_agent.core.state import AttemptState, AttemptStatus, EvidenceSource
 from multi_agent.core.task_events import (
     TaskAttemptStarted,
+    TaskCandidateFrozen,
     TaskDiagnostic,
     TaskEnvelope,
     TaskEnvironmentObserved,
@@ -53,7 +54,11 @@ from multi_agent.core.tasks import (
     TaskCard,
     TaskTypeRestriction,
 )
-from multi_agent.core.workspaces import WorkspaceControl, WorkspaceRecord
+from multi_agent.core.workspaces import (
+    WorkspaceControl,
+    WorkspaceDelivery,
+    WorkspaceRecord,
+)
 
 _RUNTIME_TYPES: dict[str, type[AdapterEvent | CancelRequested]] = {
     event.kind: event
@@ -253,6 +258,22 @@ def _prepared(value: dict[str, Any]) -> TaskExecutionPrepared:
     )
 
 
+def _candidate(value: dict[str, Any]) -> TaskCandidateFrozen:
+    delivery = value["delivery"]
+    return TaskCandidateFrozen(
+        WorkspaceDelivery(
+            baseline=delivery["baseline"],
+            candidate=delivery["candidate"],
+            changed_paths=tuple(delivery["changed_paths"]),
+            digest=delivery["digest"],
+            ref=delivery["ref"],
+            tree=delivery["tree"],
+        ),
+        value["execution_log_path"],
+        value["execution_log_sha256"],
+    )
+
+
 def _event_payload(event: TaskEvent) -> dict[str, Any]:
     if isinstance(event, TaskAttemptStarted):
         value: dict[str, Any] = {
@@ -279,6 +300,21 @@ def _event_payload(event: TaskEvent) -> dict[str, Any]:
         }
     if isinstance(event, TaskEnvironmentObserved):
         return {"type": event.kind, "environment": thaw_json(event.environment)}
+    if isinstance(event, TaskCandidateFrozen):
+        delivery = event.delivery
+        return {
+            "type": event.kind,
+            "delivery": {
+                "baseline": delivery.baseline,
+                "candidate": delivery.candidate,
+                "changed_paths": list(delivery.changed_paths),
+                "digest": delivery.digest,
+                "ref": delivery.ref,
+                "tree": delivery.tree,
+            },
+            "execution_log_path": event.execution_log_path,
+            "execution_log_sha256": event.execution_log_sha256,
+        }
     if isinstance(event, TaskReconciled):
         return {"type": event.kind, **_reconciliation_payload(event)}
     if isinstance(event, TaskDiagnostic):
@@ -313,6 +349,8 @@ def _event(value: dict[str, Any]) -> TaskEvent:
         return TaskEnvironmentObserved(value["environment"])
     if kind == TaskEvidenceRejected.kind:
         return TaskEvidenceRejected(value["detail"])
+    if kind == TaskCandidateFrozen.kind:
+        return _candidate(value)
     if kind == TaskReconciled.kind:
         return _reconciled(value)
     if kind == TaskScopeBlocked.kind:

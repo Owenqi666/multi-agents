@@ -4,7 +4,13 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .state import AttemptState, AttemptStatus
-from .task_events import TaskAttemptStarted, TaskEvent, TaskReconciled, TaskScopeBlocked
+from .task_events import (
+    TaskAttemptStarted,
+    TaskCandidateFrozen,
+    TaskEvent,
+    TaskReconciled,
+    TaskScopeBlocked,
+)
 from .task_execution import prepared_for_task
 from .tasks import FrozenProjectRules, TaskCard
 
@@ -44,6 +50,41 @@ class TaskState:
     @property
     def current_attempt(self) -> TaskAttempt | None:
         return self.attempts[-1] if self.attempts else None
+
+    @property
+    def current_candidate(self) -> TaskCandidateFrozen | None:
+        current = self.current_attempt
+        if current is None:
+            return None
+        return next(
+            (
+                event
+                for event in current.events
+                if isinstance(event, TaskCandidateFrozen)
+            ),
+            None,
+        )
+
+    @property
+    def candidate_ready(self) -> bool:
+        """A fixed candidate still bound to the latest qualified execution facts."""
+        current = self.current_attempt
+        candidate = self.current_candidate
+        if (
+            current is None
+            or not current.request.managed
+            or not self.delivery_ready
+            or candidate is None
+            or current.reconciliation is None
+        ):
+            return False
+        reconciliation = current.reconciliation
+        return (
+            candidate.delivery.baseline == self.baseline_commit
+            and candidate.delivery.digest == reconciliation.worktree_digest
+            and candidate.execution_log_path == reconciliation.log_path
+            and candidate.execution_log_sha256 == reconciliation.log_sha256
+        )
 
     @property
     def delivery_ready(self) -> bool:

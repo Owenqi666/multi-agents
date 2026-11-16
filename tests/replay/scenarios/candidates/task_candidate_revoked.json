@@ -1,0 +1,510 @@
+{
+  "cases": [
+    {
+      "name": "negative-facts-and-permanent-evidence-rejection",
+      "steps": [
+        {
+          "id": "reserve-1",
+          "op": "reserve",
+          "attempt": 1,
+          "at": "reserve-1",
+          "expect": {
+            "phase": "implementing",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          }
+        },
+        {
+          "id": "environment-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "environment-1",
+          "event": {
+            "type": "task_environment_observed",
+            "environment": {
+              "cli_version": "synthetic",
+              "logged_in": null,
+              "models": null,
+              "model_efforts": null
+            }
+          },
+          "expect": {
+            "phase": "implementing",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "completed-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "completed-1",
+          "event": {
+            "type": "completed",
+            "result": {
+              "outcome": "completed",
+              "summary": "reported result 1"
+            },
+            "raw_type": "actual.completed"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "exit-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "exit-1",
+          "event": {
+            "type": "process_exited",
+            "exit_code": -15,
+            "raw_type": "actual.exit"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "positive-1",
+          "op": "event",
+          "attempt": 1,
+          "at": "positive-1",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": false,
+            "candidate": null
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "candidate-1",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "candidate-1",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "negative",
+          "op": "event",
+          "attempt": 1,
+          "at": "negative",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": null,
+            "process_stopped": false,
+            "detail": "actual stop and digest 1",
+            "log_path": null,
+            "log_sha256": null
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "duplicate-while-revoked",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "duplicate-while-revoked",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "history_only"
+        },
+        {
+          "op": "reopen",
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          }
+        },
+        {
+          "id": "restored",
+          "op": "event",
+          "attempt": 1,
+          "at": "restored",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "different-digest",
+          "op": "event",
+          "attempt": 1,
+          "at": "different-digest",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "another-final-digest",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "restored-digest",
+          "op": "event",
+          "attempt": 1,
+          "at": "restored-digest",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "different-path",
+          "op": "event",
+          "attempt": 1,
+          "at": "different-path",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/other/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "restored-path",
+          "op": "event",
+          "attempt": 1,
+          "at": "restored-path",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "different-hash",
+          "op": "event",
+          "attempt": 1,
+          "at": "different-hash",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "restored-hash",
+          "op": "event",
+          "attempt": 1,
+          "at": "restored-hash",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "awaiting_delivery",
+            "attempt": 1,
+            "delivery_ready": true,
+            "candidate_ready": true,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "rejected",
+          "op": "event",
+          "attempt": 1,
+          "at": "rejected",
+          "event": {
+            "type": "task_evidence_rejected",
+            "detail": "archive is no longer trusted"
+          },
+          "expect": {
+            "phase": "failed",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "positive-after-rejection",
+          "op": "event",
+          "attempt": 1,
+          "at": "positive-after-rejection",
+          "event": {
+            "type": "task_reconciled",
+            "worktree_digest": "final-1",
+            "process_stopped": true,
+            "detail": "actual stop and digest 1",
+            "log_path": "/synthetic/attempt-1/logs/execution.json",
+            "log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "failed",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "applied"
+        },
+        {
+          "id": "duplicate-after-rejection",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "duplicate-after-rejection",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "3333333333333333333333333333333333333333",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "failed",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "disposition": "history_only"
+        },
+        {
+          "id": "conflict-after-rejection",
+          "op": "candidate",
+          "attempt": 1,
+          "at": "conflict-after-rejection",
+          "event": {
+            "type": "task_candidate_frozen",
+            "delivery": {
+              "baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "candidate": "ffffffffffffffffffffffffffffffffffffffff",
+              "changed_paths": [
+                "src/implemented.txt"
+              ],
+              "digest": "final-1",
+              "ref": "refs/multi-agent/candidates/owner-1",
+              "tree": "6666666666666666666666666666666666666666"
+            },
+            "execution_log_path": "/synthetic/attempt-1/logs/execution.json",
+            "execution_log_sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "expect": {
+            "phase": "failed",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          },
+          "error": "ValueError"
+        },
+        {
+          "op": "reopen",
+          "expect": {
+            "phase": "failed",
+            "attempt": 1,
+            "delivery_ready": false,
+            "candidate_ready": false,
+            "candidate": "candidate-1"
+          }
+        }
+      ],
+      "final": {
+        "phase": "failed",
+        "attempt": 1,
+        "delivery_ready": false,
+        "candidate_ready": false,
+        "candidate": "candidate-1",
+        "attempts": [
+          {
+            "request": "reserve-1.started",
+            "runtime": {
+              "number": 1,
+              "status": "succeeded",
+              "failure_category": null,
+              "detail": null,
+              "retry_after": null,
+              "session_id": null,
+              "reported_model": null,
+              "reported_model_source": null,
+              "reported_effort": null,
+              "reported_effort_source": null,
+              "result": {
+                "outcome": "completed",
+                "summary": "reported result 1"
+              },
+              "exit_code": -15
+            },
+            "reconciliation": "positive-after-rejection",
+            "events": [
+              "reserve-1.started",
+              "reserve-1.prepared",
+              "environment-1",
+              "completed-1",
+              "exit-1",
+              "positive-1",
+              "candidate-1",
+              "negative",
+              "restored",
+              "different-digest",
+              "restored-digest",
+              "different-path",
+              "restored-path",
+              "different-hash",
+              "restored-hash",
+              "rejected",
+              "positive-after-rejection"
+            ]
+          }
+        ],
+        "scope_block": null
+      }
+    }
+  ]
+}
