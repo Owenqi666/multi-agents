@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "id": "T-0045",
+  "goal": "把已绑定规划任务的一次新实现尝试连接到真实公共运行时、合作取消与一次证据封存，在故障后仍保存实际停止和最终工作区事实，安全返回实现结果或范围交回。",
+  "baseline_commit": "473bcce4305807fc909f4927b226954c27e3e737",
+  "write_scope": [
+    "src/multi_agent/cli/task_runner.py",
+    "tests/unit/test_task_runner.py",
+    "tests/unit/runtime_fakes/task_cli.py",
+    "docs/task-execution.md",
+    "docs/deliveries/T-0045.md",
+    "tasks/T-0045-task-runner.json"
+  ],
+  "depends_on": [
+    "T-0044"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and public entry",
+      "definition": "继续S5b，只实现一次fresh managed实现的async execute_task_attempt(database_path,task_run_id,planning_run_id,*,repository:Path,directory:Path,policy=None,dispatch_policy=None,unavailable:frozenset[tuple[str,str]]=frozenset(),stop:asyncio.Event|None=None)->TaskState。使用T43/T44既有接口，不改core/store/adapters/旧planning runner；不自动重试/选择fallback/重新规划，不冻结candidate，不运行测试或审核，不增加CLI命令/状态/表。预设stop在prepare前返回已有状态，不创建reservation或资源。"
+    },
+    {
+      "name": "one owned lifetime",
+      "definition": "worker必须在同一个prepare_task_launch with里持有原store和Git common-dir ExecutorLease，直到唯一events consumer完成、实际资源结算、seal及DB持久化结束。只启动本次新launch，不能load旧Prepared恢复owner、另建worktree/logdir/controller lock或删除负向registry。T43负责旧尝试未知停止/摘要门禁及固定policy/完整dispatch。返回后作用域失效；completed只是awaiting_delivery，不是接受。"
+    },
+    {
+      "name": "actual adapter from frozen preparation",
+      "definition": "由Prepared构造真正ImplementationRuntimeAdapter：policy.provider/executable/timeout/grace、完整workspace、现launch.log_dir、thaw后的output_schema。loop.time()+policy.timeout只计算一次，在bind前固定deadline_at，供预检和model共同使用，cleanup grace独立。先bind_task_execution再check_environment，bind后不变更公开配置。SessionConfig用request.decision.choice的model/effort、WORKSPACE_WRITE、prepared.workspace.root；submit精确prepared.prompt。外部context不作为模型文件输入，requested字段不冒充actual。"
+    },
+    {
+      "name": "preflight and reported environment",
+      "definition": "预检子task在第一次await前登记实际operation，先给其运行机会，再处理stop/caller intent，防止取消从未开始的coroutine导致空receipt。保存实际TaskEnvironmentObserved后核reported logged_in/models/model_efforts；明确auth失效、model不可用或effort不支持写TaskDiagnostic，不启动model。None仍未确认，不能默认补actual。RuntimeFailure按原Error分类保存诊断；辅助预检exit不能冒充model ProcessExited。真实预检失败/已过deadline不因较晚stop改分类。"
+    },
+    {
+      "name": "caller cancellation and one consumer",
+      "definition": "外层仅shield worker，重复caller取消只设置intent，不能取消worker、预检owner或events consumer；全部结算后重抛首CancelledError并保留首宿主error作cause。外部stop同样走合作取消。model只有一个公共events消费者，取消/DB故障后继续drain到iterator最终await；consumer task创建失败时取消同一turn并直接消费同一stream，不遗留已submit的owner。stop waiter本身故障也须结算后抛首错误。"
+    },
+    {
+      "name": "runtime order differs from planning runner",
+      "definition": "保留公共events实际到达顺序及首次完整TaskEnvelope，terminal和ProcessExited也按序持久化，不能照搬T41固定terminal→exit。managed早exit后Completed合法；accepted取消→exit→Completed时后者HISTORY_ONLY，反序的runtime observations可能不同，两者都保留真实历史。result()仅补stream没有观察过的实际canonical terminal/exit；相同事件不重复，不同raw_type/任一字段冲突记宿主问题并保留真实证据、禁止交付。普通相同Message/Usage仍按真实发生次数保存。"
+    },
+    {
+      "name": "ambiguous cleanup diagnostic",
+      "definition": "收到Error(raw_type=adapter.cleanup_incomplete)且尚不能判定实际exit时，暂存该事件及后续流顺序，drain/result后有actual exit则按原位置保存Error；仍无actual exit则该位置保存TaskDiagnostic，不伪造模型终态或把unknownstop取消折成已停止。实际Completed始终不替换成cleanup错误。该窄处理不对普通terminal/exit重新排序，也不从预检exit补证据。"
+    },
+    {
+      "name": "accepted cancel and uncertain database writes",
+      "definition": "on_accepted同步先latch原CancelRequested envelope再尝试DB写；首异常保留，不阻止实际adapter watchdog/清理。DB失败后继续drain并排队原envelope，结算仅作有界补救；用完整历史中exact envelope occurrence count区别precommit失败与commit-then-raise，真实同timestamp重复报告不可被去重。accepted cancel需先确认或补写；若仍不能确认，不能单独把后续Completed/Error晋为成功终态，但仍尽力保存真实exit、普通报告、Diagnostic及实际Reconciled。首次宿主问题后本controller不得再写正向logpair或继续交付消费。"
+    },
+    {
+      "name": "light checks and independent physical facts",
+      "definition": "执行中不可照搬planning.inspect扫描活workspace；完整launch.check/inspect_task_context/inspect_workspace仅在未启动任何运行操作之前或实际receipt.processes_stopped=true之后使用。保存同adapter最后一次成功取得的实际receipt，后续getter失败不抹掉已有停止事实，也不根据PID/exit/空ledger推断停止。stop未知绝不扫描工作区。adapter构造/bind失败且无receipt不能因尚未调用model就伪造stoptrue；保留reservation/registry、原错及未知。"
+    },
+    {
+      "name": "single seal and actual digest fallback",
+      "definition": "保存实际运行事件后只调用一次T44 seal。失败/partial marker不修补不重封，不读partial index拼更好证据；已有actual receipt及stop独立保留。stoptrue但seal因context/log/marker/index/close失败时，可用held lease和原Prepared.workspace独立inspect_workspace获取实际finaldigest支持显式重试；该扫描失败则None，首异常保留，不能以initialdigest代替。失败后取得不同receipt或workspace事实必须禁止logpair，不能用新样本提升原seal资格。"
+    },
+    {
+      "name": "settlement and exact scope handback",
+      "definition": "TaskReconciled尽力持久真实stop和实际finaldigest；只有无任何宿主问题且manifest.qualified、receipt/最终workspace仍一致时才写manifest.path/sha256，否则logpairNone。写正向Reconciled后先inspect_task_execution；scope_blocked再按manifest.report原summary/required_paths发TaskScopeBlocked，completed仅保留awaiting_delivery。坏输出/不合格成功只在AWAITING_DELIVERY发TaskEvidenceRejected，其它phase写TaskDiagnostic。inspect或handoff写失败后撤销可用logpair并拒绝交付；commit后抛错要核实际状态/历史，PLANNING_REQUIRED仍可Reconciled但不能恢复交付。若DB最终仍不可写，只能报告结算/撤销未能持久化并抛首异常、保留全部原证据，不声称撤销成功或自动继续；不存在能在不可写DB上保证写入成功的兜底。后续恢复须独立核验，不能用本次异常返回冒充成功运行器结果。"
+    },
+    {
+      "name": "error and result contract",
+      "definition": "正常模型Error、明确预检RuntimeFailure/availability拒绝、坏模型输出、已结算stop返回实际TaskState；宿主I/O、DB、协议对象/配置不一致等首异常在尽力结算后原样抛出，后续清理错误只附加诊断，不替代首错。不吞core/store invariant错误。状态推进仍由现store原子current-attempt检查控制；旧结果只入history。无已确认cancel记录时绝不制造它；模型实际值与宿主诊断分列。"
+    },
+    {
+      "name": "offline transport and synthetic fault layers",
+      "definition": "新增tests/unit/runtime_fakes/task_cli.py，复用未改的fake_cli.py、FAKE_IMPLEMENTATION和FAKE_RUNTIME_REPORT；wrapper只在Claude -p或Codex turn/start实际turn时写固定scope内src/implemented.txt，预检不写。安全tmpGit+synthetic已封存planning pair+实际bind；只允许冻结fake executable启动，合成认证，不跑真实模型CLI。两provider真实fake child验证cwd/prompt/schema/权限请求与资源收束；受控ImplementationRuntimeAdapter公开子类用真实Recorder和明确synthetic ProcessOwnership验证顺序/DB故障，不改旧fake或旧fixture。fake权限参数通过不等于实机sandbox已验证。"
+    },
+    {
+      "name": "verification and retained evidence",
+      "definition": "沿用现verify五步和正常commit hook；定向接口red、故障red与修复后日志均保留在外部T45，交付记录baseline/start HEAD/actual paths/完整结果。scope外需求交回规划改卡，不削弱旧检查。源码仅新增runner；其它T43/T44/adapter/核心问题若实测暴露须先修订范围并复核，不藏在测试mock。"
+    },
+    {
+      "name": "deterministic deadline acceptance",
+      "definition": "writer用受控public adapter+asyncio.Event门闩测试deadline合同：记录constructor收到的唯一绝对D，在预检让出/恢复及turn阶段核同一D且未重算；允许测试比较受控loop clock，禁止靠短sleep或真实child墙钟上界判断。late stop用门闩确定RuntimeFailure(TIMEOUT)已发生后再置stop，核原timeout Diagnostic且无伪造accepted cancel。真实RuntimeAdapter同一D的超时/cleanup行为沿用已有T33验证，不改旧计时预算或增加宽松timeout。"
+    },
+    {
+      "name": "unknown preflight values permit an attempt",
+      "definition": "EnvironmentInfo.logged_in/models/model_efforts缺失(None)或effort catalog没有所选model的条目时，含义是未确认，保存原Observed后允许继续本次model调用。只有明确logged_in=False、已报告完整models且所选model不在其中、或已报告该model effort集合且所选effort不在其中才停止并写Diagnostic。不以默认值补实际，不凭None宣布未登录/不可用或自动fallback。"
+    },
+    {
+      "name": "existing durable revocation mechanism",
+      "definition": "使用现PlanningStore.apply_task(task_run_id, TaskEnvelope(original_attempt, TaskReconciled(actual_final_digest,actual_stop,detail,None,None),occurred_at))清除最新logpair；T42在managed PLANNING_REQUIRED也应用该事件，phase不恢复。仍AWAITING_DELIVERY时追加现TaskEvidenceRejected，其他phase用现TaskDiagnostic。正向Reconciled或ScopeBlocked写入commit后抛错，先核原exact envelope实际提交事实，再尽力写该负向Reconciled和合法拒绝/诊断；DB最终不可写只能明确未持久撤销并抛首异常，不能继续消费或声称已修复，不需要新增状态/API。"
+    },
+    {
+      "name": "explicit result versus exception classification",
+      "definition": "分类按来源/类型而非猜Error字符串：(1) check_environment抛RuntimeFailure，任意已规范化FailureCategory都原样TaskDiagnostic，正常结算后返回实际TaskState；(2) 公共events/result实际Error(任意分类)按真实事件/cleanup窄规则保存，正常返回；(3) 明确auth/catalog/effort拒绝或T44返回validation_error/qualifiedfalse是正常负向结果，拒绝资格后返回实际状态；(4) 非预检公共API意外抛RuntimeFailure，先保留其Error为Diagnostic并把原exception作为首宿主错误，结算后抛出，不能伪造模型终态；(5) host I/O、SQLite/store、context/config/receipt不一致等Exception保存首对象、尽力结算后重抛，core/store异常不吞掉；(6) caller CancelledError只由外层处理，结算后抛首取消并以首宿主error为cause，external stop本身不制造exception。后续错误只加诊断/notes，未知停止允许返回实际未闭合phase，不能冒称已停。"
+    },
+    {
+      "name": "accepted cancel precedence after a database fault",
+      "definition": "正常无故障路径严格保留stream到达顺序。若先前普通报告因DB错误已进pending，on_accepted仍优先同步尝试持久化已接受cancel；因此这些旧普通报告的数据库插入位置可以晚于cancel，但必须保留原envelope/occurred_at、pending内部顺序和真实出现次数，不声称故障下重建了全局原插入顺序。此路径有宿主错误，禁止正向logpair。不得为了重排而延迟/丢失accepted cancel，未确认cancel前不得推进随后terminal。"
+    },
+    {
+      "name": "preflight physical stop before model dispatch",
+      "definition": "正常预检返回后，先持久Observed并处理明确auth/catalog/effort拒绝，再在启动model前从同adapter取得实际receipt并缓存。getter失败保留首host异常；receipt.settled或processes_stopped不真则保留Diagnostic、不启动model，随后仍只一次seal及实际stop/digest结算，未知stop绝不扫描。logs_sealed/resources_released不冒充物理停止，仍独立决定最终资格。已实际取消预检按accepted取消事实记录；正常返回后的较晚stop不覆盖先已确认的auth/catalog失败。"
+    },
+    {
+      "name": "receipt freshness across new runtime operations",
+      "definition": "last successful receipt必须附着本controller的operation epoch：每次进入check_environment/submit_turn这类可能登记新operation的调用前，先使旧epoch样本不能证明当前尝试已停止。旧preflight receipt.stoptrue只能作历史；若submit后直到结束所有getter都失败，本epochstop未知(False)、finaldigestNone且不扫描，不能沿用env真值。新epoch getter成功取得的真实receipt可以证明实际没有新增resource或已停止；同一turn已drain并成功取到stoptrue后，后续seal/getter失败才可保留该同epoch真值。不可把requested预期或调用是否返回当receipt。若实际owner_id改变，属于已观察到的binding破坏，当前epoch的停止资格也失效；不能采用新owner或继续拿旧owner真值证明新资源已停。单纯同epochgetter异常、无新operation/owner变化才可保留先前真值。成功seal返回的manifest.receipt本身也是同binding/owner/epoch的一次真实成功取样，必须先按同一身份校验路径记为最新样本，再做末次getter；后者失败不能退回seal前旧receipt。两向stop变化都如实记录，不能以此改写原seal或提升其qualified。"
+    }
+  ],
+  "deliverables": [
+    "一次fresh managed实现的async运行器，保持真实事件顺序、共享deadline和实际owner生命周期。",
+    "独立停止/最终摘要与执行资格结算，精确scope handback，不产生候选或自动重试。",
+    "两provider离线fake child及独立故障矩阵，正常检查与可追溯交付。"
+  ],
+  "acceptance_criteria": [
+    "test_task_runner_executes_one_fresh_owned_attempt：两provider实际fake child完整正向链、一个turn、精确prompt/schema/工作区及WORKSPACE_WRITE请求、source未改、实际finaldigest/manifest及ready状态。",
+    "test_task_runner_scope_block_returns_exact_report_to_planning：合格report→Reconciled→精确ScopeBlocked，保留原成功且不deliveryeligible，不创建candidate或扩大scope。",
+    "test_task_runner_preflight_failure_never_invents_model_exit：auth/catalog/effort拒绝、RuntimeFailure和未知字段分别核事件、无model turn/exit、实际预检资源stop/日志。",
+    "test_task_runner_stop_before_prepare_is_side_effect_free：无reservation/root/log/adapter；reserve后preflight取消确实进入operation并结算。",
+    "test_task_runner_uses_one_deadline：预检耗时占同一model预算，deadline先于晚stop时保留timeout，cleanup仍给独立grace；不通过放大timeout掩盖时序。",
+    "test_task_runner_caller_cancel_waits_for_actual_settlement：重复caller取消、external stop、真实fake取消和synthetic晚Completed，持锁直到events/stop/log结束，最后重抛首取消。",
+    "test_task_runner_preserves_terminal_exit_arrival_order：exit→Completed、cancel→exit→Completed及cancel→Completed→exit精确APPLIED/HISTORY_ONLY和runtime observations，result只补缺。",
+    "test_task_runner_cleanup_diagnostic_does_not_invent_stopping：cleanup_incomplete有/无真实exit分别处理，unknownstop不扫描、不把phase提前关闭。",
+    "test_task_runner_database_failure_preserves_first_error_and_real_reports：普通report和accepted cancel的precommit/postcommit失败、完全相同时间与内容的真实重复事件、一次有界repair；无交付资格。",
+    "test_task_runner_unpersisted_cancel_never_promotes_completed：永久取消DB失败仍drain，actual Completed负向样本保留，真实exit/stop独立尽力持久。",
+    "test_task_runner_seal_failure_keeps_actual_stop_and_digest：context/rawlog/marker/index/close失败仍保留实际stop并独立扫描，scan失败None，不用initialdigest；不能reseal或写logpair。",
+    "test_task_runner_unknown_stop_never_scans_or_retries：未settled/空owner/残留process等门禁，construct/bind异常不捏造stop，T43下一次仍阻断。",
+    "test_task_runner_invalid_output_is_host_rejected：wronghash/坏JSON/scope语义错误不会candidate，模型Completed与actualexit仍保存，TaskEvidenceRejected仅合法phase。",
+    "test_task_runner_persisted_qualification_failure_is_revoked：正向Recon后inspect失败、ScopeBlocked pre/postcommit失败，DB可写时撤销logpair/拒绝；DB最终不可写时原异常及未完成结算事实明确、无继续动作，不声称已完成持久撤销。",
+    "test_task_runner_consumer_or_waiter_failure_still_settles：task factory拒consumer/stop watcher故障、iterator close错误、receiptgetter失败，真实owned操作收束后才释放lease。",
+    "test_task_runner_retry_uses_fresh_scope_and_frozen_policy：一次入口不自动retry；安全失败后显式新root沿用rules/policy/fullstrategy/budget，未知stop/digest仍拒，前端由既有派发规则限制Claude。",
+    "完整lint/format/typecheck/unit/replay与正常hook通过；actual paths仅卡内，旧测试/配置不改，离线证据不冒称S9实机权限通过。",
+    "test_task_runner_result_exception_classification：逐项覆盖明确分类表，预检任意规范化RuntimeFailure返回实际状态，非预检意外RuntimeFailure/host异常原对象抛出，caller取消和external stop分列。",
+    "test_task_runner_preflight_unknown_stop_blocks_model：预检正常返回但owner未settled/stop未知时不启动model、不扫描；getter失败保留首异常，已知stop事实不被后续错误抹掉。",
+    "test_task_runner_receipt_epoch_never_reuses_preflight_stop：env已停后turn开始且getter永久失败必须unknown/no scan；同turn drain后实际stoptrue再getter失败仍保留true，两种回归分别成立。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

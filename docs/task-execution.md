@@ -77,3 +77,19 @@ qualified 另需当前尝试仍 awaiting_delivery、实际成功及退出、与 
 writer 应先持久化实际事件与环境，完成停止核对，再 seal。TaskReconciled 始终写实际 stop 与实际扫描得到的 final_digest；只有 qualified 且没有宿主错误时，才写执行 manifest 的 path/hash。合法 scope_blocked 随后按 report 原样写 TaskScopeBlocked；不合格的成功产物只在 awaiting_delivery 写 TaskEvidenceRejected，其他阶段保存 Diagnostic。T44 提供上述边界，运行与持久化编排由后续 writer 实现。
 
 `inspect_task_execution` 只核正向归档：要求最新 Reconciled 的真实停止、已知最终摘要及精确执行 path/hash，再核 marker、manifest、原始日志、原 context、实际最终工作区及完整历史。负向或缺锚点记录直接拒绝，不扫描其工作区。后续 planning_required 只允许与原 scope_blocked 报告完全一致的 handback；旧工作区、context 和 logs 必须原地保留，任何变化使核验失败。归档不产生 live owner；候选消费者仍须检查当前状态与 delivery_eligible。
+
+## 一次实现运行器（T45）
+
+`execute_task_attempt(database_path, task_run_id, planning_run_id, *, repository, directory, ...)` 只执行一次新的 managed 尝试，返回实际 TaskState。worker 从 T43 准备到调用、停止核对、封存与持久化始终保留同一个 store 和 executor lease。调用前已收到 stop 时读取已有状态返回，不创建新 reservation、工作区、日志或 adapter。它不自动重试、切换备选、重新规划或创建候选。
+
+adapter 的执行文件、工作区、schema、日志目录和运行策略来自 Prepared。绝对 deadline 在 bind 前计算一次，预检与实现共用，清理另有 grace。预检先登记实际 operation，才能响应取消；环境观察照实持久化。None 表示未知并允许继续，明确未登录或已报告的模型/档位集合不支持请求才停止。预检正常返回后还要确认实际 settled 和 processes_stopped，未知时不启动 model。模型会话使用请求的 model/effort、WORKSPACE_WRITE、实际 workspace cwd 及冻结的内联 prompt。
+
+公共运行事件按到达顺序保存，result 只补尚未观察到的实际终态或退出。取消后 exit 与 Completed 的先后可能改变 APPLIED/HISTORY_ONLY 及报告字段，不能人为重排。唯一窄缓冲是尚无实际 exit 的 cleanup_incomplete：待 drain/result 后，有真实 exit 就保存原 Error，没有则保存 Diagnostic，不能据此发明模型终态或物理停止。
+
+外层 caller cancellation 只设置意图，重复取消不会打断 worker 或唯一 event consumer；实际结算后才抛首 CancelledError。accepted callback 先保留原取消 envelope，再同步写数据库。DB 写入异常后仍消费原 stream，原 envelope 和真实重复次数保留；用完整历史的出现次数核对提交后抛错。故障后 accepted cancel 的及时持久化优先，旧 pending 普通报告可能较晚插入，但原时间和队列内部顺序保留。这类宿主问题不获得正向 logpair。
+
+运行器按可能新增资源的 operation 划分 receipt 的有效期。预检已停的样本不能证明随后 turn 已停；进入新 operation 后必须取得新样本。相同 turn 已确认停止后 getter 单纯失败可保留原事实，但观察到 owner 改变或丢失会使该停止资格失效。停止未知不扫描工作区。seal 仍只有一次；封存失败而本次资源确实已停时，独立扫描原工作区获取实际最终摘要，扫描失败保持 None。
+
+正常模型失败、明确预检拒绝或无效输出返回实际负向状态；宿主异常先记录首错误、继续收束和尽力持久化，再抛出原异常。活 consumer 内的写库/轻检查错误通过内部异常包装暂存原对象，不以退出 consumer 代替停止资源。少见的自定义 Exception 也不能让 finally 写入合格证据；日志、扫描或后续清理错误不替代首异常。
+
+无宿主问题且执行证据完整时，先保存真实 Reconciled，再 inspect 正向归档。scope_blocked 按报告原说明与路径写 ScopeBlocked；completed 保持 awaiting_delivery。后续错误用新的 Reconciled(actual_digest, actual_stop, detail, None, None) 清除 logpair，合法阶段再发 EvidenceRejected 或 Diagnostic。写操作是否无错与是否已确认提交分别记录；DB 最终不可写时只能报告结算未持久完成，不能声称已撤销或继续消费产物。
