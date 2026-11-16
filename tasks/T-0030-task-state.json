@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "id": "T-0030",
+  "goal": "单执行者任务的实现尝试与冻结输入可持久化、恢复和审计，只有当前尝试能推进状态，重试前必须完成进程与工作区核对。",
+  "baseline_commit": "da710d5edf7df101cd0e8b6ab10ff2642d072589",
+  "write_scope": [
+    "src/multi_agent/core/task_state.py",
+    "src/multi_agent/core/task_events.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/task_store.py",
+    "src/multi_agent/store/task_codec.py",
+    "src/multi_agent/store/migrations/0003_tasks.sql",
+    "tests/unit/test_task_state.py",
+    "tests/unit/test_task_store.py",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_store_inputs.py",
+    "tests/replay/test_tasks_replay.py",
+    "tests/replay/scenarios/tasks/*.json",
+    "docs/task-state.md",
+    "tasks/T-0030-task-state.json",
+    "docs/deliveries/T-0030.md"
+  ],
+  "depends_on": [
+    "T-0028",
+    "T-0029"
+  ],
+  "interface_contracts": [
+    {
+      "name": "bounded lifecycle",
+      "definition": "本卡只建立实现阶段状态底座：TaskPhase为ready/implementing/cancelling/awaiting_delivery/failed/cancelled/planning_required。awaiting_delivery不代表验收或候选已接受；后续工作树交付、测试/审核、返工卡再扩展阶段/事件及迁移。TaskState绑定task_id/task_hash/rules_hash/baseline_commit与不可变attempts；TaskAttempt包含AttemptState运行记录、DispatchDecision请求、worktree/prompt_template_version/started_at/environment及reconciliation。environment仅接收边界实测值，未知None，不能用请求填实际。使用已有AttemptState与规范化AdapterEvent，复用已有运行时转移表，不改变旧审核行为。"
+    },
+    {
+      "name": "events and transitions",
+      "definition": "TaskEnvelope(attempt,event,occurred_at=None)路由；事件包括TaskAttemptStarted(decision,worktree,prompt_template_version,started_at,environment)、TaskReconciled(worktree_digest,process_stopped,detail)、TaskScopeBlocked(reason,required_paths)，TaskDiagnostic(diagnostic:Error)，以及已有CancelRequested/AdapterEvent。所有新转移集中登记core/transitions.py的任务表，非法未登记转移直接抛；任务事件新定义在task_events.py，不新增FailureCategory。首次从ready启动；失败/取消重试必须有当前尝试停止且工作区已核对的TaskReconciled；每次number递增、decision两hash必须一致。ScopeBlocked仅在已成功终态且已观察到ProcessExited后交回规划，保留原因/所需路径，同卡不可继续写。"
+    },
+    {
+      "name": "terminal and recovery semantics",
+      "definition": "规范化运行时仍按既有Adapter合同先终态后退出（取消可退出确认）；Completed进入awaiting_delivery但后续交付须另查真实ProcessExited存在并保留原始退出码；Error进入failed，取消终态或确认进程停止进入cancelled；终态/exit分别保存、重复终态/重复exit只进历史。已核对实际源码：RuntimeAdapter正常Completed后close_finished/terminate可能导致非零(signal)退出，不能单以exit码重判模型终态；成功终态+任意真实退出码仍等待交付校验，退出码保留可见。模型错误以规范化Error为准；后续实际测试命令的exit0另属测试执行器。重启只加载展示，不自动重发。TaskReconciled记录真实边界工作树digest和进程停止事实；process_stopped=false不能许可重试，仍运行时确认停止可将任务phase标failed（runtime原始status/报告保留，failure_category保持None，不伪造Error/exit码），同一次true核对可许可retry；取消中确认停止可终结取消。awaiting_delivery核对后仍等交付校验，不悄悄重跑。旧attempt的任何晚到事件只历史不改当前或旧聚合记录。 以最新TaskReconciled为准，新的process_stopped=false撤销旧true的重试许可；旧attempt事件先路由history（包括旧start），当前重复start拒绝。无exit但已停止的awaiting_delivery继续等待证据/后续交付处置，不推断退出码。 边界必须把无模型终态且无ProcessExited的adapter.cleanup_incomplete等停止未确认诊断与真正终态区分，不能作为终态Error送入；可用TaskDiagnostic保存原Error，任务表仅HISTORY_ONLY不推进implementing/cancelling，等待真正终态/退出或TaskReconciled确认停止。core不再按raw CLI字段重新分类；后续runner负责该边界，既有review runner已有过滤。"
+    },
+    {
+      "name": "storage and immutable input",
+      "definition": "新增迁移0003，旧迁移不改。TaskStore复用ReviewStore连接/迁移，可继承；新增task_runs、task_attempts、task_history保存输入、当前phase/attempt、各尝试请求/运行记录、事件与disposition。输入payload保留原始requirements、完整TaskCard、FrozenProjectRules的repository/baseline/blob/raw内容/解析值，raw规则hash不单独作为跨仓库/基线身份。接口create_task(run_id,card,rules,requirements,created_at)、load_task、load_task_input、apply_task、load_task_history、list_recoverable_tasks；load_task_input返回不可变TaskInput。检查当前attempt、写状态与追加history必须同一BEGIN IMMEDIATE事务；多连接竞争只有一个合法start，晚结果历史保留。读使用一致快照，错误不吞。 连接沿用ReviewStore的isolation_level=None和5秒timeout；同run竞争败者等锁后由转移表ValueError拒绝，无半条写入。list_recoverable_tasks列所有本卡phase的未完成run（含ready/awaiting_delivery/planning_required），是待处理列表不是自动retry许可；全局跨run单执行者锁由后续runner实现。"
+    },
+    {
+      "name": "checks and source boundaries",
+      "definition": "先按state-change改转移表/迁移/场景一起交付；新任务回放至少覆盖retry+late、cancel+exit、restart+reconcile，重复运行结果一致，内存与SQLite结果/历史一致。两个原有store测试仅更新预期最新migration版本2→3，保留原迁移/重开/数据断言并补1/2→3数据保留，不削弱检查；交付单列原因。无模型、worktree进程操作或实际测试执行。本卡范围内不改受保护配置。 回放内存后端为纯apply_task折叠，不增加内存store。持久化codec遵守AGENTS边界规则，解码已校验存储数据直接构造，结构缺失/枚举错误直接抛，不在store重跑JSON Schema/YAML等边界防御；数据库任意外部篡改不在本卡承诺内。"
+    }
+  ],
+  "deliverables": [
+    "任务实现阶段不可变状态/事件及集中转移表。",
+    "迁移0003与TaskStore、可信存储codec；输入/当前尝试/历史原子绑定。",
+    "命名单元/回放、docs/task-state.md转移表与T30交付记录。"
+  ],
+  "acceptance_criteria": [
+    "unit/replay test_late_implementation_result_is_history_only：失败→核对→新尝试后旧completed/session/exit只历史；当前检查与写入同事务。",
+    "unit test_concurrent_task_start_has_one_winner：两个SQLite连接竞争派发只有一个成功、尝试编号唯一；失败事务不留半个状态/历史。 正常5秒锁等待内的败者由非法重复start抛ValueError，测试用受控同步避免用超时竞争代替状态校验。",
+    "unit/replay test_restart_requires_attempt_and_workspace_reconciliation：重开DB只读展示、直接retry拒绝、停止与工作区核对后才新尝试；未停止拒绝推进。",
+    "unit/replay test_task_cancellation_preserves_terminal_and_exit：取消意图不冒称已停止；终态或确认停止后cancelled；重复终态/exit历史保留。 回放用TaskDiagnostic保留cleanup_incomplete诊断，phase保持implementing/cancelling，不伪造停止。",
+    "unit test_task_inputs_and_request_evidence_are_frozen：原卡/规则/来源内容不被请求值或调用方容器变异污染，两hash错配拒绝；unknown实际模型/effort保持None。",
+    "unit test_scope_block_requires_replanning / test_task_success_requires_exit_for_delivery：范围阻塞保留原因，成功终态与实际退出分别保存（含Completed+signal负退出，不能仅按非零改判终态），不将awaiting_delivery当验收成功。",
+    "unit test_task_migration_preserves_existing_reviews：旧1/2版本升级到3后既有审核数据及历史保留；旧迁移未改。",
+    "完整verify五步+新增回放两后端重复结果一致，交付开工HEAD/候选SHA/逐项验收/原有测试改动原因/路径后正常独立提交。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

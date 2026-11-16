@@ -1,0 +1,371 @@
+{
+  "steps": [
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-1",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:01Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "restart-first"
+        },
+        "occurred_at": "2026-11-16T00:01:02Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-2",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:04Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "process_stopped": true,
+          "detail": "recovered process stopped, tree checked"
+        },
+        "occurred_at": "2026-11-16T00:01:05Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "process_stopped": false,
+          "detail": "new observation revokes earlier stopped fact"
+        },
+        "occurred_at": "2026-11-16T00:01:07Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-2",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:08Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "process_stopped": true,
+          "detail": "fresh stop and tree confirmation"
+        },
+        "occurred_at": "2026-11-16T00:01:09Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-2",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:10Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "result": {
+            "summary": "candidate needs larger scope"
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:11Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "9999999999999999999999999999999999999999999999999999999999999999",
+          "process_stopped": true,
+          "detail": "successful attempt stopped, exit event not yet received"
+        },
+        "occurred_at": "2026-11-16T00:01:12Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_scope_blocked",
+          "reason": "needs extra path",
+          "required_paths": [
+            "shared/interface.py"
+          ]
+        },
+        "occurred_at": "2026-11-16T00:01:14Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:01:15Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": true
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_scope_blocked",
+          "reason": "needs extra path",
+          "required_paths": [
+            "shared/interface.py"
+          ]
+        },
+        "occurred_at": "2026-11-16T00:01:16Z"
+      },
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 3,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-3",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:03Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:17Z"
+      },
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 2,
+        "delivery_ready": false
+      }
+    }
+  ],
+  "final": {
+    "phase": "planning_required",
+    "current_attempt": 2,
+    "delivery_ready": false,
+    "attempts": {
+      "1": {
+        "status": "running",
+        "failure_category": null,
+        "detail": null,
+        "retry_after": null,
+        "session_id": "restart-first",
+        "reported_model": null,
+        "reported_effort": null,
+        "reported_model_source": null,
+        "reported_effort_source": null,
+        "result": null,
+        "exit_code": null,
+        "reconciliation": {
+          "worktree_digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "process_stopped": true,
+          "detail": "fresh stop and tree confirmation"
+        }
+      },
+      "2": {
+        "status": "succeeded",
+        "failure_category": null,
+        "detail": null,
+        "retry_after": null,
+        "session_id": null,
+        "reported_model": null,
+        "reported_effort": null,
+        "reported_model_source": null,
+        "reported_effort_source": null,
+        "result": {
+          "summary": "candidate needs larger scope"
+        },
+        "exit_code": -15,
+        "reconciliation": {
+          "worktree_digest": "9999999999999999999999999999999999999999999999999999999999999999",
+          "process_stopped": true,
+          "detail": "successful attempt stopped, exit event not yet received"
+        }
+      }
+    },
+    "scope_block": {
+      "reason": "needs extra path",
+      "required_paths": [
+        "shared/interface.py"
+      ]
+    }
+  }
+}

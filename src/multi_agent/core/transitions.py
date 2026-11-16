@@ -22,8 +22,18 @@ from .state import (
     Disposition,
     EvidenceSource,
     RoundState,
+    SeatConfig,
     SeatState,
 )
+from .task_events import (
+    TaskAttemptStarted,
+    TaskDiagnostic,
+    TaskEnvelope,
+    TaskEvent,
+    TaskReconciled,
+    TaskScopeBlocked,
+)
+from .task_state import TaskAttempt, TaskPhase, TaskState
 
 type Transition = Callable[[AttemptState, ReviewEvent], AttemptState]
 
@@ -195,3 +205,203 @@ def _apply_to_seat(
     if updated is current:
         return seat, Disposition.APPLIED
     return replace(seat, attempts=seat.attempts[:-1] + (updated,)), Disposition.APPLIED
+
+
+# Task lifecycle registration is separate from review-seat registration. In
+# particular, task retries require reconciliation and exits are first-write
+# evidence. Do not change the established review semantics to implement these.
+type TaskTransition = Callable[[TaskState, TaskEnvelope], tuple[TaskState, Disposition]]
+
+
+def _task_start(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskAttemptStarted)
+    current = state.current_attempt
+    if current is not None and (
+        current.reconciliation is None or not current.reconciliation.process_stopped
+    ):
+        raise ValueError("retry requires current process and workspace reconciliation")
+    if (
+        event.decision.task_hash != state.task_hash
+        or event.decision.rules_hash != state.rules_hash
+    ):
+        raise ValueError("dispatch decision does not match frozen task and rules")
+    started = TaskAttempt(event, AttemptState(envelope.attempt, AttemptStatus.RUNNING))
+    return (
+        replace(
+            state,
+            phase=TaskPhase.IMPLEMENTING,
+            attempts=state.attempts + (started,),
+        ),
+        Disposition.APPLIED,
+    )
+
+
+_TASK_RUNTIME_PHASES = {
+    AttemptStatus.RUNNING: TaskPhase.IMPLEMENTING,
+    AttemptStatus.CANCELLING: TaskPhase.CANCELLING,
+    AttemptStatus.SUCCEEDED: TaskPhase.AWAITING_DELIVERY,
+    AttemptStatus.FAILED: TaskPhase.FAILED,
+}
+
+
+def _task_runtime(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(
+        event, (SessionStarted, Message, Usage, Completed, Error, CancelRequested)
+    )
+    current = state.attempts[-1]
+    # The existing table operates on a seat, but stores no model request evidence
+    # into runtime observations. Its provider/model fields here are only routing
+    # context; every task attempt retains its own immutable requested decision.
+    choice = current.request.decision.choice
+    seat = SeatState(
+        SeatConfig("implementation", choice.provider, choice.model, choice.effort),
+        tuple(attempt.runtime for attempt in state.attempts),
+    )
+    updated, disposition = _apply_to_seat(
+        seat, Envelope("implementation", envelope.attempt, event, envelope.occurred_at)
+    )
+    if disposition == Disposition.HISTORY_ONLY:
+        return state, disposition
+    runtime = updated.attempts[-1]
+    phase = _TASK_RUNTIME_PHASES[runtime.status]
+    if (
+        runtime.status == AttemptStatus.FAILED
+        and runtime.failure_category == FailureCategory.CANCELLED
+    ):
+        phase = TaskPhase.CANCELLED
+    return (
+        replace(
+            state,
+            phase=phase,
+            attempts=state.attempts[:-1] + (replace(current, runtime=runtime),),
+        ),
+        disposition,
+    )
+
+
+def _task_exit(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, ProcessExited)
+    current = state.attempts[-1]
+    if current.runtime.exit_code is not None:
+        return state, Disposition.HISTORY_ONLY
+    phase = state.phase
+    if phase == TaskPhase.CANCELLING:
+        runtime = _cancel_with_exit(current.runtime, event)
+        phase = TaskPhase.CANCELLED
+    else:
+        # A confirmed host recovery can already have closed the task phase
+        # without a model terminal. Record this later actual exit independently.
+        runtime = _record_exit(current.runtime, event)
+    return (
+        replace(
+            state,
+            phase=phase,
+            attempts=state.attempts[:-1] + (replace(current, runtime=runtime),),
+        ),
+        Disposition.APPLIED,
+    )
+
+
+def _task_reconcile(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskReconciled)
+    phase = state.phase
+    if event.process_stopped:
+        phase = {
+            TaskPhase.IMPLEMENTING: TaskPhase.FAILED,
+            TaskPhase.CANCELLING: TaskPhase.CANCELLED,
+        }.get(phase, phase)
+    # Only the task phase changes on host recovery. No model Error, exit code,
+    # reported setting or runtime status is invented from the host observation.
+    current = replace(state.attempts[-1], reconciliation=event)
+    return (
+        replace(state, phase=phase, attempts=state.attempts[:-1] + (current,)),
+        Disposition.APPLIED,
+    )
+
+
+def _task_scope_block(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskScopeBlocked)
+    if not state.delivery_ready:
+        raise ValueError(
+            "scope handback requires a successful terminal and actual exit"
+        )
+    return (
+        replace(state, phase=TaskPhase.PLANNING_REQUIRED, scope_block=event),
+        Disposition.APPLIED,
+    )
+
+
+_TASK_ACTIVE: dict[type[TaskEvent], TaskTransition | None] = {
+    SessionStarted: _task_runtime,
+    Message: _task_runtime,
+    Usage: _task_runtime,
+    Completed: _task_runtime,
+    Error: _task_runtime,
+    CancelRequested: _task_runtime,
+    TaskReconciled: _task_reconcile,
+    TaskDiagnostic: None,
+}
+_TASK_CLOSED: dict[type[TaskEvent], TaskTransition | None] = {
+    SessionStarted: None,
+    Message: None,
+    Usage: None,
+    Completed: None,
+    Error: None,
+    CancelRequested: None,
+    ProcessExited: _task_exit,
+    TaskDiagnostic: None,
+    TaskReconciled: _task_reconcile,
+}
+_TASK_TRANSITIONS: dict[TaskPhase, dict[type[TaskEvent], TaskTransition | None]] = {
+    TaskPhase.READY: {TaskAttemptStarted: _task_start},
+    TaskPhase.IMPLEMENTING: _TASK_ACTIVE,
+    TaskPhase.CANCELLING: {**_TASK_ACTIVE, ProcessExited: _task_exit},
+    TaskPhase.AWAITING_DELIVERY: {**_TASK_CLOSED, TaskScopeBlocked: _task_scope_block},
+    TaskPhase.FAILED: {**_TASK_CLOSED, TaskAttemptStarted: _task_start},
+    TaskPhase.CANCELLED: {**_TASK_CLOSED, TaskAttemptStarted: _task_start},
+    TaskPhase.PLANNING_REQUIRED: {
+        **dict.fromkeys(_TASK_CLOSED),
+        TaskScopeBlocked: None,
+    },
+}
+
+
+def apply_task(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    """Pure task transition; a store must route and write within one transaction."""
+    current = state.current_attempt
+    if envelope.attempt < 1:
+        raise ValueError("task attempt numbers start at 1")
+    if current is not None and envelope.attempt < current.number:
+        return state, Disposition.HISTORY_ONLY
+    if isinstance(envelope.event, TaskAttemptStarted):
+        expected = current.number + 1 if current is not None else 1
+        if envelope.attempt != expected:
+            raise ValueError("task start must use the next attempt number")
+    elif current is None or envelope.attempt != current.number:
+        raise ValueError("task attempt has not started")
+    registered = _TASK_TRANSITIONS[state.phase]
+    if type(envelope.event) not in registered:
+        raise ValueError(
+            f"event {envelope.event.kind} is invalid in task phase {state.phase}"
+        )
+    transition = registered[type(envelope.event)]
+    if transition is None:
+        return state, Disposition.HISTORY_ONLY
+    return transition(state, envelope)

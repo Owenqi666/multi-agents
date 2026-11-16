@@ -1,0 +1,385 @@
+{
+  "steps": [
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-1",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:01Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "first-session",
+          "raw_type": "synthetic.session"
+        },
+        "occurred_at": "2026-11-16T00:01:02Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "error",
+          "detail": "first attempt timed out",
+          "failure_category": "timeout",
+          "raw_type": "synthetic.error"
+        },
+        "occurred_at": "2026-11-16T00:01:03Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:01:04Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "process_stopped": true,
+          "detail": "owned process stopped and tree inspected"
+        },
+        "occurred_at": "2026-11-16T00:01:05Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-2",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:06Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "late-old-session",
+          "reported_model": "late-old-model"
+        },
+        "occurred_at": "2026-11-16T00:01:07Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "result": {
+            "summary": "stale result"
+          },
+          "reported_model": "stale-model"
+        },
+        "occurred_at": "2026-11-16T00:01:08Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 0
+        },
+        "occurred_at": "2026-11-16T00:01:09Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-1",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:10Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+          "process_stopped": false,
+          "detail": "late old observation"
+        },
+        "occurred_at": "2026-11-16T00:01:11Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_scope_blocked",
+          "reason": "late old scope",
+          "required_paths": [
+            "other/**"
+          ]
+        },
+        "occurred_at": "2026-11-16T00:01:12Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "session_started",
+          "session_id": "current-session",
+          "reported_model": "observed-coder",
+          "raw_type": "synthetic.session"
+        },
+        "occurred_at": "2026-11-16T00:01:13Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "result": {
+            "summary": "current"
+          },
+          "raw_type": "synthetic.completed"
+        },
+        "occurred_at": "2026-11-16T00:01:14Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:01:15Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": true
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 0
+        },
+        "occurred_at": "2026-11-16T00:01:16Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": true
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "completed",
+          "result": {
+            "summary": "duplicate"
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:17Z"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": true
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 2,
+        "delivery_ready": true
+      }
+    }
+  ],
+  "final": {
+    "phase": "awaiting_delivery",
+    "current_attempt": 2,
+    "delivery_ready": true,
+    "attempts": {
+      "1": {
+        "status": "failed",
+        "failure_category": "timeout",
+        "detail": "first attempt timed out",
+        "retry_after": null,
+        "session_id": "first-session",
+        "reported_model": null,
+        "reported_effort": null,
+        "reported_model_source": null,
+        "reported_effort_source": null,
+        "result": null,
+        "exit_code": -15,
+        "reconciliation": {
+          "worktree_digest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "process_stopped": true,
+          "detail": "owned process stopped and tree inspected"
+        }
+      },
+      "2": {
+        "status": "succeeded",
+        "failure_category": null,
+        "detail": null,
+        "retry_after": null,
+        "session_id": "current-session",
+        "reported_model": "observed-coder",
+        "reported_effort": null,
+        "reported_model_source": {
+          "event_type": "session_started",
+          "raw_type": "synthetic.session"
+        },
+        "reported_effort_source": null,
+        "result": {
+          "summary": "current"
+        },
+        "exit_code": -15,
+        "reconciliation": null
+      }
+    },
+    "scope_block": null
+  }
+}

@@ -1,0 +1,276 @@
+{
+  "steps": [
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-1",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:01Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_diagnostic",
+          "diagnostic": {
+            "type": "error",
+            "detail": "process stopping remains unconfirmed",
+            "raw_type": "adapter.cleanup_incomplete"
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:02Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "cancel-session"
+        },
+        "occurred_at": "2026-11-16T00:01:03Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "usage",
+          "counts": {
+            "inputTokens": 12,
+            "outputTokens": 3
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:04Z"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "cancel_requested"
+        },
+        "occurred_at": "2026-11-16T00:01:05Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_diagnostic",
+          "diagnostic": {
+            "type": "error",
+            "detail": "process stopping remains unconfirmed",
+            "raw_type": "adapter.cleanup_incomplete"
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:06Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "cancel_requested"
+        },
+        "occurred_at": "2026-11-16T00:01:07Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "process_stopped": false,
+          "detail": "process still visible"
+        },
+        "occurred_at": "2026-11-16T00:01:08Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 2,
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/worktrees/attempt-2",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "2026-11-16T00:00:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:01:09Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "cancelling",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 130
+        },
+        "occurred_at": "2026-11-16T00:01:11Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 0
+        },
+        "occurred_at": "2026-11-16T00:01:12Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "result": {
+            "summary": "late after confirmed cancellation"
+          },
+          "reported_model": "late-model"
+        },
+        "occurred_at": "2026-11-16T00:01:13Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "cancelled",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    }
+  ],
+  "final": {
+    "phase": "cancelled",
+    "current_attempt": 1,
+    "delivery_ready": false,
+    "attempts": {
+      "1": {
+        "status": "failed",
+        "failure_category": "cancelled",
+        "detail": null,
+        "retry_after": null,
+        "session_id": "cancel-session",
+        "reported_model": null,
+        "reported_effort": null,
+        "reported_model_source": null,
+        "reported_effort_source": null,
+        "result": null,
+        "exit_code": 130,
+        "reconciliation": {
+          "worktree_digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "process_stopped": false,
+          "detail": "process still visible"
+        }
+      }
+    },
+    "scope_block": null
+  }
+}

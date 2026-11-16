@@ -50,7 +50,7 @@ def test_migration_runs_once_and_database_reopens(tmp_path: Path) -> None:
         expected = store.load_round("round-1")
         history = store.load_history("round-1")
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone() == (2,)
+        assert connection.execute("PRAGMA user_version").fetchone() == (3,)
         tables = {
             row[0]
             for row in connection.execute(
