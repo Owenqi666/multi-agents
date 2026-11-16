@@ -1,0 +1,378 @@
+{
+  "steps": [
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Exact draft prompt for card 0",
+          "prompt_template_version": "planning-replay-v1",
+          "started_at": "2026-11-16T00:01:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:01Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "draft-1-session",
+          "raw_type": "synthetic.init"
+        },
+        "occurred_at": "2026-11-16T00:00:02Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "usage",
+          "counts": {
+            "input_tokens": 4
+          },
+          "raw_type": "synthetic.usage"
+        },
+        "occurred_at": "2026-11-16T00:00:03Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "card_variant": 0,
+          "reported_model": "reported-drafter"
+        },
+        "occurred_at": "2026-11-16T00:00:04Z"
+      },
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:00:05Z"
+      },
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Process and log receipt checked",
+          "log_path": "/synthetic/draft-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:06Z"
+      },
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_draft_validated",
+          "card_variant": 0
+        },
+        "occurred_at": "2026-11-16T00:00:07Z"
+      },
+      "expect": {
+        "phase": "awaiting_review",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "awaiting_review",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Exact review prompt for card 0",
+          "prompt_template_version": "planning-replay-v1",
+          "started_at": "2026-11-16T00:01:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          },
+          "card_variant": 0,
+          "draft_attempt": 1
+        },
+        "occurred_at": "2026-11-16T00:00:09Z"
+      },
+      "expect": {
+        "phase": "reviewing",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "review-1-session",
+          "raw_type": "synthetic.init"
+        },
+        "occurred_at": "2026-11-16T00:00:10Z"
+      },
+      "expect": {
+        "phase": "reviewing",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "usage",
+          "counts": {
+            "input_tokens": 7
+          },
+          "raw_type": "synthetic.usage"
+        },
+        "occurred_at": "2026-11-16T00:00:11Z"
+      },
+      "expect": {
+        "phase": "reviewing",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "raw_type": "synthetic.completed",
+          "review": {
+            "card_variant": 0,
+            "decision": "ready",
+            "reason": "Checked the frozen task",
+            "blocking_issues": []
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:12Z"
+      },
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15
+        },
+        "occurred_at": "2026-11-16T00:00:13Z"
+      },
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Process and log receipt checked",
+          "log_path": "/synthetic/review-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:14Z"
+      },
+      "expect": {
+        "phase": "awaiting_validation",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "review",
+        "attempt": 1,
+        "event": {
+          "type": "planning_review_validated",
+          "card_variant": 0,
+          "decision": "ready",
+          "reason": "Checked the frozen task",
+          "blocking_issues": []
+        },
+        "occurred_at": "2026-11-16T00:00:15Z"
+      },
+      "expect": {
+        "phase": "ready",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": true
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "ready",
+        "stage": "review",
+        "draft_attempt": 1,
+        "review_attempt": 1,
+        "can_bind": true
+      }
+    }
+  ],
+  "final": {
+    "phase": "ready",
+    "stage": "review",
+    "draft_attempt": 1,
+    "review_attempt": 1,
+    "can_bind": true,
+    "card_goal": "Original scope",
+    "review_decision": "ready",
+    "attempts": {
+      "draft": [
+        {
+          "number": 1,
+          "status": "succeeded",
+          "failure_category": null,
+          "reported_model": "reported-drafter",
+          "reported_effort": null,
+          "exit_code": -15,
+          "process_stopped": true,
+          "usable": true
+        }
+      ],
+      "review": [
+        {
+          "number": 1,
+          "status": "succeeded",
+          "failure_category": null,
+          "reported_model": null,
+          "reported_effort": null,
+          "exit_code": -15,
+          "process_stopped": true,
+          "usable": true
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,397 @@
+{
+  "steps": [
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Exact draft prompt for card 0",
+          "prompt_template_version": "planning-replay-v1",
+          "started_at": "2026-11-16T00:01:01Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:01Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "cancelled-session"
+        },
+        "occurred_at": "2026-11-16T00:00:02Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "cancel_requested"
+        },
+        "occurred_at": "2026-11-16T00:00:03Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_diagnostic",
+          "diagnostic": {
+            "type": "error",
+            "detail": "Cleanup has not completed",
+            "raw_type": "adapter.cleanup_incomplete"
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:04Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": false,
+          "detail": "Process and log receipt checked",
+          "log_path": "/synthetic/draft-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:05Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "cancelling",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Exact draft prompt for card 0",
+          "prompt_template_version": "planning-replay-v1",
+          "started_at": "2026-11-16T00:01:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:07Z"
+      },
+      "expect": {
+        "phase": "cancelling",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -2
+        },
+        "occurred_at": "2026-11-16T00:00:08Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "reported_model": "late-model",
+          "card_variant": 0
+        },
+        "occurred_at": "2026-11-16T00:00:09Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Exact draft prompt for card 0",
+          "prompt_template_version": "planning-replay-v1",
+          "started_at": "2026-11-16T00:01:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:10Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Process and log receipt checked",
+          "log_path": "/synthetic/draft-1.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:11Z"
+      },
+      "expect": {
+        "phase": "cancelled",
+        "stage": "draft",
+        "draft_attempt": 1,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_attempt_started",
+          "prompt": "Exact draft prompt for card 0",
+          "prompt_template_version": "planning-replay-v1",
+          "started_at": "2026-11-16T00:01:02Z",
+          "environment": {
+            "cli_version": "synthetic-cli",
+            "logged_in": true
+          }
+        },
+        "occurred_at": "2026-11-16T00:00:12Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 1,
+        "event": {
+          "type": "message",
+          "text": "Late old message"
+        },
+        "occurred_at": "2026-11-16T00:00:13Z"
+      },
+      "expect": {
+        "phase": "drafting",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "history_only"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "error",
+          "detail": "Authentication expired",
+          "failure_category": "auth_expired",
+          "raw_type": "synthetic.error"
+        },
+        "occurred_at": "2026-11-16T00:00:14Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "process_exited",
+          "exit_code": 0
+        },
+        "occurred_at": "2026-11-16T00:00:15Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "stage": "draft",
+        "attempt": 2,
+        "event": {
+          "type": "planning_reconciled",
+          "process_stopped": true,
+          "detail": "Process and log receipt checked",
+          "log_path": "/synthetic/draft-2.jsonl",
+          "log_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "occurred_at": "2026-11-16T00:00:16Z"
+      },
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "failed",
+        "stage": "draft",
+        "draft_attempt": 2,
+        "review_attempt": null,
+        "can_bind": false
+      }
+    }
+  ],
+  "final": {
+    "phase": "failed",
+    "stage": "draft",
+    "draft_attempt": 2,
+    "review_attempt": null,
+    "can_bind": false,
+    "card_goal": null,
+    "review_decision": null,
+    "attempts": {
+      "draft": [
+        {
+          "number": 1,
+          "status": "failed",
+          "failure_category": "cancelled",
+          "reported_model": null,
+          "reported_effort": null,
+          "exit_code": -2,
+          "process_stopped": true,
+          "usable": false
+        },
+        {
+          "number": 2,
+          "status": "failed",
+          "failure_category": "auth_expired",
+          "reported_model": null,
+          "reported_effort": null,
+          "exit_code": 0,
+          "process_stopped": true,
+          "usable": false
+        }
+      ],
+      "review": []
+    }
+  }
+}

@@ -34,24 +34,27 @@ class TaskStore(ReviewStore):
     ) -> None:
         if card.baseline_commit != rules.baseline_commit:
             raise ValueError("task and frozen rules must have the same baseline")
-        payload = encode_task_input(TaskInput(card, rules, requirements, created_at))
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
-            self._connection.execute(
-                """INSERT INTO task_runs (
-                       run_id, task_id, task_hash, rules_hash, baseline_commit,
-                       input_payload, phase, current_attempt, scope_block
-                   ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
-                (
-                    run_id,
-                    card.id,
-                    card.task_hash,
-                    rules.rules_hash,
-                    card.baseline_commit,
-                    payload,
-                    TaskPhase.READY,
-                ),
-            )
+            self._insert_task(run_id, TaskInput(card, rules, requirements, created_at))
+
+    def _insert_task(self, run_id: str, value: TaskInput) -> None:
+        """Insert trusted inputs inside the caller's existing write transaction."""
+        self._connection.execute(
+            """INSERT INTO task_runs (
+                   run_id, task_id, task_hash, rules_hash, baseline_commit,
+                   input_payload, phase, current_attempt, scope_block
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)""",
+            (
+                run_id,
+                value.card.id,
+                value.card.task_hash,
+                value.frozen_rules.rules_hash,
+                value.card.baseline_commit,
+                encode_task_input(value),
+                TaskPhase.READY,
+            ),
+        )
 
     def apply_task(self, run_id: str, envelope: TaskEnvelope) -> Disposition:
         with self._connection:
