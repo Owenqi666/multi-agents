@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "id": "T-0035",
+  "goal": "在规划模型产物进入来源门禁前拒绝运行时原始JSON的重复字段和坏编码，避免普通解码悄悄覆盖证据。",
+  "baseline_commit": "e2ce295f994a47e66c03938734f198fa425abb5f",
+  "write_scope": [
+    "src/multi_agent/adapters/runtime_decode.py",
+    "src/multi_agent/adapters/probe/process.py",
+    "src/multi_agent/adapters/runtime.py",
+    "tests/unit/test_runtime_json.py",
+    "tests/unit/test_runtime.py",
+    "tests/unit/test_adapters_probe.py",
+    "tests/unit/runtime_fakes/fake_cli.py",
+    "docs/runtime-json-boundary.md",
+    "docs/deliveries/T-0035.md",
+    "tasks/T-0035-runtime-json.json"
+  ],
+  "depends_on": [
+    "T-0034"
+  ],
+  "interface_contracts": [
+    {
+      "name": "shared strict JSON decoding",
+      "definition": "runtime_decode.strict_json_loads(text:str)用于运行时JSON：保留json.JSONDecodeError表示普通语法非JSON，语义无效重复key（含嵌套）、NaN/Infinity/溢出float、无效UTF8字符串/孤立surrogate和过深递归以简短ValueError失败并保留cause。不输出原payload或重复key内容；JSON对象字段顺序无语义变化，合法Unicode/普通标量/整数/浮点行为保留。不引入全局transport字节上限。 定义RuntimeJSONError(ValueError)表示语义/编码错误；Process先捕获JSONDecodeError走原text路径，再捕获RuntimeJSONError失败，避免子类混淆。JSON容器深度上限128（根容器算1），超过或解析器RecursionError转换为RuntimeJSONError；纯文本行不套此深度限制。str层检查孤立surrogate，字节UTF8检查归Process。"
+    },
+    {
+      "name": "transport stdout and diagnostic stderr",
+      "definition": "probe/process.py:_line在stdout严格decode UTF8，然后严格JSON解析；有效对象照旧进入队列/脱敏Recorder。语法非JSON、非对象JSON、长普通文本以及未换行尾部仍按原text形态记录并传递（product protocol边界仍拒绝其作为有效对象），不能为变绿删除原probe录制断言。stdout语义坏JSON或坏UTF8不允许变成正常dict，保留不含原payload的错误类别/字节数/hash元数据，交watcher既有失败与清理路径。stderr只作诊断：保留可记录文本行为，不借坏/重复key诊断构成模型数据。敏感config/read待应答时仍经原Recorder脱敏，不泄漏secret。 stdout任何坏UTF8（包括普通文本/大行/尾部）都失败，仅合法UTF8的原文本行为保留；stderr替换诊断不作为模型数据。Recorder已有通用emit可写安全元数据，无需改其文件。Process.terminate可在自身stop成功且实际exit/ownedgroupstop/watcher/readers全部确认后，仅抑制已知RuntimeJSONError的重复wait传播；read/wait仍报该错误，其他reader/Recorder/stop异常不得吞掉，不把解析失败误当进程停止未知。 stderr即使是合法JSON也只记录recv/text，不能作为RPC message消耗pending config/read id；未知secret仍走原pending text masking。 新回归若遇macOS退出中的killpg EPERM，仅对OS信号拒绝（不含Recorder PermissionError）有限等待真实exit且group明确消失后允许清理成功；真实组仍存在/不可访问或exit未知仍失败，stop异常不能被重复解析错误覆盖。 OS退出不是stdout EOF：read在队列空且OS已退出时仍等watcher的有限尾部收集；合法尾部先交付再EOF，坏尾部仍失败，不能被重复解析错误清理例外吞掉。 停止已失败但watcher未完成时仅等grace，不无界等EOF；未知活进程保留观察任务和未停止所有权。"
+    },
+    {
+      "name": "structured artifact and environment layers",
+      "definition": "result_value(structured=True)的字符串通过同一strict loader，覆盖Codex final agentMessage.text及Claude result；外层Claude structured_output和两边RPC由Process._line严格解码。已解码result_value仍校验JSON值和UTF8字符串/键，保留result/event模型报告语义。runtime.check_environment完整Claude auth status JSON用同一loader，不能把重复loggedIn字段按last-wins变为成功。新增失败继续用现有RuntimeFailure/Error（无新分类/状态/SQLite）。 重复字段/坏编码/不明确auth均产生既有Error(failure_category=None)，不猜auth_expired等分类。turn没有Completed成功、实际ProcessExited保留；环境检查失败由RuntimeFailure携带Error(None)，不伪造模型回合/退出。普通真实清理失败仍保留cleanup_incomplete，不能用解析加固绕过。"
+    },
+    {
+      "name": "scope and compatibility",
+      "definition": "此卡是规划runner的必要原始证据前置，只修改三处运行时源文件与追加测试/fake模式；旧READ_ONLY/WORKSPACE_WRITE配置、argv、schema审计、取消/终态与实际exit语义不变。旧fake模式和精确断言保留，新模式显式启用；不改fixtures/protocol/protected配置。T36再接规划runner，本卡不发任何真实模型/权限请求。"
+    },
+    {
+      "name": "verification",
+      "definition": "纯loader测试覆盖所有拒绝/合法值及短错误；假Process/runtime覆盖两边outer duplicate、Codex embedded final duplicate、Claude structured_output/result duplicate、auth duplicate、stdout坏UTF8、进程真实退出/reader收集与日志不泄密；现有普通文本/非对象/>1MiB/尾部录制测试保持通过。完整verify五步及正常独立提交。"
+    }
+  ],
+  "deliverables": [
+    "共享严格loader及transport/结构化产物/auth边界接入。",
+    "假运行时回归、原有行为保留、来源范围说明及交付回执。"
+  ],
+  "acceptance_criteria": [
+    "tests/unit/test_runtime_json.py：test_runtime_json_rejects_ambiguous_or_invalid_values：重复字段、非有限数、UTF8/孤立surrogate/递归不作为有效结果；合法数据保留且错误无payload。",
+    "tests/unit/test_runtime.py 与runtime_fakes/fake_cli.py新模式：test_runtime_rejects_duplicate_outer_and_structured_results：两边外层/内层实际raw字节fixture拒绝成功，终态/退出分别保留，不以最后字段冒用ready。",
+    "tests/unit/test_runtime.py：test_environment_rejects_ambiguous_auth_status：重复loggedIn和坏编码不当已登录成功。",
+    "tests/unit/test_adapters_probe.py：test_process_preserves_plain_text_and_trailing_lines：普通非JSON/非对象/大行/尾部及stderr诊断原断言保留；畸形stdout仅记录安全错误证据并正确回收reader/进程。",
+    "完整lint/format/typecheck/unit/replay及正常提交；逐项说明原有文件追加变化、startHEAD/候选/实际路径，未跑真实CLI探测。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

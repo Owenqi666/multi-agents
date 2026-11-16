@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import os
 import signal
@@ -15,6 +16,7 @@ from multi_agent.adapters.probe.config import Options, claude_argv
 from multi_agent.adapters.probe.process import Process
 from multi_agent.adapters.probe.recording import Recorder, Redactor
 from multi_agent.adapters.probe.runner import run_step
+from multi_agent.adapters.runtime_decode import RuntimeJSONError
 
 KINDS = ("env", "turn", "structured", "readonly", "cancel", "bad-model")
 STEPS = tuple(
@@ -1199,3 +1201,742 @@ def test_cli_passes_the_documented_defaults_to_runner(monkeypatch):
             },
         )
     ]
+
+
+def raw_process_program(tmp_path, source):
+    executable = tmp_path / "fake-raw-process"
+    executable.write_text(f"#!{sys.executable}\n" + source)
+    executable.chmod(0o755)
+    return [str(executable)]
+
+
+async def cleanup_raw_process(process):
+    # Failure cleanup is separate from the assertions about production cleanup.
+    # It cannot make a failed stop/reader assertion count as success.
+    if process.child.returncode is None:
+        try:
+            process.child.kill()
+        except ProcessLookupError:
+            pass
+    async with asyncio.timeout(3):
+        await process.wait_exited()
+        await asyncio.gather(process._watcher, return_exceptions=True)
+
+
+@pytest.mark.parametrize(
+    ("payload", "newline", "error_kind"),
+    [
+        (
+            b'{"unregistered-boundary-secret":0,"unregistered-boundary-secret":1}',
+            True,
+            "invalid_json",
+        ),
+        (
+            b'{"nested":{"value":"unregistered-boundary-secret","value":2}}',
+            True,
+            "invalid_json",
+        ),
+        (b'{"value":NaN,"note":"unregistered-boundary-secret"}', True, "invalid_json"),
+        (
+            b'{"value":Infinity,"note":"unregistered-boundary-secret"}',
+            True,
+            "invalid_json",
+        ),
+        (
+            b'{"value":-Infinity,"note":"unregistered-boundary-secret"}',
+            True,
+            "invalid_json",
+        ),
+        (
+            b'{"value":1e309,"note":"unregistered-boundary-secret"}',
+            True,
+            "invalid_json",
+        ),
+        (
+            b'{"value":"\\ud800","note":"unregistered-boundary-secret"}',
+            True,
+            "invalid_json",
+        ),
+        (b'{"\\udfff":"unregistered-boundary-secret"}', True, "invalid_json"),
+        (
+            b"[" * 129 + b'"unregistered-boundary-secret"' + b"]" * 129,
+            True,
+            "invalid_json",
+        ),
+        (b'{"value":"unregistered-boundary-secret\xff"}', True, "invalid_utf8"),
+        (b"unregistered-boundary-secret\xff", True, "invalid_utf8"),
+        (
+            b"x" * (1024 * 1024 + 37) + b"unregistered-boundary-secret\xff",
+            True,
+            "invalid_utf8",
+        ),
+        (b"unregistered-boundary-secret\xff", False, "invalid_utf8"),
+        (
+            b'{"value":NaN,"note":"unregistered-boundary-secret"}\r',
+            True,
+            "invalid_json",
+        ),
+    ],
+    ids=[
+        "duplicate-secret-key",
+        "nested-duplicate",
+        "nan",
+        "infinity",
+        "negative-infinity",
+        "overflow",
+        "surrogate-value",
+        "surrogate-key",
+        "depth",
+        "utf8-object",
+        "utf8-text",
+        "utf8-large-text",
+        "utf8-tail",
+        "raw-carriage-return-hash",
+    ],
+)
+def test_process_rejects_invalid_stdout_without_recording_payload(
+    tmp_path, monkeypatch, payload, newline, error_kind
+):
+    wire = payload + (b"\n" if newline else b"")
+    argv = raw_process_program(
+        tmp_path,
+        "import os\n"
+        f"os.write(1, {wire!r})\n"
+        "os.write(2, b'unregistered-stderr-secret\\n')\n"
+        "os._exit(23)\n",
+    )
+    path = tmp_path / "raw.jsonl"
+
+    async def run():
+        stderr_done = asyncio.Event()
+        original_read_stream = Process._read_stream
+
+        async def read_after_actual_exit(process, reader, stream):
+            if len(payload) > 65536:
+                # Large writes need concurrent draining to avoid blocking the
+                # child on pipe capacity; its observed exit may be signal-based.
+                await original_read_stream(process, reader, stream)
+                return
+            # Deterministically preserve the child's chosen OS exit, then read
+            # diagnostics before the invalid stdout can cancel the other reader.
+            await process.wait_exited()
+            if stream == "stdout":
+                await stderr_done.wait()
+                await original_read_stream(process, reader, stream)
+            else:
+                try:
+                    await original_read_stream(process, reader, stream)
+                finally:
+                    stderr_done.set()
+
+        monkeypatch.setattr(Process, "_read_stream", read_after_actual_exit)
+        with Recorder(path, Redactor()) as recorder:
+            recorder.emit(
+                "send",
+                proc="raw",
+                message={"id": 17, "method": "config/read", "params": {}},
+            )
+            process = await Process.start("raw", argv, tmp_path, recorder, grace=0.1)
+            try:
+                async with asyncio.timeout(3):
+                    with pytest.raises(RuntimeJSONError) as caught:
+                        await process.wait()
+                    assert "unregistered-boundary-secret" not in str(caught.value)
+                    assert len(str(caught.value)) < 200
+                    assert process.child.returncode is not None
+                    if len(payload) <= 65536:
+                        assert process.child.returncode == 23
+                    assert await process.wait_exited() == process.child.returncode
+                    assert all(reader.done() for reader in process._readers)
+                    await process.terminate(0.1)
+                    await process.terminate(0.1)
+                    with pytest.raises(RuntimeJSONError) as again:
+                        await process.read()
+                    assert again.value is caught.value
+                    with pytest.raises(RuntimeJSONError) as waited:
+                        await process.wait()
+                    assert waited.value is caught.value
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+    records = read_records(path)
+    (failure,) = [record for record in records if record["kind"] == "decode_error"]
+    assert set(failure) == {
+        "seq",
+        "t",
+        "kind",
+        "proc",
+        "stream",
+        "error",
+        "byte_count",
+        "sha256",
+    }
+    assert failure["proc"] == "raw"
+    assert failure["stream"] == "stdout"
+    assert failure["error"] == error_kind
+    assert failure["byte_count"] == len(payload)
+    assert failure["sha256"] == hashlib.sha256(payload).hexdigest()
+    assert not any(
+        record["kind"] == "recv" and record.get("stream") == "stdout"
+        for record in records
+    )
+    diagnostics = [record for record in records if record.get("stream") == "stderr"]
+    if len(payload) <= 65536:
+        assert len(diagnostics) == 1
+    assert all(
+        record["text"] == "<CONFIG_READ_PAYLOAD_OMITTED>" for record in diagnostics
+    )
+    assert "unregistered-boundary-secret" not in path.read_text()
+    assert "unregistered-stderr-secret" not in path.read_text()
+
+
+@pytest.mark.parametrize("owned_group", [False, True])
+def test_process_invalid_stdout_stops_sleeping_child_and_keeps_read_failure(
+    tmp_path, owned_group
+):
+    argv = raw_process_program(
+        tmp_path,
+        'import os, time\nos.write(1, b\'{"same":1,"same":2}\\n\')\ntime.sleep(60)\n',
+    )
+
+    async def run():
+        with Recorder(tmp_path / "sleeping.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "raw",
+                argv,
+                tmp_path,
+                recorder,
+                grace=0.1,
+                start_new_session=owned_group,
+            )
+            try:
+                async with asyncio.timeout(3):
+                    with pytest.raises(RuntimeJSONError) as caught:
+                        first = await process.read()
+                        if first is None:
+                            # read() can observe OS exit before final pipe drain;
+                            # wait() must still surface the failed reader.
+                            await process.wait()
+                    assert process.child.returncode == -signal.SIGTERM
+                    assert await process.wait_exited() == -signal.SIGTERM
+                    assert process._watcher.done()
+                    assert all(reader.done() for reader in process._readers)
+                    if owned_group:
+                        assert process._group_stopped
+                    with pytest.raises(ProcessLookupError):
+                        os.kill(process.child.pid, 0)
+                    await process.terminate(0.1)
+                    await process.terminate(0.1)
+                    for operation in (process.read, process.wait):
+                        with pytest.raises(RuntimeJSONError) as repeated:
+                            await operation()
+                        assert repeated.value is caught.value
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_preserves_plain_text_and_trailing_lines(tmp_path):
+    lines = [
+        "not-json",
+        '{"unfinished":',
+        '[1, "two"]',
+        '"scalar"',
+        "true",
+        "42",
+        "null",
+        "x" * (1024 * 1024 + 37),
+        "tail without newline",
+    ]
+    stdout = b'{"valid":"caf\xc3\xa9"}\n' + "\n".join(lines).encode()
+    stderr = b'diagnostic\xff\n{"repeated":1,"repeated":2}\nstderr tail'
+    argv = raw_process_program(
+        tmp_path,
+        f"import os\nos.write(1, {stdout!r})\nos.write(2, {stderr!r})\nos._exit(7)\n",
+    )
+    path = tmp_path / "valid.jsonl"
+
+    async def run():
+        with Recorder(path, Redactor()) as recorder:
+            process = await Process.start("raw", argv, tmp_path, recorder, grace=0.1)
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 7
+                    values = []
+                    while (value := await process.read()) is not None:
+                        values.append(value)
+                    assert values == [{"valid": "café"}, *lines]
+                    assert all(reader.done() for reader in process._readers)
+                    await process.terminate(0.1)
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+    records = read_records(path)
+    assert not any(record["kind"] == "decode_error" for record in records)
+    assert [
+        record["text"]
+        for record in records
+        if record.get("stream") == "stdout" and "text" in record
+    ] == lines
+    diagnostics = [record for record in records if record.get("stream") == "stderr"]
+    assert diagnostics[0]["text"] == "diagnostic�"
+    assert diagnostics[0]["encoding_replaced"] is True
+    assert diagnostics[1]["text"] == '{"repeated":1,"repeated":2}'
+    assert diagnostics[2]["text"] == "stderr tail"
+    assert all("encoding_replaced" not in record for record in diagnostics[1:])
+    assert [record["returncode"] for record in records if record["kind"] == "exit"] == [
+        7
+    ]
+
+
+@pytest.mark.parametrize("error_type", [OSError, RuntimeError])
+def test_process_json_failure_does_not_hide_stop_failure(
+    tmp_path, monkeypatch, error_type
+):
+    argv = raw_process_program(
+        tmp_path,
+        'import os\nos.write(1, b\'{"same":1,"same":2}\\n\')\n',
+    )
+
+    async def run():
+        with Recorder(tmp_path / "stop-error.jsonl", Redactor()) as recorder:
+            process = await Process.start("raw", argv, tmp_path, recorder, grace=0.1)
+            try:
+                async with asyncio.timeout(3):
+                    with pytest.raises(RuntimeJSONError):
+                        await process.wait()
+                    assert process.child.returncode is not None
+                    failure = error_type("injected stop failure")
+
+                    async def cannot_confirm_stop(grace):
+                        raise failure
+
+                    with monkeypatch.context() as patcher:
+                        patcher.setattr(process, "_stop_child", cannot_confirm_stop)
+                        with pytest.raises(error_type) as caught:
+                            await process.terminate(0.1)
+                    assert caught.value is failure
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_json_failure_does_not_hide_other_reader_recording_failure(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(
+        tmp_path,
+        "import os, time\n"
+        "os.write(2, b'stderr recording fails\\n')\n"
+        'os.write(1, b\'{"same":1,"same":2}\\n\')\n'
+        "time.sleep(60)\n",
+    )
+
+    async def run():
+        stdout_failed = asyncio.Event()
+        stderr_ready = asyncio.Event()
+        original_read_stream = Process._read_stream
+        original_emit = Recorder.emit
+        failure = OSError("injected stderr recording failure")
+
+        async def order_readers(process, reader, stream):
+            if stream == "stdout":
+                await stderr_ready.wait()
+                try:
+                    await original_read_stream(process, reader, stream)
+                finally:
+                    stdout_failed.set()
+            else:
+                original_read = reader.read
+
+                async def read_when_stdout_failed(size):
+                    data = await original_read(size)
+                    # Consume actual stderr bytes before releasing stdout; do
+                    # not rely on the child winning a scheduling race to write.
+                    stderr_ready.set()
+                    await stdout_failed.wait()
+                    return data
+
+                monkeypatch.setattr(reader, "read", read_when_stdout_failed)
+                await original_read_stream(process, reader, stream)
+
+        def fail_stderr_recording(recorder, kind, **fields):
+            if kind == "recv" and fields.get("stream") == "stderr":
+                raise failure
+            return original_emit(recorder, kind, **fields)
+
+        monkeypatch.setattr(Process, "_read_stream", order_readers)
+        monkeypatch.setattr(Recorder, "emit", fail_stderr_recording)
+        with Recorder(tmp_path / "reader-errors.jsonl", Redactor()) as recorder:
+            process = await Process.start("raw", argv, tmp_path, recorder, grace=0.1)
+            try:
+                async with asyncio.timeout(3):
+                    with pytest.raises((RuntimeJSONError, OSError)):
+                        await process.wait()
+                    assert isinstance(process._readers[0].exception(), RuntimeJSONError)
+                    assert process._readers[1].exception() is failure
+                    assert process.child.returncode is not None
+                    with pytest.raises(OSError) as caught:
+                        await process.terminate(0.1)
+                    assert caught.value is failure
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_stderr_cannot_consume_pending_config_read(tmp_path):
+    argv = raw_process_program(
+        tmp_path,
+        "import os\n"
+        'os.write(2, b\'{"id":17,"result":{"value":"unregistered-json-secret"}}\\n\')\n'
+        "os.write(2, b'unregistered-plain-secret\\n')\n"
+        "os.write(2, b'unregistered-encoding-secret\\xff\\n')\n",
+    )
+    path = tmp_path / "stderr-config.jsonl"
+
+    async def run():
+        with Recorder(path, Redactor()) as recorder:
+            recorder.emit(
+                "send",
+                proc="raw",
+                message={"id": 17, "method": "config/read", "params": {}},
+            )
+            process = await Process.start("raw", argv, tmp_path, recorder, grace=0.1)
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 0
+                    assert await process.read() is None
+                    assert recorder._pending_config_reads["raw"] == {17}
+                    await process.terminate(0.1)
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+    diagnostics = [
+        record for record in read_records(path) if record.get("stream") == "stderr"
+    ]
+    assert len(diagnostics) == 3
+    assert all(
+        record["text"] == "<CONFIG_READ_PAYLOAD_OMITTED>" for record in diagnostics
+    )
+    assert all("message" not in record for record in diagnostics)
+    assert all(
+        record["config_read_text_audit"]["raw_payload_omitted"]
+        for record in diagnostics
+    )
+    assert diagnostics[2]["encoding_replaced"] is True
+    assert "unregistered-" not in path.read_text()
+
+
+def test_process_group_signal_denied_after_actual_group_disappearance(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(tmp_path, "import os\nos._exit(7)\n")
+
+    async def run():
+        with Recorder(tmp_path / "gone-group.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "raw", argv, tmp_path, recorder, grace=0.02, start_new_session=True
+            )
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 7
+                    actual_killpg = os.killpg
+                    denied = PermissionError(1, "injected transient signal denial")
+                    signals = []
+
+                    def deny_term_only(group, sig):
+                        assert group == process.child.pid
+                        if sig == signal.SIGTERM:
+                            signals.append(sig)
+                            raise denied
+                        # Group disappearance must be real, not supplied by a
+                        # mocked success return or by the leader's exit alone.
+                        return actual_killpg(group, sig)
+
+                    with monkeypatch.context() as patcher:
+                        patcher.setattr(os, "killpg", deny_term_only)
+                        await process.terminate(0.02)
+                    assert signals == [signal.SIGTERM]
+                    assert process._group_stopped
+                    assert await process.wait_exited() == 7
+                    with pytest.raises(ProcessLookupError):
+                        actual_killpg(process.child.pid, 0)
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_group_signal_denied_with_unknown_group_stays_unconfirmed(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(tmp_path, "import os\nos._exit(7)\n")
+
+    async def run():
+        with Recorder(tmp_path / "unknown-group.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "raw", argv, tmp_path, recorder, grace=0.02, start_new_session=True
+            )
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 7
+                    denied = PermissionError(1, "injected inaccessible group")
+                    signals = []
+
+                    def inaccessible_group(group, sig):
+                        assert group == process.child.pid
+                        signals.append(sig)
+                        raise denied
+
+                    with monkeypatch.context() as patcher:
+                        patcher.setattr(os, "killpg", inaccessible_group)
+                        with pytest.raises(PermissionError) as caught:
+                            await process.terminate(0.02)
+                    assert caught.value.__cause__ is denied
+                    assert signal.SIGTERM in signals and signal.SIGKILL in signals
+                    assert 0 in signals
+                    assert not process._group_stopped
+                    assert process.child.returncode == 7
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_group_does_not_discard_recorder_permission_error(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(tmp_path, "import os\nos._exit(7)\n")
+
+    async def run():
+        with Recorder(tmp_path / "recording-permission.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "raw", argv, tmp_path, recorder, grace=0.02, start_new_session=True
+            )
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.wait() == 7
+                    actual_killpg = os.killpg
+                    actual_emit = recorder.emit
+                    denied = PermissionError(1, "injected log write denial")
+
+                    def successful_signal(group, sig):
+                        assert group == process.child.pid
+                        if sig != 0:
+                            return None
+                        return actual_killpg(group, sig)
+
+                    def deny_signal_record(kind, **fields):
+                        if kind == "signal":
+                            raise denied
+                        return actual_emit(kind, **fields)
+
+                    with monkeypatch.context() as patcher:
+                        patcher.setattr(os, "killpg", successful_signal)
+                        patcher.setattr(recorder, "emit", deny_signal_record)
+                        with pytest.raises(PermissionError) as caught:
+                            await process.terminate(0.02)
+                    assert caught.value is denied
+                    assert await process.wait_exited() == 7
+                    with pytest.raises(ProcessLookupError):
+                        actual_killpg(process.child.pid, 0)
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+def test_process_unknown_group_stop_failure_precedes_json_reader_error(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(
+        tmp_path,
+        'import os\nos.write(1, b\'{"same":1,"same":2}\\n\')\nos._exit(7)\n',
+    )
+
+    async def run():
+        original_read_stream = Process._read_stream
+
+        async def read_after_exit(process, reader, stream):
+            await process.wait_exited()
+            await original_read_stream(process, reader, stream)
+
+        monkeypatch.setattr(Process, "_read_stream", read_after_exit)
+        with Recorder(tmp_path / "stop-priority.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "raw", argv, tmp_path, recorder, grace=0.02, start_new_session=True
+            )
+            try:
+                async with asyncio.timeout(3):
+                    denied = PermissionError(1, "injected inaccessible group")
+
+                    def inaccessible_group(group, sig):
+                        assert group == process.child.pid
+                        raise denied
+
+                    with monkeypatch.context() as patcher:
+                        patcher.setattr(os, "killpg", inaccessible_group)
+                        with pytest.raises(RuntimeJSONError) as parse_error:
+                            await process.wait()
+                        assert process.child.returncode == 7
+                        assert not process._group_stopped
+                        stop_error = OSError("injected unconfirmed stop")
+
+                        async def cannot_stop(grace):
+                            raise stop_error
+
+                        patcher.setattr(process, "_stop_child", cannot_stop)
+                        with pytest.raises(OSError) as caught:
+                            await process.terminate(0.02)
+                        assert caught.value is stop_error
+                        assert not process._group_stopped
+                        with pytest.raises(RuntimeJSONError) as repeated:
+                            await process.wait()
+                        assert repeated.value is parse_error.value
+            finally:
+                await cleanup_raw_process(process)
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected"),
+    [
+        pytest.param(b'{"same":1,"same":2}', None, id="invalid-json-tail"),
+        pytest.param(b'{"tail":"caf\xc3\xa9"}', {"tail": "café"}, id="valid-json-tail"),
+    ],
+)
+def test_process_read_after_os_exit_waits_for_unparsed_stdout_tail(
+    tmp_path, monkeypatch, payload, expected
+):
+    argv = raw_process_program(
+        tmp_path, f"import os\nos.write(1, {payload!r})\nos._exit(7)\n"
+    )
+
+    async def run():
+        stdout_buffered = asyncio.Event()
+        release_stdout = asyncio.Event()
+        read_started = asyncio.Event()
+        original_read_stream = Process._read_stream
+
+        async def hold_stdout_before_line(process, reader, stream):
+            if stream == "stdout":
+                original_read = reader.read
+
+                async def gated_read(size):
+                    data = await original_read(size)
+                    if data:
+                        stdout_buffered.set()
+                        await release_stdout.wait()
+                    return data
+
+                monkeypatch.setattr(reader, "read", gated_read)
+            await original_read_stream(process, reader, stream)
+
+        monkeypatch.setattr(Process, "_read_stream", hold_stdout_before_line)
+        with Recorder(tmp_path / "exit-before-drain.jsonl", Redactor()) as recorder:
+            process = await Process.start("raw", argv, tmp_path, recorder, grace=1)
+            reading = None
+            try:
+                async with asyncio.timeout(3):
+                    await stdout_buffered.wait()
+                    assert await process.wait_exited() == 7
+                    assert not process._watcher.done()
+
+                    async def read_after_exit():
+                        read_started.set()
+                        return await process.read()
+
+                    reading = asyncio.create_task(read_after_exit())
+                    await read_started.wait()
+                    # The child has exited and its bytes are already in the
+                    # host, but _line has not run. OS exit alone is not EOF.
+                    assert not reading.done()
+                    release_stdout.set()
+                    if expected is None:
+                        with pytest.raises(RuntimeJSONError) as caught:
+                            await reading
+                        with pytest.raises(RuntimeJSONError) as waited:
+                            await process.wait()
+                        assert waited.value is caught.value
+                    else:
+                        assert await reading == expected
+                        assert await process.read() is None
+                        assert await process.wait() == 7
+                    assert process.child.returncode == 7
+                    assert all(reader.done() for reader in process._readers)
+                    await process.terminate(0.1)
+            finally:
+                release_stdout.set()
+                await cleanup_raw_process(process)
+                if reading is not None:
+                    await asyncio.gather(reading, return_exceptions=True)
+
+    asyncio.run(run())
+
+
+def test_process_live_group_signal_denial_fails_without_waiting_for_exit(
+    tmp_path, monkeypatch
+):
+    argv = raw_process_program(
+        tmp_path,
+        "import os, time\nos.write(1, b'{\"ready\":true}\\n')\ntime.sleep(60)\n",
+    )
+
+    async def run():
+        with Recorder(tmp_path / "live-group-denied.jsonl", Redactor()) as recorder:
+            process = await Process.start(
+                "raw", argv, tmp_path, recorder, grace=0.02, start_new_session=True
+            )
+            terminating = None
+            try:
+                async with asyncio.timeout(3):
+                    assert await process.read() == {"ready": True}
+                assert process.child.returncode is None
+                denied = PermissionError(1, "injected live group denial")
+                calls = []
+
+                def inaccessible_group(group, sig):
+                    assert group == process.child.pid
+                    calls.append(sig)
+                    raise denied
+
+                with monkeypatch.context() as patcher:
+                    patcher.setattr(os, "killpg", inaccessible_group)
+                    terminating = asyncio.create_task(process.terminate(0.02))
+                    # wait_for/timeout would cancel the caller, which terminate
+                    # deliberately shields. Observe the deadline without asking
+                    # the still-owned cleanup task to abandon its work.
+                    done, _ = await asyncio.wait((terminating,), timeout=1)
+                    assert terminating in done, "stop denial waited forever for OS exit"
+                    with pytest.raises(PermissionError) as caught:
+                        terminating.result()
+                    assert caught.value.__cause__ is denied
+                    assert signal.SIGTERM in calls and signal.SIGKILL in calls
+                    assert 0 in calls
+                    assert process.child.returncode is None
+                    assert not process._group_stopped
+                    assert not process._exit.done()
+                    assert not process._watcher.done()
+                    assert all(not reader.done() for reader in process._readers)
+                    assert process._stdout.empty(), "unconfirmed stop fabricated EOF"
+            finally:
+                # Restore real signals before clearing the deliberately live
+                # owner. This external cleanup is never proof of terminate()
+                # succeeding, and the assertions above require its failure.
+                await cleanup_raw_process(process)
+                if terminating is not None:
+                    await asyncio.gather(terminating, return_exceptions=True)
+            assert process.child.returncode == -signal.SIGKILL
+            assert process._exit.done() and process._watcher.done()
+            assert all(reader.done() for reader in process._readers)
+            with pytest.raises(ProcessLookupError):
+                os.killpg(process.child.pid, 0)
+
+    asyncio.run(run())

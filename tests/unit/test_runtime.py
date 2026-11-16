@@ -1,6 +1,7 @@
 """Runtime boundary tests only execute the synthetic CLI shipped with this test."""
 
 import asyncio
+import hashlib
 import json
 import os
 import shutil
@@ -1682,3 +1683,223 @@ def test_environment_known_spawn_failure_is_not_cleanup_unknown(tmp_path, monkey
     assert failure.value.__cause__.__cause__ is creation_error
     assert launches == [("synthetic-missing-claude", "--version")]
     assert not adapter._sessions and not adapter._turns
+
+
+def track_strict_json_processes(monkeypatch):
+    """Track real fake-CLI handles without replacing their lifecycle behavior."""
+    processes = []
+    original = Process.start.__func__
+
+    async def tracked(cls, *args, **kwargs):
+        process = await original(cls, *args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(Process, "start", classmethod(tracked))
+    return processes
+
+
+def strict_json_raw_wires(capture, stream="stdout"):
+    return [
+        bytes.fromhex(record["wire_hex"])
+        for line in capture.read_text().splitlines()
+        if (record := json.loads(line))["kind"] == "raw-wire"
+        and record["stream"] == stream
+    ]
+
+
+def assert_strict_json_owned_processes_stopped(processes):
+    assert processes
+    for process in processes:
+        assert process.child.returncode is not None
+        assert process._owns_group and process._group_stopped
+        assert not process._group_exists(), "the owned fake process group is still live"
+        assert process._watcher.done()
+        assert process._exit.done()
+        assert all(reader.done() for reader in process._readers)
+
+
+def strict_json_log_rows(tmp_path):
+    return [
+        json.loads(line)
+        for path in (tmp_path / "logs").glob("*.jsonl")
+        for line in path.read_text().splitlines()
+    ]
+
+
+def assert_strict_json_safe_decode_record(rows, wire, error):
+    records = [row for row in rows if row["kind"] == "decode_error"]
+    assert len(records) == 1
+    record = records[0]
+    data = wire.removesuffix(b"\n")
+    assert record["stream"] == "stdout"
+    assert record["error"] == error
+    assert record["byte_count"] == len(data)
+    assert record["sha256"] == hashlib.sha256(data).hexdigest()
+    assert not {"text", "message", "payload"} & record.keys()
+
+
+@pytest.mark.parametrize(
+    "provider,mode",
+    [
+        ("codex", "json-outer-duplicate"),
+        ("claude", "json-outer-duplicate"),
+        ("codex", "json-result-duplicate"),
+        ("claude", "json-result-duplicate"),
+        ("claude", "json-structured-duplicate"),
+    ],
+)
+def test_runtime_rejects_duplicate_outer_and_structured_results(
+    tmp_path, monkeypatch, provider, mode
+):
+    processes = track_strict_json_processes(monkeypatch)
+    adapter, config, capture = setup(tmp_path, monkeypatch, provider, mode)
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category is None
+    assert result.process_exit is not None
+    assert not any(isinstance(event, Completed) for event in events)
+    assert isinstance(events[-2], Error)
+    assert isinstance(events[-1], ProcessExited)
+    assert_strict_json_owned_processes_stopped(processes)
+    if provider == "codex":
+        assert_codex_resources_removed(adapter)
+    rows = strict_json_log_rows(tmp_path)
+    assert not any(row["kind"] == "cleanup_incomplete" for row in rows)
+    wires = strict_json_raw_wires(capture)
+    assert wires, "the fixture must send actual wire bytes, not an already-decoded dict"
+    if mode == "json-result-duplicate":
+        # The outer frame is valid JSON. Repetition survives in the nested
+        # string and must be rejected by structured-artifact decoding.
+        messages = [json.loads(wire) for wire in wires]
+        if provider == "codex":
+            terminal = next(
+                item for item in messages if item.get("method") == "turn/completed"
+            )
+            embedded = terminal["params"]["turn"]["items"][0]["text"]
+        else:
+            terminal = next(item for item in messages if item.get("type") == "result")
+            assert "structured_output" not in terminal
+            embedded = terminal["result"]
+        assert embedded.count('"summary"') == 2
+        assert not any(row["kind"] == "decode_error" for row in rows)
+    else:
+        assert len(wires) == 1
+        repeated = (
+            b'"method"'
+            if provider == "codex"
+            else b'"is_error"'
+            if mode == "json-outer-duplicate"
+            else b'"summary"'
+        )
+        assert wires[0].count(repeated) >= 2
+        assert_strict_json_safe_decode_record(rows, wires[0], "invalid_json")
+
+
+@pytest.mark.parametrize("provider", ["codex", "claude"])
+def test_runtime_bad_stdout_utf8_fails_with_real_exit_and_owned_cleanup(
+    tmp_path, monkeypatch, provider
+):
+    processes = track_strict_json_processes(monkeypatch)
+    adapter, config, capture = setup(tmp_path, monkeypatch, provider, "json-bad-utf8")
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category is None
+    assert result.process_exit is not None
+    assert not any(isinstance(event, Completed) for event in events)
+    assert isinstance(events[-1], ProcessExited)
+    assert_strict_json_owned_processes_stopped(processes)
+    if provider == "codex":
+        assert_codex_resources_removed(adapter)
+    wires = strict_json_raw_wires(capture)
+    assert len(wires) == 1 and b"\xff" in wires[0]
+    rows = strict_json_log_rows(tmp_path)
+    assert_strict_json_safe_decode_record(rows, wires[0], "invalid_utf8")
+    assert not any(row["kind"] == "cleanup_incomplete" for row in rows)
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["auth-json-duplicate", "auth-json-duplicate-pretty", "auth-json-bad-utf8"],
+)
+def test_environment_rejects_ambiguous_auth_status(tmp_path, monkeypatch, mode):
+    processes = track_strict_json_processes(monkeypatch)
+    adapter, _, capture = setup(tmp_path, monkeypatch, "claude", mode)
+    with pytest.raises(RuntimeFailure) as failure:
+        asyncio.run(adapter.check_environment())
+    assert failure.value.event.failure_category is None
+    assert failure.value.event.raw_type != "adapter.cleanup_incomplete"
+    assert not adapter._sessions and not adapter._turns
+    records = [json.loads(line) for line in capture.read_text().splitlines()]
+    spawns = [record for record in records if record["kind"] == "spawn"]
+    assert [record["argv"] for record in spawns] == [["--version"], ["auth", "status"]]
+    assert len(processes) == 2
+    assert_strict_json_owned_processes_stopped(processes)
+    assert all(not Path(record["cwd"]).exists() for record in spawns)
+    wires = strict_json_raw_wires(capture)
+    assert len(wires) == 1
+    rows = strict_json_log_rows(tmp_path)
+    assert not any(row["kind"] == "cleanup_incomplete" for row in rows)
+    if mode == "auth-json-duplicate-pretty":
+        assert wires[0].count(b'"loggedIn"') == 2 and wires[0].count(b"\n") > 1
+        assert not any(row["kind"] == "decode_error" for row in rows)
+        # Each line was ordinary transport text; check_environment must reject
+        # the combined object instead of accepting its last loggedIn field.
+        assert sum("loggedIn" in row.get("text", "") for row in rows) == 2
+    else:
+        assert_strict_json_safe_decode_record(
+            rows, wires[0], "invalid_utf8" if mode.endswith("utf8") else "invalid_json"
+        )
+
+
+@pytest.mark.parametrize(
+    "mode,marker,error",
+    [
+        ("config-json-duplicate", b'"ordinary"', "invalid_json"),
+        ("config-json-nan", b"NaN", "invalid_json"),
+        ("config-json-overflow", b"1e9999", "invalid_json"),
+        ("config-json-bad-utf8", b"\xff", "invalid_utf8"),
+    ],
+)
+def test_pending_config_bad_json_never_exposes_unregistered_payload_or_stderr(
+    tmp_path, monkeypatch, mode, marker, error
+):
+    sentinel = "unregistered-config-sentinel-4567"
+    processes = track_strict_json_processes(monkeypatch)
+    adapter, config, capture = setup(tmp_path, monkeypatch, "codex", mode)
+    events, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Error)
+    assert result.terminal.failure_category is None
+    assert result.process_exit is not None
+    assert not any(isinstance(event, Completed) for event in events)
+    assert sentinel not in result.terminal.detail
+    methods = [request.get("method") for request in runtime_requests(capture)]
+    assert "config/read" in methods
+    assert "thread/start" not in methods and "turn/start" not in methods
+    assert_strict_json_owned_processes_stopped(processes)
+    assert_codex_resources_removed(adapter)
+    rows = strict_json_log_rows(tmp_path)
+    assert not any(row["kind"] == "cleanup_incomplete" for row in rows)
+    assert sentinel not in json.dumps(rows)
+    stdout = strict_json_raw_wires(capture)
+    stderr = strict_json_raw_wires(capture, "stderr")
+    assert len(stdout) == 1 and marker in stdout[0]
+    assert sentinel.encode() in stdout[0]
+    if mode == "config-json-duplicate":
+        assert stdout[0].count(marker) == 2
+    assert len(stderr) == 2 and all(sentinel.encode() in wire for wire in stderr)
+    request_id = next(
+        request["id"]
+        for request in runtime_requests(capture)
+        if request.get("method") == "config/read"
+    )
+    assert json.loads(stderr[0])["id"] == request_id
+    diagnostics = [
+        row for row in rows if row["kind"] == "recv" and row.get("stream") == "stderr"
+    ]
+    assert len(diagnostics) == 2
+    assert all(
+        row.get("text") == "<CONFIG_READ_PAYLOAD_OMITTED>" for row in diagnostics
+    )
+    assert all("message" not in row for row in diagnostics)
+    assert_strict_json_safe_decode_record(rows, stdout[0], error)

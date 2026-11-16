@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import signal
@@ -10,11 +11,16 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
+from ..runtime_decode import RuntimeJSONError, strict_json_loads
 from .recording import Recorder
 
 
 class SpawnFailed(Exception):
     """Only failure of the executable launch, not subsequent recording or I/O."""
+
+
+class _GroupSignalDenied(PermissionError):
+    """An OS group signal was denied, distinct from a recording I/O error."""
 
 
 class Process:
@@ -98,20 +104,58 @@ class Process:
         return process
 
     def _line(self, data: bytes, stream: str) -> None:
-        text = data.removesuffix(b"\r").decode("utf-8", errors="replace")
+        extra: dict[str, Any] = {}
         try:
-            parsed: object = json.loads(text)
+            text = data.removesuffix(b"\r").decode("utf-8")
+        except UnicodeDecodeError as error:
+            if stream == "stdout":
+                self._decode_error(data, "invalid_utf8")
+                raise RuntimeJSONError("invalid stdout UTF-8") from error
+            text = data.removesuffix(b"\r").decode("utf-8", errors="replace")
+            extra["encoding_replaced"] = True
+        if stream == "stderr":
+            # Diagnostic JSON is still text, not an RPC reply. Passing it as a
+            # message could consume a pending config/read id and prematurely
+            # disable masking of the actual response's diagnostics.
+            self._recorder.emit(
+                "recv", proc=self.name, stream=stream, text=text, **extra
+            )
+            return
+        try:
+            parsed: object = strict_json_loads(text)
         except json.JSONDecodeError:
+            # Probe recording also carries version output and non-JSON lines.
+            # Runtime protocol callers still reject text where an object is due.
             parsed = None
+        except RuntimeJSONError:
+            self._decode_error(data, "invalid_json")
+            raise
         if isinstance(parsed, dict):
-            self._recorder.emit("recv", proc=self.name, stream=stream, message=parsed)
+            self._recorder.emit(
+                "recv", proc=self.name, stream=stream, message=parsed, **extra
+            )
             value: dict[str, Any] | str = parsed
         else:
-            self._recorder.emit("recv", proc=self.name, stream=stream, text=text)
+            self._recorder.emit(
+                "recv", proc=self.name, stream=stream, text=text, **extra
+            )
             value = text
         if stream == "stdout":
             self.first_stdout.set()
             self._stdout.put_nowait(value)
+
+    def _decode_error(self, data: bytes, category: str) -> None:
+        self.first_stdout.set()
+        # Do not parse an ambiguous id or record an exception/payload. In
+        # particular the Recorder must keep pending config/read masking active.
+        self._recorder.emit(
+            "decode_error",
+            proc=self.name,
+            stream="stdout",
+            error=category,
+            byte_count=len(data),
+            sha256=hashlib.sha256(data).hexdigest(),
+        )
 
     async def _read_stream(self, reader: asyncio.StreamReader, stream: str) -> None:
         buffered = bytearray()
@@ -193,12 +237,19 @@ class Process:
             self._stdout.put_nowait(None)
 
     async def read(self) -> dict[str, Any] | str | None:
+        # OS exit is not pipe EOF. The watcher has its own bounded final drain;
+        # waiting for it preserves queued tail output and surfaces reader errors
+        # before a caller can accept a previously observed terminal result.
+        if (
+            self._stdout.empty()
+            and self.child.returncode is not None
+            and not self._watcher.done()
+        ):
+            await self.wait()
         if not self._stdout.empty():
             value = self._stdout.get_nowait()
         elif self._watcher.done():
             await self.wait()
-            return None
-        elif self.child.returncode is not None:
             return None
         else:
             incoming = asyncio.create_task(self._stdout.get())
@@ -210,9 +261,8 @@ class Process:
                 if incoming in done:
                     value = incoming.result()
                 else:
-                    if self._watcher in done:
-                        await self.wait()
-                    return None
+                    await self.wait()
+                    value = await incoming
             finally:
                 incoming.cancel()
                 await asyncio.gather(incoming, return_exceptions=True)
@@ -254,7 +304,10 @@ class Process:
             return False
         try:
             if self._owns_group:
-                os.killpg(self.child.pid, sig)
+                try:
+                    os.killpg(self.child.pid, sig)
+                except PermissionError as error:
+                    raise _GroupSignalDenied(*error.args) from error
             else:
                 self.child.send_signal(sig)
         except ProcessLookupError:
@@ -281,8 +334,11 @@ class Process:
         that deliberately leave this group are outside this ownership boundary.
         """
         recording_error: OSError | None = None
+        signal_denied: _GroupSignalDenied | None = None
         try:
             self.signal(signal.SIGTERM)
+        except _GroupSignalDenied as error:
+            signal_denied = error
         except OSError as error:
             recording_error = error
         deadline = asyncio.get_running_loop().time() + grace
@@ -291,8 +347,23 @@ class Process:
         if self._group_exists():
             try:
                 self.signal(signal.SIGKILL)
+            except _GroupSignalDenied as error:
+                signal_denied = error
             except OSError as error:
                 recording_error = recording_error or error
+        if signal_denied is not None:
+            # macOS may briefly deny signals to a zombie-only owned group.
+            # Ignore that denial only after actual exit AND group disappearance;
+            # a live inaccessible group must not cause an unbounded _exit wait.
+            deadline = asyncio.get_running_loop().time() + grace
+            while (
+                self.child.returncode is None or self._group_exists()
+            ) and asyncio.get_running_loop().time() < deadline:
+                await asyncio.sleep(0.005)
+            if self.child.returncode is None or self._group_exists():
+                if recording_error is not None:
+                    raise recording_error
+                raise signal_denied
         await asyncio.shield(self._exit)
         self._group_stopped = True
         if recording_error is not None:
@@ -329,10 +400,44 @@ class Process:
 
     async def terminate(self, grace: float) -> None:
         async def cleanup() -> None:
+            stop_error: BaseException | None = None
             try:
                 await self._stop_child(grace)
+            except BaseException as error:
+                stop_error = error
+                raise
             finally:
-                await self.wait()
+                if stop_error is not None and not self._watcher.done():
+                    # A refused signal can leave a live child. Do not turn the
+                    # bounded stop failure into an unbounded wait for its EOF.
+                    # Keep the observation tasks and ownership intact: a timeout
+                    # here is not evidence of exit, EOF or successful cleanup.
+                    _, pending = await asyncio.wait((self._watcher,), timeout=grace)
+                    if pending:
+                        raise stop_error
+                try:
+                    await self.wait()
+                except RuntimeJSONError:
+                    if stop_error is not None:
+                        raise stop_error
+                    # read()/wait() continue reporting the original input
+                    # failure. It is not itself evidence that a completed stop
+                    # failed. This catch cannot consume _stop_child's errors.
+                    if (
+                        self.child.returncode is None
+                        or self._owns_group
+                        and not self._group_stopped
+                        or not self._watcher.done()
+                        or any(not reader.done() for reader in self._readers)
+                    ):
+                        raise
+                    for reader in self._readers:
+                        if not reader.cancelled():
+                            reader_error = reader.exception()
+                            if reader_error is not None and not isinstance(
+                                reader_error, RuntimeJSONError
+                            ):
+                                raise reader_error
 
         # A caller may be cancelled during the grace period itself. Ownership
         # continues until escalation and stream draining have finished.

@@ -9,7 +9,7 @@ not an inferred statement about the model that actually produced a result.
 
 import json
 import math
-from typing import Any
+from typing import Any, cast
 
 from multi_agent.core.events import (
     AdapterEvent,
@@ -29,6 +29,60 @@ class RuntimeFailure(Exception):
     def __init__(self, event: Error) -> None:
         super().__init__(event.detail)
         self.event = event
+
+
+class RuntimeJSONError(ValueError):
+    """Runtime JSON has invalid values, encoding or excessive nesting."""
+
+
+class _RuntimeJSONValueError(ValueError):
+    """Internal rejection with a fixed message that never contains input data."""
+
+
+_MAX_JSON_DEPTH = 128
+
+
+def strict_json_loads(text: str) -> Any:
+    """Preserve syntax errors; reject ambiguous or non-UTF-8 JSON values.
+
+    There is no transport byte limit. The container depth limit counts a root
+    object or array as one; strings, including ordinary non-JSON text, do not
+    contribute to that limit.
+    """
+    if not isinstance(text, str):
+        raise TypeError("runtime JSON input must be text")
+    duplicate_keys = False
+
+    def object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        nonlocal duplicate_keys
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                duplicate_keys = True
+            else:
+                result[key] = value
+        return result
+
+    try:
+        text.encode("utf-8")
+        value = json.loads(text, object_pairs_hook=object_pairs)
+        # Finish syntax parsing before reporting semantic rejection: a JSON
+        # fragment followed by ordinary text retains JSONDecodeError behavior.
+        if duplicate_keys:
+            raise _RuntimeJSONValueError("runtime JSON contains duplicate keys")
+    except json.JSONDecodeError:
+        raise
+    except UnicodeEncodeError as error:
+        raise RuntimeJSONError("runtime JSON contains invalid Unicode") from error
+    except _RuntimeJSONValueError as error:
+        raise RuntimeJSONError(str(error)) from error
+    except RecursionError as error:
+        raise RuntimeJSONError("runtime JSON nesting limit exceeded") from error
+    except ValueError as error:
+        # For example, Python's integer digit limit. Its diagnostic is not
+        # an input artifact and must not be echoed into runtime error reports.
+        raise RuntimeJSONError("runtime JSON value rejected by parser") from error
+    return _json_value(value)
 
 
 def object_value(value: object, name: str) -> dict[str, Any]:
@@ -51,21 +105,43 @@ def _agent_text(value: object) -> str:
     return value
 
 
-def _json_value(value: object) -> JSONValue:
-    if value is None or isinstance(value, (str, bool, int)):
+def _validated_json_value(value: object, depth: int) -> JSONValue:
+    if isinstance(value, str):
+        value.encode("utf-8")
         return value
-    if isinstance(value, float) and math.isfinite(value):
+    if value is None or isinstance(value, (bool, int)):
         return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise _RuntimeJSONValueError("runtime JSON number is not finite")
+        return value
+    if isinstance(value, (list, dict)) and depth >= _MAX_JSON_DEPTH:
+        raise _RuntimeJSONValueError("runtime JSON nesting limit exceeded")
     if isinstance(value, list):
-        return [_json_value(item) for item in value]
+        return [_validated_json_value(item, depth + 1) for item in value]
     if isinstance(value, dict) and all(isinstance(key, str) for key in value):
-        return {key: _json_value(item) for key, item in value.items()}
+        result: dict[str, JSONValue] = {}
+        for key, item in value.items():
+            key.encode("utf-8")
+            result[key] = _validated_json_value(item, depth + 1)
+        return result
     raise ValueError("result contains a non-JSON value")
+
+
+def _json_value(value: object) -> JSONValue:
+    try:
+        return _validated_json_value(value, 0)
+    except UnicodeEncodeError as error:
+        raise RuntimeJSONError("runtime JSON contains invalid Unicode") from error
+    except _RuntimeJSONValueError as error:
+        raise RuntimeJSONError(str(error)) from error
+    except RecursionError as error:
+        raise RuntimeJSONError("runtime JSON nesting limit exceeded") from error
 
 
 def result_value(value: object, *, structured: bool) -> JSONValue:
     if structured and isinstance(value, str):
-        value = json.loads(value)
+        return cast(JSONValue, strict_json_loads(value))
     return _json_value(value)
 
 

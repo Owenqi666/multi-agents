@@ -64,6 +64,7 @@ from .runtime_decode import (
     claude_events,
     object_value,
     result_value,
+    strict_json_loads,
     string_value,
 )
 
@@ -1188,7 +1189,7 @@ class RuntimeAdapter(Adapter):
                             [self.executable, "auth", "status"], cwd, recorder
                         )
                         auth = object_value(
-                            json.loads(auth_text),
+                            strict_json_loads(auth_text),
                             "auth status",
                         )
                         logged_in = auth.get("loggedIn")

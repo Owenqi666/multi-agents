@@ -23,7 +23,17 @@ def capture(kind, **values):
 
 
 def emit(message):
+    if mode == "json-result-duplicate":
+        emit_raw((json.dumps(message) + "\n").encode())
+        return
     os.write(1, (json.dumps(message) + "\n").encode())
+
+
+def emit_raw(data, stream="stdout"):
+    # New strict-JSON modes deliberately preserve duplicate keys and bad bytes.
+    # The capture is a test-only side channel, separate from product raw logs.
+    capture("raw-wire", stream=stream, wire_hex=data.hex())
+    os.write(1 if stream == "stdout" else 2, data)
 
 
 capture(
@@ -57,6 +67,21 @@ if args == ["auth", "status"]:
     assert provider == "claude"
     assert "ANTHROPIC_API_KEY" not in os.environ
     assert "ANTHROPIC_AUTH_TOKEN" not in os.environ
+    if mode in (
+        "auth-json-duplicate",
+        "auth-json-duplicate-pretty",
+        "auth-json-bad-utf8",
+    ):
+        data = {
+            "auth-json-duplicate": b'{"loggedIn":false,"loggedIn":true,"authMethod":"claude.ai"}\n',
+            "auth-json-duplicate-pretty": (
+                b'{\n  "loggedIn": false,\n  "loggedIn": true,\n'
+                b'  "authMethod": "claude.ai"\n}\n'
+            ),
+            "auth-json-bad-utf8": b'{"loggedIn":true,"ordinary":"\xff"}\n',
+        }[mode]
+        emit_raw(data)
+        sys.exit(0)
     print(
         os.environ.get(
             "FAKE_AUTH_JSON",
@@ -194,6 +219,25 @@ if provider == "claude":
         result["result"] = "invalid JSON"
     if implementation and mode == "implementation-unreported-model":
         result.pop("modelUsage")
+    if mode in ("json-outer-duplicate", "json-structured-duplicate", "json-bad-utf8"):
+        wire = json.dumps(result).encode()
+        if mode == "json-outer-duplicate":
+            wire = wire.replace(
+                b'"is_error": false', b'"is_error": true, "is_error": false', 1
+            )
+        elif mode == "json-structured-duplicate":
+            wire = wire.replace(
+                b'"structured_output": {',
+                b'"structured_output": {"summary": "shadowed value", ',
+                1,
+            )
+        else:
+            wire = b'{"ordinary":"\xff"}'
+        emit_raw(wire + b"\n")
+        time.sleep(60)
+    if mode == "json-result-duplicate":
+        result.pop("structured_output")
+        result["result"] = '{"summary":"shadowed value","summary":"ok","findings":[]}'
     emit(result)
     if implementation and mode == "implementation-signal-exit":
         os.kill(os.getpid(), signal.SIGTERM)
@@ -226,6 +270,39 @@ for line in sys.stdin:
         continue
     elif method == "config/read":
         assert params == {"includeLayers": True, "cwd": os.getcwd()}
+        if mode in (
+            "config-json-duplicate",
+            "config-json-nan",
+            "config-json-overflow",
+            "config-json-bad-utf8",
+        ):
+            sentinel = "unregistered-config-sentinel-4567"
+            emit_raw(
+                (
+                    json.dumps({"id": identifier, "result": {"ordinary": sentinel}})
+                    + "\n"
+                ).encode(),
+                "stderr",
+            )
+            emit_raw(("ordinary diagnostic " + sentinel + "\n").encode(), "stderr")
+            # Let the already-running stderr reader observe both diagnostics
+            # while config/read is still pending, before the malformed reply.
+            time.sleep(0.03)
+            ordinary = b'"ordinary":' + json.dumps(sentinel).encode()
+            payload = {
+                "config-json-duplicate": ordinary + b"," + ordinary,
+                "config-json-nan": ordinary + b',"number":NaN',
+                "config-json-overflow": ordinary + b',"number":1e9999',
+                "config-json-bad-utf8": ordinary + b',"data":"\xff"',
+            }[mode]
+            emit_raw(
+                b'{"id":'
+                + json.dumps(identifier).encode()
+                + b',"result":{'
+                + payload
+                + b"}}\n"
+            )
+            time.sleep(60)
         config_path = Path(os.environ["CODEX_HOME"]) / "config.toml"
         with config_path.open("rb") as config_file:
             config = tomllib.load(config_file)
@@ -532,6 +609,8 @@ for line in sys.stdin:
         if mode == "late-contradictory":
             time.sleep(float(os.environ.get("FAKE_TERMINAL_DELAY", "0.12")))
         text = "invalid JSON" if mode == "bad-result" else json.dumps(report)
+        if mode == "json-result-duplicate":
+            text = '{"summary":"shadowed value","summary":"ok","findings":[]}'
         turn = {
             "id": turn_id,
             "status": "completed",
@@ -543,6 +622,24 @@ for line in sys.stdin:
                 items=[],
                 error={"message": "not supported", "codexErrorInfo": "modelNotFound"},
             )
+        if mode in ("json-outer-duplicate", "json-bad-utf8"):
+            wire = json.dumps(
+                {
+                    "method": "turn/completed",
+                    "params": {"threadId": thread_id, "turn": turn},
+                }
+            ).encode()
+            wire = (
+                wire.replace(
+                    b'"method": "turn/completed"',
+                    b'"method": "ignored", "method": "turn/completed"',
+                    1,
+                )
+                if mode == "json-outer-duplicate"
+                else b'{"ordinary":"\xff"}'
+            )
+            emit_raw(wire + b"\n")
+            time.sleep(60)
         emit(
             {
                 "method": "turn/completed",
