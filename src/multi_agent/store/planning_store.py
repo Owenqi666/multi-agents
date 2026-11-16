@@ -191,12 +191,22 @@ class PlanningStore(TaskStore):
             return tuple(row["run_id"] for row in rows)
 
     def create_planned_task(
-        self, task_run_id: str, planning_run_id: str, created_at: str
+        self,
+        task_run_id: str,
+        planning_run_id: str,
+        created_at: str,
+        *,
+        expected_plan_hash: str | None = None,
     ) -> None:
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             state = self._read_planning(planning_run_id)
             provenance = state.provenance()
+            if (
+                expected_plan_hash is not None
+                and provenance.plan_hash != expected_plan_hash
+            ):
+                raise ValueError("planning provenance changed before task binding")
             envelope = PlanningEnvelope(
                 "review",
                 provenance.review.number,

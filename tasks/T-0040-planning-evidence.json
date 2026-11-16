@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "id": "T-0040",
+  "goal": "将规划执行的实际资源、日志及终态封存为可核验证据，并在核验精确来源后原子绑定任务。",
+  "baseline_commit": "16a063e73154577541997c83379b240d52299217",
+  "write_scope": [
+    "src/multi_agent/cli/planning_evidence.py",
+    "src/multi_agent/store/planning_store.py",
+    "tests/unit/test_planning_evidence.py",
+    "tests/unit/test_planning_store.py",
+    "docs/planning-execution-evidence.md",
+    "docs/planning-provenance.md",
+    "docs/deliveries/T-0040.md",
+    "tasks/T-0040-planning-evidence.json"
+  ],
+  "depends_on": [
+    "T-0039"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and API preconditions",
+      "definition": "按原T40文本复核建议拆卡：本卡只实现planning_evidence边界与原子绑定；完整runner/controller lease/取消/预检登录catalog门禁留T41。已核对RuntimeAdapter.ownership_receipt()、result(turn)、cancel(on_accepted)、T37 LogOwnership identity/closed/healthy/bytes/hash/sealed、receipt四项派生事实均现有；不改adapter、core事件/phase/FailureCategory/SQL/CLI命令。接口若实际缺失，停止交回另卡，不扩大范围。开发只做offline测试，不运行真实CLI。"
+    },
+    {
+      "name": "owned log directory",
+      "definition": "prepare_planning_logs(store,run_id,stage,attempt)核对已有managed Prepared/context，O_EXCL式创建root/logs/<stage>-<attempt>-<context-token>独占700目录并返回不可变PlanningLogDirectory(path,identity,run_id,stage,attempt,context_token)。不能采用已有目录或symlink，不能写模型cwd、source或Git目录。目录身份在封存/核验时复查；只创建日志容器，不授权执行既有Prepared，也不证明停止。T41只会在同lease内fresh reservation后调用。"
+    },
+    {
+      "name": "sealing actual live instance facts",
+      "definition": "async seal_planning_execution(store,run_id,stage,attempt,*,logs,adapter:RuntimeAdapter,turn:TurnHandle|None,environment:EnvironmentInfo|None)从该实例直接取得immutable ownership receipt和实际result(turn)，不接受调用者传入process_stopped等成功布尔值，不从result推停止、不加载旧receipt替活owner。调用者须先结算adapter、按原值持久化实际terminal/exit，helper本身不等待、不signal、不改状态；active/pending/unknown只产生不合格证据。环境与Stored EnvironmentObserved精确对应，缺失值保留null；实际模型/effort不补请求。turn=None明确没有模型handle，不能封存为成功产物。"
+    },
+    {
+      "name": "manifest contract",
+      "definition": "使用canonical planning_json UTF8加newline，O_EXCL/NOFOLLOW创建唯一execution.json，实际open后把自身dev/inode写入payload，再成功close/chmod400并稳定核对mode/identity/size/SHA256。不可变PlanningExecutionManifest返回path/identity/byte_count/sha256/qualified和实际ownership receipt。payload version=1，绑定run/input、Started/Prepared hash、source/context/owner、stage/attempt及log directory身份；保存environment、完整RuntimeOwnershipReceipt及分项派生事实、每份raw log的实际path/identity/bytes/hash、actual normalized terminal/exit。为避免复制大结果，可存完整terminal的canonical hash与字段摘要，但result/hash及actual fields必须能与持久原始event精确对应，不能声称摘要是完整原文。manifest自身最多16 MiB，超限明确ValueError且保留不合格残留，不截断；大rawlog只作流式核验，不套此上限。"
+    },
+    {
+      "name": "positive gate and forensic output",
+      "definition": "qualified要求本实例非空operation、无active/pending/unknown，四项processes_stopped/resources_released/logs_sealed/outputs_complete全正，且恰有一个environment和一个turn operation、当前stored实际Completed/exit与adapter.result精确相等、environment观察一致、context/executable与日志目录未变。各分项事实分别保存，不能把log/资源失败混入processes_stopped。不足时可以封存qualified=false的forensic manifest，但不授予宿主validation资格。所有raw logs必须归此log目录且原regular identity/mode/size/hash稳定，manifest不是一份runtime log；目录外路径在打开前拒绝。磁盘/数据库错误继续抛出，T41负责保留真实终态/receipt并发EvidenceRejected，helper不能伪造缺失事件。"
+    },
+    {
+      "name": "inspection and binding",
+      "definition": "inspect_planning_execution(store,run_id,stage,attempt)只沿该attempt已有Reconciled.log_path/hash读qualifying manifest，要求路径为上述owned目录execution.json、实际inode与payload自身identity相符、400模式/size/hash/规范JSON、version/schema/全部绑定与当前Started/Prepared/原始terminal/exit/EnvironmentObserved一致，再重查rawlogs和T38 context/executable。重建receipt并重新计算派生事实，不信任payload单个qualified=true。未managed、旧synthetic log或未知/不完整receipt均拒绝，不能把inspect用作恢复旧process所有权。bind_planning_task(store,planning_run_id,task_run_id,created_at)核验当前选定draft/review两份qualifying证据和core可绑定条件，再以本次检验得到expected plan_hash调用原子store绑定。"
+    },
+    {
+      "name": "atomic expected provenance",
+      "definition": "PlanningStore.create_planned_task新增可选expected_plan_hash:str|None，在原BEGIN IMMEDIATE里重新计算当前provenance并精确比较后才写task/provenance/bound/history；不匹配全部回滚。旧不传参数的可信底层API保持兼容，本卡新bind helper必须传。此CAS防文件核验后被另一规划状态替换，不声明能禁止拥有主机写权限者在之后修改文件；后续每次inspect仍核对原hash。没有新SQL迁移或core event。"
+    },
+    {
+      "name": "recovery boundary and verification",
+      "definition": "prepare后spawn前崩溃也属于停止未知；本卡和T41不自动解除、不用PID/锁/空adapter补true。现有core/store Reconciled仅是可信host接口，不是已经实现的用户恢复命令；未来S8提供明确人工核对入口，在此之前未知尝试保留并阻止后续runner，不伪称可自动恢复。测试只用合成ledger/actual本地临时Process及临时Git，不运行真实模型；receipt合成夹具明确synthetic，不宣称真实权限。保留旧断言、场景和checks；完整verify及正常commit。"
+    },
+    {
+      "name": "reconciliation sequencing and exact selection",
+      "definition": "T40 helper不写Reconciled；T41或明确标为synthetic的测试夹具按实际Completed→actual ProcessExited→seal→Reconciled→host Validated顺序写。仅qualified=true且manifest成功封存才填log_path/hash；false或seal失败时保留实际receipt.processes_stopped、log_path/hash为None，再由T41按阶段发EvidenceRejected/Diagnostic，不能从失败生成新模型终态。inspect交叉核对Reconciled.process_stopped必须与manifest实际receipt相等且为true，路径/hash须指向本manifest。绑定选择严格来自state.current(draft)/current(review)，review.request.draft_attempt及task_hash须绑定当前draft/card；现有PlanningProvenance.plan_hash覆盖完整所选attempt（含number/request/events/reconciliation）和manifest path/hash，在原事务重新构建并CAS比较，不用任意最近文件替换。"
+    },
+    {
+      "name": "single finalization and residual failures",
+      "definition": "正式封存前在已验证owned log目录以O_EXCL创建.seal-attempt.json，保存本次绑定和实际receipt快照，成功关闭400后才创建execution.json；manifest绑定该marker的identity/hash。已有marker时禁止同attempt重封，失败残留不删除/覆盖，也不改用新filename；只有确认停止后下一attempt新context/token才可重试。错误发生在marker创建之前或磁盘无法保留任何文件时，helper不能承诺跨进程记住调用；T41须将本attempt拒绝/诊断及实际Reconciled写入DB，当前attempt已有EvidenceRejected则helper拒绝再封。marker无法完整落盘的事实也明确失败，不能因为没有execution.json就当从未尝试。inspect要求marker和manifest原identity/hash/规范内容一致；marker存在不构成停止证明。"
+    }
+  ],
+  "deliverables": [
+    "owned planning log目录与独占、可校验的execution manifest。",
+    "对原始runtime事件和全部资源事实的完整证据门禁。",
+    "核验具体plan hash后原子绑定的边界helper及离线故障回归。"
+  ],
+  "acceptance_criteria": [
+    "test_planning_execution_manifest_binds_exact_attempt：run/input/request/prepared/context/owner/stage/attempt和实际terminal/exit/environment精确对应，过期或错误绑定拒绝。",
+    "test_planning_execution_requires_full_owned_receipt：active/pending/unknown、空新owner、非单environment/turn、停止/资源/log/EOF任一不足均不qualified，不改真实processes_stopped值。",
+    "test_planning_execution_manifest_rejects_tampering：manifest/raw log替换、symlink、模式变化、追加/截断/原inode改写、目录替换及读取中变化拒绝；目录外日志在打开前拒绝。",
+    "test_planning_execution_manifest_size_limit_is_explicit：16 MiB索引上限明确拒绝不截断；更大rawlog仍流式验证。",
+    "test_planning_execution_refuses_legacy_synthetic_and_unsettled_attempts：旧synthetic log path/hash、无Prepared、无真实模型handle、actual result冲突不能取得运行证据资格。",
+    "test_planning_execution_manifest_failure_does_not_change_runtime_state：O_EXCL/write/flush/close/chmod/read故障抛出且不改已存Completed/exit/reconciliation，原adapter实际receipt仍可获取，残留不被采用。",
+    "test_planning_binding_rejects_changed_provenance_atomically：核验后plan hash变化阻止所有绑定写入；ready/未决问题/needs_revision按core门禁，旧底层调用兼容。",
+    "完整lint/format/typecheck/unit/replay通过，原断言/检查配置保持，无真实请求；T41再验证实际fake CLI串行runner与取消。",
+    "test_planning_logs_reject_existing_or_symlink_directory：独占目录为700，已有路径/软链不采用。",
+    "test_planning_execution_recomputes_receipt_qualification：payload声明qualified=true但重算receipt条件不满足时拒绝。",
+    "test_planning_execution_failed_seal_cannot_be_repeated：marker/manifest部分写失败保留残留，同attempt不能重封或删除，已有EvidenceRejected也拒绝。",
+    "test_planning_binding_success_uses_current_verified_pair：核验当前精确draft/review manifest后成功绑定，Reconciled receipt事实/path/hash交叉核对，并证明plan_hash含所选attempt及两份manifest hash。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

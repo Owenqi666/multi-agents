@@ -51,7 +51,9 @@ draft/review 分别从尝试 1 递增。每次开始冻结请求、精确 prompt
 
 迁移 `0004_planning.sql` 增加规划 runs、attempts、history 及 task_planning_provenance；原三份迁移不改。迁移加载器按编号自动发现 SQL，无额外注册常量。T30 的任务和审核数据保持兼容。
 
-`PlanningStore.create_planned_task(task_run_id, planning_run_id, created_at)` 在一个 `BEGIN IMMEDIATE` 中重新核对当前来源门禁、生成 TaskInput、绑定唯一 provenance、写 bound 状态和历史。调用者不能另传卡片、规则或需求替换已审核输入。一个规划只绑定一个任务，两个连接竞争不能各成功一次。公共 `apply_planning` 不允许单独提交 `PlanningTaskBound`，避免脱离这一事务写出虚假的关联。
+`PlanningStore.create_planned_task(task_run_id, planning_run_id, created_at, expected_plan_hash=None)` 在一个 `BEGIN IMMEDIATE` 中重新核对当前来源门禁、生成 TaskInput、绑定唯一 provenance、写 bound 状态和历史。T40 新增可选 expected_plan_hash，在任何绑定写入前精确比较当前 provenance；文件核验后的来源变化会使整个绑定回滚。调用者不能另传卡片、规则或需求替换已审核输入。一个规划只绑定一个任务，两个连接竞争不能各成功一次。公共 `apply_planning` 不允许单独提交 `PlanningTaskBound`，避免脱离这一事务写出虚假的关联。
+
+T40 的 `bind_planning_task` 先核验当前精确 draft/review 的 execution manifest、原始日志、上下文及实际 receipt，再使用 expected_plan_hash 绑定。旧省略参数的 store API 是可信底层接口，不代表已完成这项文件核验。封存、失败残留和恢复边界见 [规划执行证据](planning-execution-evidence.md)。
 
 旧 `TaskStore.create_task` 保持原接口，只创建无规划 provenance 的底层记录。T34 提供来源查询和新绑定门禁，不声称后续 runner 已接入。恢复接口列出未绑定规划及历史；它不自动重发请求，重试仍必须经过停止核对。
 

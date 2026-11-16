@@ -1428,3 +1428,211 @@ def test_planning_evidence_rejection_preserves_actual_runtime_after_restart(
             rejected,
             Disposition.HISTORY_ONLY,
         )
+
+
+@pytest.mark.parametrize("expected", ["matching", "explicit-none", "omitted"])
+def test_planning_binding_expected_hash_and_legacy_api_preserve_provenance(
+    tmp_path, expected
+):
+    path = tmp_path / "expected-plan.db"
+    with PlanningStore(path) as store:
+        value, card, envelopes = ready(store)
+        provenance = store.load_planning("plan").provenance()
+        keywords = (
+            {}
+            if expected == "omitted"
+            else {
+                "expected_plan_hash": provenance.plan_hash
+                if expected == "matching"
+                else None
+            }
+        )
+        assert store.create_planned_task("task", "plan", "bound-at", **keywords) is None
+        bound = store.load_planning("plan")
+        assert bound.phase == PlanningPhase.BOUND
+        assert bound.bound_task_run_id == "task"
+        assert bound.provenance() == provenance
+        assert store.load_task_input("task") == TaskInput(
+            card, value.frozen_rules, value.requirements, "bound-at"
+        )
+        assert store.load_planning_history("plan") == tuple(
+            (envelope, Disposition.APPLIED) for envelope in envelopes
+        ) + (
+            (
+                PlanningEnvelope("review", 1, PlanningTaskBound("task"), "bound-at"),
+                Disposition.APPLIED,
+            ),
+        )
+    with PlanningStore(path) as store:
+        assert store.load_planning("plan") == bound
+        assert store.load_task_provenance("task") == provenance
+        assert store.load_task_provenance("task").plan_hash == provenance.plan_hash
+        assert store.load_task("task").phase == TaskPhase.READY
+        assert store.load_task_history("task") == ()
+
+
+@pytest.mark.parametrize("mismatch", ["different", "empty", "case"])
+def test_planning_binding_expected_hash_mismatch_performs_no_writes(tmp_path, mismatch):
+    with PlanningStore(tmp_path / "mismatch-plan.db") as store:
+        ready(store)
+        before = store.load_planning("plan"), store.load_planning_history("plan")
+        original_hash = before[0].provenance().plan_hash
+        expected_hash = {
+            "different": "0" * 64,
+            "empty": "",
+            "case": original_hash.upper(),
+        }[mismatch]
+        assert expected_hash != original_hash
+        database_before = tuple(store._connection.iterdump())
+        statements = []
+        store._connection.set_trace_callback(statements.append)
+        try:
+            with pytest.raises(ValueError, match="provenance changed"):
+                store.create_planned_task(
+                    "task", "plan", "bound-at", expected_plan_hash=expected_hash
+                )
+        finally:
+            store._connection.set_trace_callback(None)
+        assert statements[0] == "BEGIN IMMEDIATE"
+        assert statements[-1] == "ROLLBACK"
+        assert not any(
+            statement.lstrip()
+            .upper()
+            .startswith(("INSERT", "UPDATE", "DELETE", "REPLACE"))
+            for statement in statements
+        )
+        assert tuple(store._connection.iterdump()) == database_before
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+        with pytest.raises(KeyError):
+            store.load_task("task")
+        with pytest.raises(KeyError):
+            store.load_task_provenance("task")
+        assert store.list_recoverable_tasks() == ()
+        # A rejected compare does not consume the valid plan or task identifier.
+        store.create_planned_task(
+            "task", "plan", "bound-at", expected_plan_hash=original_hash
+        )
+        assert store.load_task_provenance("task").plan_hash == original_hash
+
+
+@pytest.mark.parametrize(
+    "changed", ["draft-manifest", "review-manifest", "diagnostic", "selected-attempts"]
+)
+def test_planning_binding_rejects_changed_provenance_atomically(tmp_path, changed):
+    path = tmp_path / "verified-then-changed.db"
+    with PlanningStore(path) as verifier:
+        value, card, _ = ready(verifier)
+        inspected_hash = verifier.load_planning("plan").provenance().plan_hash
+        # The verifier retains its earlier hash while a separate connection writes
+        # new evidence. All variants remain READY, so the CAS must reject them.
+        with PlanningStore(path) as concurrent:
+            if changed.endswith("-manifest"):
+                stage = changed.split("-", 1)[0]
+                event = PlanningReconciled(
+                    True,
+                    "New qualifying synthetic manifest after inspection",
+                    f"/external/{stage}-replacement/execution.json",
+                    "d" * 64,
+                )
+                assert (
+                    concurrent.apply_planning(
+                        "plan",
+                        PlanningEnvelope(stage, 1, event, "changed-after-inspection"),
+                    )
+                    == Disposition.APPLIED
+                )
+            elif changed == "diagnostic":
+                assert (
+                    concurrent.apply_planning(
+                        "plan",
+                        PlanningEnvelope(
+                            "review",
+                            1,
+                            PlanningDiagnostic(Error("New host diagnostic")),
+                            "changed-after-inspection",
+                        ),
+                    )
+                    == Disposition.APPLIED
+                )
+            else:
+                for envelope in sequence(value, card):
+                    event = envelope.event
+                    if envelope.stage == "review" and isinstance(
+                        event, PlanningAttemptStarted
+                    ):
+                        event = replace(event, draft_attempt=2)
+                    assert (
+                        concurrent.apply_planning(
+                            "plan", replace(envelope, attempt=2, event=event)
+                        )
+                        == Disposition.APPLIED
+                    )
+        before = verifier.load_planning("plan"), verifier.load_planning_history("plan")
+        assert before[0].can_bind
+        current_hash = before[0].provenance().plan_hash
+        assert current_hash != inspected_hash
+        database_before = tuple(verifier._connection.iterdump())
+        statements = []
+        verifier._connection.set_trace_callback(statements.append)
+        try:
+            with pytest.raises(ValueError, match="provenance changed"):
+                verifier.create_planned_task(
+                    "task", "plan", "bound-at", expected_plan_hash=inspected_hash
+                )
+        finally:
+            verifier._connection.set_trace_callback(None)
+        assert statements[0] == "BEGIN IMMEDIATE"
+        assert statements[-1] == "ROLLBACK"
+        assert not any(
+            statement.lstrip()
+            .upper()
+            .startswith(("INSERT", "UPDATE", "DELETE", "REPLACE"))
+            for statement in statements
+        )
+        assert tuple(verifier._connection.iterdump()) == database_before
+        assert (
+            verifier.load_planning("plan"),
+            verifier.load_planning_history("plan"),
+        ) == before
+        assert verifier.list_recoverable_tasks() == ()
+        with pytest.raises(KeyError):
+            verifier.load_task_provenance("task")
+    with PlanningStore(path) as store:
+        assert (
+            store.load_planning("plan"),
+            store.load_planning_history("plan"),
+        ) == before
+        store.create_planned_task(
+            "task", "plan", "bound-at", expected_plan_hash=current_hash
+        )
+        assert store.load_task_provenance("task") == before[0].provenance()
+
+
+def test_planning_binding_history_only_events_do_not_invalidate_inspected_provenance(
+    tmp_path,
+):
+    path = tmp_path / "unchanged-provenance.db"
+    with PlanningStore(path) as store:
+        ready(store)
+        inspected = store.load_planning("plan").provenance()
+        history = store.load_planning_history("plan")
+        late = PlanningEnvelope(
+            "draft", 1, Completed({"late": "ignored artifact"}), "late-at"
+        )
+        with PlanningStore(path) as concurrent:
+            assert concurrent.apply_planning("plan", late) == Disposition.HISTORY_ONLY
+        assert store.load_planning("plan").provenance() == inspected
+        assert store.load_planning_history("plan") == history + (
+            (late, Disposition.HISTORY_ONLY),
+        )
+        store.create_planned_task(
+            "task", "plan", "bound-at", expected_plan_hash=inspected.plan_hash
+        )
+        assert store.load_task_provenance("task") == inspected
+        assert store.load_planning_history("plan")[-2] == (
+            late,
+            Disposition.HISTORY_ONLY,
+        )
