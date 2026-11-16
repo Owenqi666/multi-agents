@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "id": "T-0032",
+  "goal": "为单执行者提供绑定宿主工作树的独立写模式适配器，复用已验证的传输/证据/清理，保持默认审核只读入口不变，并用离线假CLI验证精确权限请求和失败封闭。",
+  "baseline_commit": "0d9689d3d08b10a28a426f5150f6d677373f1467",
+  "write_scope": [
+    "src/multi_agent/adapters/implementation_runtime.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/codex_isolation.py",
+    "tests/unit/test_implementation_runtime.py",
+    "tests/unit/runtime_fakes/fake_cli.py",
+    "docs/implementation-runtime.md",
+    "tasks/T-0032-implementation-runtime.json",
+    "docs/deliveries/T-0032.md"
+  ],
+  "depends_on": [
+    "T-0030",
+    "T-0031"
+  ],
+  "interface_contracts": [
+    {
+      "name": "separate entry and workspace binding",
+      "definition": "ImplementationRuntimeAdapter(RuntimeAdapter)在新模块定义，构造时额外要求workspace:WorkspaceRecord；只接受WORKSPACE_WRITE且SessionConfig.cwd规范化后精确等于record.root，核对根dev/inode且非symlink，日志在workspace之外。宿主继续持有T31 lease/核对完整record，适配器不创建/删除worktree。默认RuntimeAdapter.start_session继续只接受READ_ONLY；抽取内部注册/隔离构造/Claude argv与消息审计小入口共享已有逻辑，不复制传输/取消/清理。start_session仍不启动CLI，实际运行前再核对根身份。 身份基准只取T31已有record.root_identity，不在start时重新捕获未知root来替代；无需改T31。 在打开运行日志之前核对，并在Codex版本/配置/账号等await后的服务启动与thread/turn提交前复核，收窄绑定被替换的时序；不声称对抗任意外部host并发写者。"
+    },
+    {
+      "name": "Codex owned implementation policy",
+      "definition": "CodexIsolation.create可显式接收workspace记录，默认None时原frozen-review配置字节语义不变；写模式固定profile multi-agent-owned-implementation。filesystem仅:minimal=read、规范化root=write、root/.git=deny、record.git_directory=deny、record.repository(common-dir)=deny；network=false，不extends宽权限。沿用临时HOME/CODEX_HOME/最小ChatGPT auth、禁发现配置、--strict-config、实际layers/effective config/requirements严格null/account.type chatgpt审计。现有3个profile null字段路径按被审计固定profile映射；仍拒任何额外非空/未知字段。isolation_created/verified记录实际选中profile，不能硬记只读名。thread/turn不传legacy sandbox覆盖。所有字段来自本机0.169.0 config/schema快照，行为状态未确认，不能把请求配置当权限生效。 record.root/common/admin必须是已存在规范化绝对目录且不是symlink；common/admin以resolve(strict=True)与记录值一致核对，root/.git用lstat要求普通控制文件并保留原入口路径，不能跟随symlink移动deny。创建私有隔离目录前完成新增策略校验避免泄漏owner。现有隔离root/cwd/log重叠校验保留，写模式日志还不放Git管理目录内；错误文案使用中性isolation而非误记frozen-review。deny common-dir意味着模型不能运行Git读写，提交由宿主完成。"
+    },
+    {
+      "name": "Claude restricted file tools",
+      "definition": "写子类固定--restricted --safe-mode --strict-mcp-config --tools Read,Grep,Glob,Edit,Write --permission-mode acceptEdits --permission-prompts none --no-session-persistence；保持显式model/effort/stream-json/verbose/可选json-schema，去掉API_KEY/AUTH_TOKEN，不加Bash/WebFetch/add-dir/settings/handler/bypass。初始system/init必须先于其他模型输出且仅一次，解码前核对实际cwd、tools集合、permissionMode=acceptEdits、claude_code_version=2.1.325、mcp_servers=[]、additional_directories=[]、apiKeySource=none；无schema时恰好五工具；有schema时恰好五工具加必需StructuredOutput，不能缺失或添加其他工具。缺失/错配拒绝，记录配置报告不宣称完整沙箱已验证。safe-mode实际可报告内置plugins/skills，不臆造它们全空。工具名和参数依本机help及既有事实表；若新名字无出处先补原始依据，不凭记忆。 init字段出处为既有claude-readonly/claude-structured录制；Write工具名补充核对官方https://code.claude.com/docs/en/tools-reference#write-tool-behavior，状态仅文档，未修改协议快照。acceptEdits下完整init工具集合仍待T33实机确认，严格不符即拒，不宣称已经生效。"
+    },
+    {
+      "name": "existing runtime evidence and lifecycle",
+      "definition": "共享实际SessionStarted/Usage/Completed/Error/ProcessExited和原始日志脱敏；请求模型/档位与实际报告仍分开，Codex实际模型未知、双方actual effort未知不补值。完成与OS退出各自保存，服务成功后信号退出不改模型终态；取消以终态或停止证据，cleanup_incomplete不冒充停止。审计失败在adapters边界产生既有RuntimeFailure/Error(raw_type=adapter.implementation_policy或adapter.isolation_failed)，无新增core失败分类或状态。"
+    },
+    {
+      "name": "offline tests and old-test preservation",
+      "definition": "所有自动测试只运行合成CLI/临时Git仓库和合成auth。允许扩展现有fake_cli仅在显式FAKE_IMPLEMENTATION测试模式新增写分支和init字段，原只读分支的精确参数断言保持原样，不削弱既有测试。若更简洁可改为新增独立fake文件，但必须先将路径纳入卡再dispatchable。新增unit验证实际argv/config、失败审计、请求/报告独立、旧入口拒写、cwd/root替换、cleanup/terminal/exit等；真实OS权限不能由fake宣称。"
+    },
+    {
+      "name": "bounded card and subsequent probe",
+      "definition": "本卡不接产品CLI/任务编排，不发真实模型请求、不执行真实写权限probe、不改全局配置/登录/受保护skills或协议快照。S5a拆为T32离线适配器，随后T33独立可审核probe工具/具体实机方案；T33须复用本卡产品配置和审计路径，不用旧legacy probe权限覆盖。具体实机权限方案完成后按既有授权边界处理，阶段1只读结论不能替代写验证。业务protected_paths仍由T31完整交付检查；不宣称全部已被runtime沙箱拒写。"
+    }
+  ],
+  "deliverables": [
+    "ImplementationRuntimeAdapter和固定写权限策略、保持只读行为的共享运行入口。",
+    "合成CLI合同与失败回归、docs/implementation-runtime.md逐字段出处/未确认边界、T32交付。"
+  ],
+  "acceptance_criteria": [
+    "unit test_default_runtime_still_rejects_write_and_implementation_requires_owned_root：默认审核拒写，新类拒只读/异root/根替换，合法会话不提前启动CLI。",
+    "unit test_implementation_permission_contract：真实假进程捕获Codex配置、thread/turn参数、Claude argv/init，精确写root/deny元数据/禁外部tools，不靠提示词或请求回显认定生效；原只读fake断言仍通过。",
+    "unit test_implementation_policy_drift_is_rejected：缺失或扩大Codex权限、未知额外字段/来源/requirements/账户、Claude缺失或不符init工具/cwd/version/权限/MCP/auth来源/duplicate init或init前输出，失败且不继续接受成功结果。",
+    "unit test_implementation_preserves_terminal_exit_and_unknown_evidence：成功终态与非零/信号退出独立，实际模型缺失不补，取消/清理失败保留证据。",
+    "完整verify五步，原有测试/检查不削弱；正常独立提交，记录startHEAD/候选SHA/协议出处/逐条验收/实际路径及旧fake改动原因。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

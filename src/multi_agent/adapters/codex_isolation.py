@@ -1,4 +1,4 @@
-"""Process-local Codex review policy, pinned to the recorded 0.169.0 contract.
+"""Process-local Codex policies, pinned to the recorded 0.169.0 contract.
 
 The official, unmodified config schema and its provenance live in
 protocol/codex/config.schema.json and config-schema-source.json. Native command
@@ -9,18 +9,21 @@ import asyncio
 import json
 import os
 import shutil
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
 
 from multi_agent.core.events import Error, FailureCategory
+from multi_agent.core.workspaces import WorkspaceRecord
 
 from .probe.process import Process, SpawnFailed
 from .probe.recording import Recorder, Redactor
 from .runtime_decode import RuntimeFailure
 
 PROFILE = "multi-agent-frozen-review"
+IMPLEMENTATION_PROFILE = "multi-agent-owned-implementation"
 VERSION = "codex-cli 0.169.0"
 
 # These are schema-defined switches, not arbitrary -c keys. Disabling discovery
@@ -67,10 +70,62 @@ DISABLED_FEATURES = (
 )
 
 
-def policy_config(cwd: Path) -> dict[str, Any]:
-    """The single policy constructor used by review and native permission probes."""
+def _implementation_error(detail: str) -> RuntimeFailure:
+    return RuntimeFailure(Error(detail, raw_type="adapter.implementation_policy"))
+
+
+def _implementation_filesystem(cwd: Path, workspace: WorkspaceRecord) -> dict[str, str]:
+    """Validate host-recorded paths without following the Git control entry."""
+    paths = (
+        ("root", workspace.root),
+        ("common directory", workspace.repository),
+        ("administrative directory", workspace.git_directory),
+    )
+    try:
+        for label, value in paths:
+            path = Path(value)
+            if (
+                not path.is_absolute()
+                or str(path) != value
+                or not stat.S_ISDIR(path.lstat().st_mode)
+                or path.resolve(strict=True) != path
+            ):
+                raise ValueError(
+                    f"implementation workspace {label} must be a canonical directory"
+                )
+        root = Path(workspace.root)
+        if cwd.resolve(strict=True) != root:
+            raise ValueError(
+                "implementation cwd must match the recorded workspace root"
+            )
+        control = root / ".git"
+        if not stat.S_ISREG(control.lstat().st_mode):
+            raise ValueError("implementation .git must be a regular control file")
+    except (OSError, RuntimeError, ValueError) as error:
+        raise _implementation_error(
+            f"implementation isolation paths are invalid: {error}"
+        ) from error
     return {
-        "default_permissions": PROFILE,
+        ":minimal": "read",
+        str(root): "write",
+        str(control): "deny",
+        workspace.git_directory: "deny",
+        workspace.repository: "deny",
+    }
+
+
+def policy_config(
+    cwd: Path, *, workspace: WorkspaceRecord | None = None
+) -> dict[str, Any]:
+    """Build the fixed review or owned-workspace policy; never infer permissions."""
+    if workspace is None:
+        profile = PROFILE
+        filesystem = {":minimal": "read", str(cwd.resolve()): "read"}
+    else:
+        profile = IMPLEMENTATION_PROFILE
+        filesystem = _implementation_filesystem(cwd, workspace)
+    return {
+        "default_permissions": profile,
         "approval_policy": "never",
         "allow_login_shell": False,
         "cli_auth_credentials_store": "file",
@@ -83,8 +138,8 @@ def policy_config(cwd: Path) -> dict[str, Any]:
         "history": {"persistence": "none"},
         "web_search": "disabled",
         "permissions": {
-            PROFILE: {
-                "filesystem": {":minimal": "read", str(cwd.resolve()): "read"},
+            profile: {
+                "filesystem": filesystem,
                 "network": {"enabled": False},
             }
         },
@@ -242,11 +297,37 @@ class CodexIsolation:
         environment: dict[str, str],
         *,
         log_dir: Path,
+        workspace: WorkspaceRecord | None = None,
     ) -> "CodexIsolation":
-        cwd = cwd.resolve(strict=True)
-        log_dir = log_dir.resolve()
+        config = None
+        if workspace is None:
+            cwd = cwd.resolve(strict=True)
+            log_dir = log_dir.resolve()
+        else:
+            # Validate before allocating an owner: failure has nothing to clean up.
+            config = policy_config(cwd, workspace=workspace)
+            cwd = Path(workspace.root)
+            try:
+                log_dir = log_dir.resolve()
+            except (OSError, RuntimeError, ValueError) as error:
+                raise _implementation_error(
+                    f"implementation isolation log directory is invalid: {error}"
+                ) from error
+            if any(
+                log_dir.is_relative_to(Path(path))
+                for path in (workspace.repository, workspace.git_directory)
+            ):
+                raise _implementation_error(
+                    "implementation isolation logs must be outside Git administrative directories"
+                )
         root = Path(mkdtemp(prefix="multi-agent-codex-")).resolve()
-        instance = cls(cwd, root, policy_config(cwd), dict(environment), recorder)
+        instance = cls(
+            cwd,
+            root,
+            policy_config(cwd) if config is None else config,
+            dict(environment),
+            recorder,
+        )
         try:
             root.chmod(0o700)
             if not cwd.is_dir() or any(
@@ -255,7 +336,7 @@ class CodexIsolation:
             ):
                 raise RuntimeFailure(
                     Error(
-                        "Codex isolation, frozen input and log directories must be separate",
+                        "Codex isolation, working and log directories must be separate",
                         raw_type="adapter.isolation_path",
                     )
                 )
@@ -285,7 +366,11 @@ class CodexIsolation:
                 with target.open("x", encoding="utf-8") as stream:
                     target.chmod(0o600)
                     stream.write(content)
-            recorder.emit("isolation_created", owner=str(root), profile=PROFILE)
+            recorder.emit(
+                "isolation_created",
+                owner=str(root),
+                profile=instance.config["default_permissions"],
+            )
             return instance
         except BaseException as original:
             try:

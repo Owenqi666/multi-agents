@@ -12,6 +12,7 @@ from pathlib import Path
 
 args = sys.argv[1:]
 mode = os.environ.get("FAKE_RUNTIME_MODE", "success")
+implementation = os.environ.get("FAKE_IMPLEMENTATION") == "1"
 provider = "claude" if "claude" in os.path.basename(sys.argv[0]) else "codex"
 
 
@@ -41,7 +42,13 @@ if args == ["--version"]:
     if provider == "codex" and mode == "wrong-version":
         print("codex-cli 0.168.0")
     else:
-        print("codex-cli 0.169.0" if provider == "codex" else "fake-claude 1.0")
+        print(
+            "codex-cli 0.169.0"
+            if provider == "codex"
+            else "2.1.325 (Claude Code)"
+            if implementation
+            else "fake-claude 1.0"
+        )
     if mode == "version-hang":
         sys.stdout.flush()
         time.sleep(60)
@@ -88,7 +95,12 @@ if "FAKE_RUNTIME_REPORT" in os.environ:
 if provider == "claude":
     assert args[0] == "-p"
     assert args[args.index("--effort") + 1] == "high"
-    assert args[args.index("--tools") + 1] == "Read,Grep,Glob"
+    if implementation:
+        assert args[args.index("--tools") + 1] == "Read,Grep,Glob,Edit,Write"
+        assert args[args.index("--permission-mode") + 1] == "acceptEdits"
+        assert "--restricted" in args and "--strict-mcp-config" in args
+    else:
+        assert args[args.index("--tools") + 1] == "Read,Grep,Glob"
     assert args[args.index("--permission-prompts") + 1] == "none"
     assert args[args.index("--output-format") + 1] == "stream-json"
     assert "--safe-mode" in args and "--no-session-persistence" in args
@@ -109,14 +121,38 @@ if provider == "claude":
         sys.exit(0)
 
     signal.signal(signal.SIGINT, cancelled)
-    emit(
-        {
-            "type": "system",
-            "subtype": "init",
-            "session_id": "session-" + str(os.getpid()),
-            "model": "echo-not-evidence",
-        }
-    )
+    init = {
+        "type": "system",
+        "subtype": "init",
+        "session_id": "session-" + str(os.getpid()),
+        "model": "echo-not-evidence",
+    }
+    if implementation:
+        init.update(
+            cwd=os.getcwd(),
+            tools=["Write", "Read", "Glob", "Edit", "Grep"],
+            permissionMode="acceptEdits",
+            claude_code_version="2.1.325",
+            mcp_servers=[],
+            additional_directories=[],
+            apiKeySource="none",
+            plugins=[{"name": "synthetic-built-in"}],
+            skills=["synthetic-built-in-skill"],
+        )
+        if "--json-schema" in args:
+            init["tools"].append("StructuredOutput")
+        init.update(json.loads(os.environ.get("FAKE_IMPLEMENTATION_INIT_PATCH", "{}")))
+        for key in json.loads(os.environ.get("FAKE_IMPLEMENTATION_INIT_DROP", "[]")):
+            init.pop(key, None)
+        capture("implementation-init", message=init)
+        if mode == "implementation-before-init":
+            emit({"type": "assistant", "message": {"content": []}})
+        if mode == "implementation-unknown-before-init":
+            emit({"type": "unknown-event"})
+    if not (implementation and mode == "implementation-missing-init"):
+        emit(init)
+    if implementation and mode == "implementation-duplicate-init":
+        emit(init)
     emit({"type": "unknown-event", "custom": 42})
     os.write(2, b"fake stderr\n")
     if mode in ("wait", "ignore-cancel"):
@@ -156,7 +192,11 @@ if provider == "claude":
     if mode == "bad-result":
         result.pop("structured_output")
         result["result"] = "invalid JSON"
+    if implementation and mode == "implementation-unreported-model":
+        result.pop("modelUsage")
     emit(result)
+    if implementation and mode == "implementation-signal-exit":
+        os.kill(os.getpid(), signal.SIGTERM)
     if mode == "duplicate":
         emit(result)
     if mode == "hang-after-result":
@@ -189,6 +229,8 @@ for line in sys.stdin:
         config_path = Path(os.environ["CODEX_HOME"]) / "config.toml"
         with config_path.open("rb") as config_file:
             config = tomllib.load(config_file)
+        if implementation:
+            capture("implementation-config", config=config, path=str(config_path))
         # Synthetic rust-v0.169.0 ConfigToml serialization: effective values
         # include explicit nulls/defaults; the source layer remains the TOML.
         nullable_keys = (
@@ -295,6 +337,17 @@ for line in sys.stdin:
         }
         effective = result["config"]
         profile = effective["permissions"][effective["default_permissions"]]
+        if (
+            implementation
+            and effective["default_permissions"] == "multi-agent-owned-implementation"
+        ):
+            profile.update(description=None, extends=None, workspace_roots=None)
+            profile["filesystem"]["glob_scan_max_depth"] = None
+            profile["network"].update(domains=None, proxy_url=None)
+            if mode == "implementation-root-readonly":
+                profile["filesystem"][os.getcwd()] = "read"
+            elif mode == "implementation-missing-git-deny":
+                profile["filesystem"].pop(str(Path.cwd() / ".git"))
         if mode == "config-missing":
             result.pop("config")
         elif mode == "config-malformed":
@@ -386,6 +439,8 @@ for line in sys.stdin:
             "account": None if mode == "account-logged-out" else {"type": "chatgpt"},
             "requiresOpenaiAuth": True,
         }
+        if implementation and mode == "implementation-account-api-key":
+            result["account"] = {"type": "apiKey"}
     elif method == "model/list":
         assert config_audited and requirements_audited
         assert params["includeHidden"] is False
@@ -494,6 +549,8 @@ for line in sys.stdin:
                 "params": {"threadId": thread_id, "turn": turn},
             }
         )
+        if implementation and mode == "implementation-signal-exit":
+            os.kill(os.getpid(), signal.SIGTERM)
         if mode == "mcp-after-terminal":
             emit(
                 {

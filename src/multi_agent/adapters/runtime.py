@@ -346,6 +346,7 @@ class _Turn:
     deadline: asyncio.Timeout | None = None
     isolation: CodexIsolation | None = None
     redactor: Redactor | None = None
+    implementation_policy_reported: bool = False
 
 
 class RuntimeAdapter(Adapter):
@@ -400,6 +401,9 @@ class RuntimeAdapter(Adapter):
     async def start_session(self, config: SessionConfig) -> SessionHandle:
         if config.permission != Permission.READ_ONLY:
             raise ValueError("review adapters only support read-only sessions")
+        return self._register_session(config)
+
+    def _register_session(self, config: SessionConfig) -> SessionHandle:
         config = replace(config, cwd=config.cwd.resolve())
         if not config.cwd.is_dir():
             raise ValueError("review working directory does not exist")
@@ -484,6 +488,7 @@ class RuntimeAdapter(Adapter):
         cleanup_problem: Error | None = None
         isolation_incomplete = False
         try:
+            self._validate_turn_workspace(state)
             recorder = self._recorder(handle.identifier, state.config.cwd)
             state.redactor = recorder.redactor
             recorder.emit(
@@ -603,10 +608,16 @@ class RuntimeAdapter(Adapter):
                     finally:
                         recorder.close()
 
-    async def _codex(self, state: _Turn, recorder: Recorder) -> None:
-        state.isolation = isolation = CodexIsolation.create(
+    def _validate_turn_workspace(self, state: _Turn) -> None:
+        """Implementation sessions recheck their owned filesystem at I/O boundaries."""
+
+    def _create_isolation(self, state: _Turn, recorder: Recorder) -> CodexIsolation:
+        return CodexIsolation.create(
             state.config.cwd, recorder, self._environment(), log_dir=self.log_dir
         )
+
+    async def _codex(self, state: _Turn, recorder: Recorder) -> None:
+        state.isolation = isolation = self._create_isolation(state, recorder)
         version, code = await self._collect(
             [self.executable, "--version"],
             state.config.cwd,
@@ -626,6 +637,7 @@ class RuntimeAdapter(Adapter):
                     "cancelled before review process launch", FailureCategory.CANCELLED
                 )
             )
+        self._validate_turn_workspace(state)
         process = await self._spawn(
             [self.executable, "app-server", "--strict-config"],
             state.config.cwd,
@@ -658,6 +670,7 @@ class RuntimeAdapter(Adapter):
                     raw_type="adapter.isolation_failed",
                 )
             )
+        self._validate_turn_workspace(state)
         response = await rpc.request(
             "thread/start",
             {
@@ -696,6 +709,7 @@ class RuntimeAdapter(Adapter):
         }
         if self.output_schema is not None:
             params["outputSchema"] = self.output_schema
+        self._validate_turn_workspace(state)
         response = await rpc.request("turn/start", params)
         state.turn_id = string_value(
             object_value(response.get("turn"), "turn").get("id"), "turn.id"
@@ -721,7 +735,7 @@ class RuntimeAdapter(Adapter):
             for event in decoder.decode(message):
                 self._observe(state, event)
 
-    async def _claude(self, state: _Turn, recorder: Recorder) -> None:
+    def _claude_argv(self, state: _Turn) -> list[str]:
         argv = [
             self.executable,
             "-p",
@@ -742,6 +756,15 @@ class RuntimeAdapter(Adapter):
         ]
         if self.output_schema is not None:
             argv += ["--json-schema", json.dumps(self.output_schema)]
+        return argv
+
+    def _validate_claude_message(
+        self, state: _Turn, recorder: Recorder, message: dict[str, Any]
+    ) -> None:
+        """The restricted implementation adapter adds its init-report gate here."""
+
+    async def _claude(self, state: _Turn, recorder: Recorder) -> None:
+        argv = self._claude_argv(state)
         recorder.emit(
             "environment",
             removed_variables=["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
@@ -752,6 +775,7 @@ class RuntimeAdapter(Adapter):
         retry_after: str | None = None
         while (value := await _read(process)) is not None:
             message = object_value(value, "stream message")
+            self._validate_claude_message(state, recorder, message)
             if message.get("type") == "rate_limit_event":
                 info = object_value(message.get("rate_limit_info"), "rate_limit_info")
                 reset = info.get("resetsAt")
@@ -912,7 +936,7 @@ class RuntimeAdapter(Adapter):
         def reject() -> None:
             raise RuntimeFailure(
                 Error(
-                    "Codex effective configuration does not satisfy frozen-review isolation",
+                    "Codex effective configuration does not satisfy the owned isolation policy",
                     raw_type="adapter.isolation_failed",
                 )
             )
@@ -927,7 +951,15 @@ class RuntimeAdapter(Adapter):
                 return equal(actual, expected)
             if not isinstance(actual, dict) or not expected.keys() <= actual.keys():
                 return False
-            optional_nulls = _CODEX_NULL_FIELDS.get(path, frozenset())
+            # Null defaults are schema-defined and identical for our two fixed
+            # profiles. Select by the host-owned expectation, never the reply.
+            schema_path = path
+            if len(path) >= 2 and path[:2] == (
+                "permissions",
+                isolation.config["default_permissions"],
+            ):
+                schema_path = ("permissions", "multi-agent-frozen-review", *path[2:])
+            optional_nulls = _CODEX_NULL_FIELDS.get(schema_path, frozenset())
             for key, value in actual.items():
                 if key not in expected:
                     if key not in optional_nulls or value is not None:
