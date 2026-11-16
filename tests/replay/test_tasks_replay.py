@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from multi_agent.core import Disposition
-from multi_agent.core.dispatch import resolve_dispatch
+from multi_agent.core.dispatch import ImplementationChoice, resolve_dispatch
 from multi_agent.core.events import (
     CancelRequested,
     Completed,
@@ -23,8 +23,18 @@ from multi_agent.core.task_events import (
     TaskAttemptStarted,
     TaskDiagnostic,
     TaskEnvelope,
+    TaskEnvironmentObserved,
+    TaskEvidenceRejected,
+    TaskExecutionPrepared,
     TaskReconciled,
     TaskScopeBlocked,
+)
+from multi_agent.core.task_execution import (
+    TaskDispatchPolicy,
+    TaskExecutionContext,
+    TaskExecutionPolicy,
+    reserve_task_execution,
+    task_execution_hash,
 )
 from multi_agent.core.task_state import TaskInput, TaskState
 from multi_agent.core.tasks import (
@@ -35,6 +45,7 @@ from multi_agent.core.tasks import (
     TaskCard,
 )
 from multi_agent.core.transitions import apply_task
+from multi_agent.core.workspaces import WorkspaceControl, WorkspaceRecord
 from multi_agent.store.task_store import TaskStore
 
 SCENARIOS = Path(__file__).parent / "scenarios" / "tasks"
@@ -43,6 +54,10 @@ REQUIRED_SCENARIOS = {
     "cancel-diagnostic-exit",
     "restart-reconcile",
     "cancel-terminal-exit",
+    "managed-preparation",
+    "managed-evidence-rejected",
+    "managed-late-result",
+    "managed-retry-budget",
 }
 
 
@@ -100,6 +115,42 @@ def _event(fields, decision):
     if kind == TaskScopeBlocked.kind:
         values["required_paths"] = tuple(values["required_paths"])
         return TaskScopeBlocked(**values)
+    if kind == TaskExecutionPrepared.kind:
+        workspace = dict(values["workspace"])
+        workspace["root_identity"] = tuple(workspace["root_identity"])
+        workspace["git_identity"] = tuple(workspace["git_identity"])
+        workspace["controls"] = tuple(
+            WorkspaceControl(
+                item["path"],
+                tuple(item["identity"]) if item["identity"] is not None else None,
+                bytes.fromhex(item["content"]["hex"])
+                if item["content"] is not None
+                else None,
+            )
+            for item in workspace["controls"]
+        )
+        policy = dict(values["policy"])
+        policy["executable_identity"] = tuple(policy["executable_identity"])
+        dispatch = dict(values["dispatch_policy"])
+        dispatch["requested"] = (
+            ImplementationChoice(**dispatch["requested"])
+            if dispatch["requested"] is not None
+            else None
+        )
+        dispatch["fallbacks"] = tuple(
+            ImplementationChoice(**item) for item in dispatch["fallbacks"]
+        )
+        context = dict(values["context"])
+        context["identity"] = tuple(context["identity"])
+        return TaskExecutionPrepared(
+            WorkspaceRecord(**workspace),
+            values["initial_workspace_digest"],
+            values["prompt"],
+            values["output_schema"],
+            TaskExecutionPolicy(**policy),
+            TaskDispatchPolicy(**dispatch),
+            TaskExecutionContext(**context),
+        )
     constructors = {
         event.kind: event
         for event in (
@@ -110,9 +161,19 @@ def _event(fields, decision):
             SessionStarted,
             Usage,
             TaskReconciled,
+            TaskEnvironmentObserved,
+            TaskEvidenceRejected,
         )
     }
     return constructors[kind](**values)
+
+
+def _envelope(fields, decision):
+    return TaskEnvelope(
+        fields["attempt"],
+        _event(fields["event"], decision),
+        fields.get("occurred_at"),
+    )
 
 
 class CoreBackend:
@@ -130,6 +191,14 @@ class CoreBackend:
         self.state, disposition = apply_task(self.state, envelope)
         self.history.append((envelope, disposition))
         return disposition
+
+    def reserve(self, started, prepared):
+        # Publish neither the intermediate state nor half a history on failure.
+        state = reserve_task_execution(self.state, started, prepared)
+        self.state = state
+        self.history.extend(
+            ((started, Disposition.APPLIED), (prepared, Disposition.APPLIED))
+        )
 
     def load(self):
         return self.state
@@ -163,6 +232,16 @@ class StoreBackend:
 
     def apply(self, envelope):
         return self.store.apply_task("replay", envelope)
+
+    def reserve(self, started, prepared):
+        history = self.load_history()
+        self.store.reserve_task_attempt(
+            "replay",
+            started,
+            prepared,
+            expected_history_length=len(history),
+            expected_history_hash=task_execution_hash(history),
+        )
 
     def load(self):
         return self.store.load_task("replay")
@@ -209,10 +288,13 @@ def _final(state):
             else None,
             "result": thaw_json(runtime.result),
             "exit_code": runtime.exit_code,
-            "reconciliation": asdict(attempt.reconciliation)
-            if attempt.reconciliation
-            else None,
+            "reconciliation": _reconciliation(attempt),
         }
+        if attempt.request.managed:
+            attempts[str(attempt.number)]["managed"] = True
+            attempts[str(attempt.number)]["event_types"] = [
+                event.kind for event in attempt.events
+            ]
     scope_block = (
         None
         if state.scope_block is None
@@ -224,6 +306,35 @@ def _final(state):
     return {**_observation(state), "attempts": attempts, "scope_block": scope_block}
 
 
+def _reconciliation(attempt):
+    receipt = attempt.reconciliation
+    if receipt is None:
+        return None
+    if attempt.request.managed:
+        return asdict(receipt)
+    # The four frozen legacy fixtures predate the optional execution log receipt.
+    return {
+        "worktree_digest": receipt.worktree_digest,
+        "process_stopped": receipt.process_stopped,
+        "detail": receipt.detail,
+    }
+
+
+def _assert_managed_events(state, history):
+    for attempt in state.attempts:
+        if attempt.request.managed:
+            events = tuple(
+                envelope.event
+                for envelope, disposition in history
+                if envelope.attempt == attempt.number
+                and disposition == Disposition.APPLIED
+            )
+            # Compare the whole immutable objects, not just event names/counts.
+            assert attempt.events == events
+            receipts = [event for event in events if isinstance(event, TaskReconciled)]
+            assert attempt.reconciliation == (receipts[-1] if receipts else None)
+
+
 def _replay(backend, scenario, decision):
     expected_history = []
     trace = []
@@ -232,14 +343,21 @@ def _replay(backend, scenario, decision):
         if step["op"] == "reopen":
             backend.reopen()
             assert (backend.load(), backend.load_history()) == before
+        elif step["op"] == "reserve":
+            started = _envelope(step["started"], decision)
+            prepared = _envelope(step["prepared"], decision)
+            if step.get("error") == "ValueError":
+                with pytest.raises(ValueError):
+                    backend.reserve(started, prepared)
+                assert (backend.load(), backend.load_history()) == before
+            else:
+                backend.reserve(started, prepared)
+                expected_history.extend(
+                    ((started, Disposition.APPLIED), (prepared, Disposition.APPLIED))
+                )
         else:
             assert step["op"] == "event"
-            fields = step["envelope"]
-            envelope = TaskEnvelope(
-                fields["attempt"],
-                _event(fields["event"], decision),
-                fields.get("occurred_at"),
-            )
+            envelope = _envelope(step["envelope"], decision)
             if step.get("error") == "ValueError":
                 with pytest.raises(ValueError):
                     backend.apply(envelope)
@@ -252,11 +370,13 @@ def _replay(backend, scenario, decision):
                     assert backend.load() == before[0]
         assert _observation(backend.load()) == step["expect"]
         assert backend.load_history() == tuple(expected_history)
+        _assert_managed_events(backend.load(), expected_history)
         trace.append((backend.load(), backend.load_history()))
     assert _final(backend.load()) == scenario["final"]
     backend.reopen()
     assert _final(backend.load()) == scenario["final"]
     assert backend.load_history() == tuple(expected_history)
+    _assert_managed_events(backend.load(), expected_history)
     return tuple(trace)
 
 

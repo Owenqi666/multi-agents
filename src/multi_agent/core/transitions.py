@@ -53,10 +53,14 @@ from .task_events import (
     TaskAttemptStarted,
     TaskDiagnostic,
     TaskEnvelope,
+    TaskEnvironmentObserved,
     TaskEvent,
+    TaskEvidenceRejected,
+    TaskExecutionPrepared,
     TaskReconciled,
     TaskScopeBlocked,
 )
+from .task_execution import prepared_for_task, task_execution_hash
 from .task_state import TaskAttempt, TaskPhase, TaskState
 from .tasks import TaskCard
 
@@ -244,8 +248,24 @@ def _task_start(
     event = envelope.event
     assert isinstance(event, TaskAttemptStarted)
     current = state.current_attempt
+    if any(attempt.request.managed != event.managed for attempt in state.attempts):
+        raise ValueError("managed and legacy task attempts cannot share a chain")
+    if event.managed:
+        if event.environment is not None:
+            raise ValueError("managed task environment must be observed separately")
+        for attempt in state.attempts:
+            prepared = prepared_for_task(attempt)
+            if prepared is None:
+                raise ValueError(
+                    "managed task retries require a complete preparation chain"
+                )
+            if envelope.attempt > prepared.policy.max_attempts:
+                raise ValueError("managed task attempt budget is exhausted")
     if current is not None and (
-        current.reconciliation is None or not current.reconciliation.process_stopped
+        current.reconciliation is None
+        or not current.reconciliation.process_stopped
+        or event.managed
+        and not current.reconciliation.worktree_digest
     ):
         raise ValueError("retry requires current process and workspace reconciliation")
     if (
@@ -262,6 +282,127 @@ def _task_start(
         ),
         Disposition.APPLIED,
     )
+
+
+def _task_prepare(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskExecutionPrepared)
+    current = state.attempts[-1]
+    if not current.request.managed:
+        raise ValueError("legacy tasks cannot adopt managed execution preparation")
+    existing = prepared_for_task(current)
+    if existing is not None:
+        if task_execution_hash(existing) != task_execution_hash(event):
+            raise ValueError("task execution preparation is immutable")
+        return state, Disposition.HISTORY_ONLY
+    if state.phase != TaskPhase.IMPLEMENTING or current.events != (current.request,):
+        raise ValueError("task preparation must immediately follow a managed start")
+    workspace = event.workspace
+    expected_provider = {"codex": "codex", "claude-code": "claude"}[
+        current.request.decision.choice.provider
+    ]
+    if (
+        workspace.root != current.request.worktree
+        or workspace.task_baseline != state.baseline_commit
+        or event.policy.provider != expected_provider
+    ):
+        raise ValueError(
+            "task workspace, baseline or runtime provider differs from its request"
+        )
+    if len(state.attempts) > event.policy.max_attempts:
+        raise ValueError("managed task attempt budget is exhausted")
+    for previous in state.attempts[:-1]:
+        prior = prepared_for_task(previous)
+        if not previous.request.managed or prior is None:
+            raise ValueError(
+                "managed task requires a complete managed preparation chain"
+            )
+        if task_execution_hash(prior.policy) != task_execution_hash(
+            event.policy
+        ) or task_execution_hash(prior.dispatch_policy) != task_execution_hash(
+            event.dispatch_policy
+        ):
+            raise ValueError("task execution and dispatch policies are frozen")
+        if (
+            workspace.root == prior.workspace.root
+            or workspace.owner_token == prior.workspace.owner_token
+            or workspace.root_identity == prior.workspace.root_identity
+            or workspace.git_directory == prior.workspace.git_directory
+            or workspace.git_identity == prior.workspace.git_identity
+            or event.context.path == prior.context.path
+            or event.context.identity == prior.context.identity
+            or event.context.token == prior.context.token
+        ):
+            raise ValueError(
+                "task attempts require a fresh workspace owner and context"
+            )
+    return state, Disposition.APPLIED
+
+
+def _task_environment(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskEnvironmentObserved)
+    current = state.attempts[-1]
+    if not current.request.managed:
+        raise ValueError("environment observations require a managed task")
+    existing = next(
+        (item for item in current.events if isinstance(item, TaskEnvironmentObserved)),
+        None,
+    )
+    if existing is not None:
+        if task_execution_hash(existing) != task_execution_hash(event):
+            raise ValueError("task environment observation is immutable")
+        return state, Disposition.HISTORY_ONLY
+    if (
+        state.phase != TaskPhase.IMPLEMENTING
+        or prepared_for_task(current) is None
+        or any(
+            not isinstance(
+                item, (TaskAttemptStarted, TaskExecutionPrepared, TaskDiagnostic)
+            )
+            for item in current.events
+        )
+    ):
+        raise ValueError(
+            "task environment must precede runtime, cancellation and reconciliation"
+        )
+    return state, Disposition.APPLIED
+
+
+def _task_reject_evidence(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskEvidenceRejected)
+    current = state.attempts[-1]
+    if not current.request.managed:
+        raise ValueError("execution evidence rejection requires a managed task")
+    existing = next(
+        (item for item in current.events if isinstance(item, TaskEvidenceRejected)),
+        None,
+    )
+    if existing is not None:
+        if existing != event:
+            raise ValueError("task execution evidence rejection is immutable")
+        return state, Disposition.HISTORY_ONLY
+    if state.phase != TaskPhase.AWAITING_DELIVERY:
+        raise ValueError("task execution evidence rejection requires awaiting delivery")
+    return replace(state, phase=TaskPhase.FAILED), Disposition.APPLIED
+
+
+def _task_diagnostic(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    disposition = (
+        Disposition.APPLIED
+        if state.attempts[-1].request.managed
+        else Disposition.HISTORY_ONLY
+    )
+    return state, disposition
 
 
 _TASK_RUNTIME_PHASES = {
@@ -316,6 +457,8 @@ def _task_exit(
     event = envelope.event
     assert isinstance(event, ProcessExited)
     current = state.attempts[-1]
+    if state.phase == TaskPhase.IMPLEMENTING and not current.request.managed:
+        raise ValueError(f"event {event.kind} is invalid in task phase {state.phase}")
     if current.runtime.exit_code is not None:
         return state, Disposition.HISTORY_ONLY
     phase = state.phase
@@ -341,6 +484,13 @@ def _task_reconcile(
 ) -> tuple[TaskState, Disposition]:
     event = envelope.event
     assert isinstance(event, TaskReconciled)
+    if (
+        state.phase == TaskPhase.PLANNING_REQUIRED
+        and not state.attempts[-1].request.managed
+    ):
+        return state, Disposition.HISTORY_ONLY
+    if (event.log_path is None) != (event.log_sha256 is None):
+        raise ValueError("task execution log receipt requires both path and hash")
     phase = state.phase
     if event.process_stopped:
         phase = {
@@ -378,8 +528,12 @@ _TASK_ACTIVE: dict[type[TaskEvent], TaskTransition | None] = {
     Completed: _task_runtime,
     Error: _task_runtime,
     CancelRequested: _task_runtime,
+    ProcessExited: _task_exit,
     TaskReconciled: _task_reconcile,
-    TaskDiagnostic: None,
+    TaskDiagnostic: _task_diagnostic,
+    TaskExecutionPrepared: _task_prepare,
+    TaskEnvironmentObserved: _task_environment,
+    TaskEvidenceRejected: _task_reject_evidence,
 }
 _TASK_CLOSED: dict[type[TaskEvent], TaskTransition | None] = {
     SessionStarted: None,
@@ -389,8 +543,11 @@ _TASK_CLOSED: dict[type[TaskEvent], TaskTransition | None] = {
     Error: None,
     CancelRequested: None,
     ProcessExited: _task_exit,
-    TaskDiagnostic: None,
+    TaskDiagnostic: _task_diagnostic,
     TaskReconciled: _task_reconcile,
+    TaskExecutionPrepared: _task_prepare,
+    TaskEnvironmentObserved: _task_environment,
+    TaskEvidenceRejected: _task_reject_evidence,
 }
 _TASK_TRANSITIONS: dict[TaskPhase, dict[type[TaskEvent], TaskTransition | None]] = {
     TaskPhase.READY: {TaskAttemptStarted: _task_start},
@@ -402,6 +559,11 @@ _TASK_TRANSITIONS: dict[TaskPhase, dict[type[TaskEvent], TaskTransition | None]]
     TaskPhase.PLANNING_REQUIRED: {
         **dict.fromkeys(_TASK_CLOSED),
         TaskScopeBlocked: None,
+        TaskReconciled: _task_reconcile,
+        TaskDiagnostic: _task_diagnostic,
+        TaskExecutionPrepared: _task_prepare,
+        TaskEnvironmentObserved: _task_environment,
+        TaskEvidenceRejected: _task_reject_evidence,
     },
 }
 
@@ -421,6 +583,13 @@ def apply_task(
             raise ValueError("task start must use the next attempt number")
     elif current is None or envelope.attempt != current.number:
         raise ValueError("task attempt has not started")
+    if (
+        current is not None
+        and current.request.managed
+        and not isinstance(envelope.event, (TaskAttemptStarted, TaskExecutionPrepared))
+        and prepared_for_task(current) is None
+    ):
+        raise ValueError("managed task events require execution preparation")
     registered = _TASK_TRANSITIONS[state.phase]
     if type(envelope.event) not in registered:
         raise ValueError(
@@ -429,7 +598,19 @@ def apply_task(
     transition = registered[type(envelope.event)]
     if transition is None:
         return state, Disposition.HISTORY_ONLY
-    return transition(state, envelope)
+    updated, disposition = transition(state, envelope)
+    selected = updated.current_attempt
+    if (
+        disposition == Disposition.APPLIED
+        and selected is not None
+        and selected.request.managed
+    ):
+        updated = replace(
+            updated,
+            attempts=updated.attempts[:-1]
+            + (replace(selected, events=selected.events + (envelope.event,)),),
+        )
+    return updated, disposition
 
 
 # Planning has sequential provider roles and independent attempt numbers. The

@@ -1,0 +1,45 @@
+# Managed 实现尝试的持久化契约
+
+T42 在任务状态与数据库中保存完整的实现准备记录及实际执行事件。创建工作区、检查文件、调用模型、封存执行 manifest 和候选提交属于后续边界；这里保存的可信宿主输入本身不证明真实权限或文件内容已经核验。
+
+## 模式与冻结输入
+
+`TaskAttemptStarted.managed` 显式区分新执行链，默认 False 保持旧接口。模式不由模板名称推断。一个任务运行的 managed 与 legacy 尝试不能混用，避免通过旧入口跳过新的交付证据门槛。旧记录缺少新字段时保持 legacy，不补造事件或工作区身份。
+
+managed 尝试先由 Started 冻结请求，再紧接 TaskExecutionPrepared。准备记录包含完整 WorkspaceRecord、初始工作区 digest、精确 prompt、深冻结 output schema、运行策略、完整派发策略和宿主控制 context 身份。workspace 的控制文件按显式 hex 保存，`None`、空 bytes 和非 UTF-8 bytes 分别往返，不从路径猜测原身份。
+
+TaskExecutionPolicy 固定一个 runtime provider 的 executable 路径/身份/hash、次数预算、timeout 和 grace。TaskDispatchPolicy 另存 task_type、requested override 和完整有序 fallbacks，包括每项的 effort。旧 DispatchDecision 的 selection_history 在选中处结束，不能用它还原后续备选。`claude-code` 到 runtime `claude` 的对应只是请求路由，不是实际模型报告。
+
+同一运行的重试固定这两份策略，并使用新的 workspace/context 身份与 token。尝试次数包含预检失败。重试先要求当前尝试实际停止、最终工作区 digest 已知；初始 digest 不能代替失败后的检查结果。本卡不建立候选或返工来源资格。
+
+## 原子准备
+
+纯 `reserve_task_execution(state, started, prepared)` 在局部不可变值上调用登记过的转移，两步都为 APPLIED 后才返回。失败时原 state 不变。纯 `apply_task` 可以表示单步中间值，但没有 Prepared 的 managed 尝试不能接收运行事件或获得交付资格。
+
+数据库公共 `apply_task` 拒绝单独的 managed Started 和 Prepared。`TaskStore.reserve_task_attempt` 在同一个 BEGIN IMMEDIATE 中读取当前状态、输入和完整历史，检查 CAS、workspace repository、派发决定与准备不变量，再一次写入状态和顺序历史。它复用纯 reserve，不另建一套状态逻辑。
+
+CAS 对象就是 `load_task_history` 返回的有序 `tuple[(TaskEnvelope, Disposition), ...]`，包含 HISTORY_ONLY。Envelope 的 attempt、occurred_at 和完整事件都进入 canonical hash；位置表达顺序，Disposition 使用字符串值。run_id 在事务中选择，不加入 hash；SQL sequence 列不另编码。条数和 hash 同时检查。
+
+store 用完整 TaskDispatchPolicy 调用现有 `resolve_dispatch`，精确比对 Started.decision。known-unavailable 集合仍来自可信调用输入，这一步不宣称验证实际 availability 的来源。后续执行边界负责连接实际预检与失败记录。
+
+## 实际事件与交付资格
+
+managed `TaskAttempt.events` 保存已应用的 Started、Prepared、运行时事件及宿主事件；旧尝试迟到仍只进入完整历史，不能推进当前状态。legacy Diagnostic 继续 HISTORY_ONLY，保持旧状态不变。managed Diagnostic 可保存诊断，但不变成模型终态。
+
+managed Prepared 后也可独立保存真实模型 ProcessExited，即使没有模型终态。它只记录退出码，阶段仍为 implementing，不补模型结果或进程组停止；实际 Reconciled 才关闭宿主阶段。辅助预检进程不能冒充模型退出。legacy 对 implementing 中提前 exit 的原拒绝规则保持。
+
+TaskEnvironmentObserved 记录实际预检信息，未知值保持 null。首次观察位于 Prepared 之后、模型事件/取消/reconciliation 之前；相同 canonical 值重复只进历史，不同值拒绝。它不覆盖 Started.environment，也不从 requested model/effort 补实际值。
+
+TaskEvidenceRejected 可在 managed awaiting_delivery 拒绝无法使用的成功产物，不要求先补齐 exit、stop 或日志。它将宿主阶段转为 failed，同时保留原 Completed/result、实际退出、报告和 reconciliation。之后补全停止核对不会恢复同一次产物的交付资格。
+
+TaskReconciled 分别保存实际 process_stopped、最终 worktree_digest 和执行 manifest 的 log_path/log_sha256。扫描未知使用 None；停止事实不因日志或扫描失败被改写。log 字段成对出现，并指向执行结束后的 execution manifest。执行前 TaskExecutionContext.manifest_sha256 只绑定控制输入，不能替代它。
+
+managed 进入 planning_required 后仍保存当前尝试最新的 Reconciled，包括撤销旧停止事实；阶段保持 planning_required，不能恢复交付或重试。legacy 同一阶段仍保持原来的 HISTORY_ONLY。
+
+managed delivery_ready 必须同时具备 awaiting_delivery、实际成功、实际退出、最新停止为 true、已知且非空的最终 digest、成对非空的执行 manifest receipt 及 Prepared。core 只检查可信字段和状态；后续边界必须实际 inspect manifest 才能提交这些字段或冻结候选。legacy 原门槛保留，不因此获得 managed 资格。
+
+## 兼容与验证
+
+新 managed hash 使用 UTF-8、排序键、紧凑 JSON、`allow_nan=False`，事件带 kind，bytes 使用明确 hex 标签。它不改旧 task/rules/plan hash。codec 只为缺失的新可选字段提供 legacy 默认，旧必需字段缺失仍抛错；旧字段形状保持。
+
+已有 task_attempts/history 表存 JSON，扩展不需要 SQL 表迁移。转移、codec、原子 reserve 和新回放一起验证。旧四个 task 场景保留；legacy reconciliation 继续核对原三字段，新 managed 场景另外核对完整 receipt 与事件序列。离线合成记录不代表实际模型或权限验收。

@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from .state import AttemptState, AttemptStatus
-from .task_events import TaskAttemptStarted, TaskReconciled, TaskScopeBlocked
+from .task_events import TaskAttemptStarted, TaskEvent, TaskReconciled, TaskScopeBlocked
+from .task_execution import prepared_for_task
 from .tasks import FrozenProjectRules, TaskCard
 
 
@@ -23,6 +24,7 @@ class TaskAttempt:
     request: TaskAttemptStarted
     runtime: AttemptState
     reconciliation: TaskReconciled | None = None
+    events: tuple[TaskEvent, ...] = ()
 
     @property
     def number(self) -> int:
@@ -52,7 +54,7 @@ class TaskState:
         the model terminal. Missing exit evidence is not replaced by a guess.
         """
         current = self.current_attempt
-        return (
+        ready = (
             self.phase == TaskPhase.AWAITING_DELIVERY
             and current is not None
             and current.runtime.status == AttemptStatus.SUCCEEDED
@@ -60,6 +62,17 @@ class TaskState:
             and (
                 current.reconciliation is None or current.reconciliation.process_stopped
             )
+        )
+        if not ready or current is None or not current.request.managed:
+            return ready
+        reconciliation = current.reconciliation
+        return (
+            prepared_for_task(current) is not None
+            and reconciliation is not None
+            and reconciliation.process_stopped
+            and bool(reconciliation.worktree_digest)
+            and bool(reconciliation.log_path)
+            and bool(reconciliation.log_sha256)
         )
 
 

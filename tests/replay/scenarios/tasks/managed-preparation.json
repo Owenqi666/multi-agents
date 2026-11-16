@@ -1,0 +1,666 @@
+{
+  "steps": [
+    {
+      "op": "reserve",
+      "started": {
+        "attempt": 1,
+        "occurred_at": "started-1",
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/managed/worktree-1",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "start-1",
+          "environment": null,
+          "managed": true
+        }
+      },
+      "prepared": {
+        "attempt": 1,
+        "occurred_at": "prepared-1",
+        "event": {
+          "type": "task_execution_prepared",
+          "workspace": {
+            "repository": "/synthetic/repository/.git",
+            "source": "/synthetic/source",
+            "task_baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "start_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "root": "/mismatch",
+            "owner_token": "owner-1",
+            "root_identity": [
+              1,
+              101
+            ],
+            "git_directory": "/synthetic/repository/.git/worktrees/managed-1",
+            "git_identity": [
+              1,
+              201
+            ],
+            "controls": [
+              {
+                "path": ".git",
+                "identity": [
+                  1,
+                  301
+                ],
+                "content": {
+                  "hex": "6769746469723a2073796e7468657469630a"
+                }
+              },
+              {
+                "path": "absent",
+                "identity": null,
+                "content": null
+              },
+              {
+                "path": "empty",
+                "identity": [
+                  1,
+                  401
+                ],
+                "content": {
+                  "hex": ""
+                }
+              },
+              {
+                "path": "binary",
+                "identity": [
+                  1,
+                  501
+                ],
+                "content": {
+                  "hex": "00ff"
+                }
+              }
+            ],
+            "object_format": "sha1"
+          },
+          "initial_workspace_digest": "initial-1",
+          "prompt": "Frozen prompt 1",
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "changed": {
+                "type": "array"
+              }
+            },
+            "unknown": null
+          },
+          "policy": {
+            "provider": "codex",
+            "executable": "/synthetic/codex",
+            "executable_identity": [
+              1,
+              42
+            ],
+            "executable_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "max_attempts": 2,
+            "timeout": 30,
+            "grace": 1
+          },
+          "dispatch_policy": {
+            "task_type": null,
+            "requested": null,
+            "fallbacks": [
+              {
+                "provider": "codex",
+                "model": "requested-coder",
+                "effort": "low"
+              },
+              {
+                "provider": "codex",
+                "model": "requested-coder",
+                "effort": "medium"
+              }
+            ]
+          },
+          "context": {
+            "path": "/synthetic/context-1",
+            "identity": [
+              1,
+              601
+            ],
+            "token": "context-1",
+            "manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        }
+      },
+      "expect": {
+        "phase": "ready",
+        "current_attempt": null,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "attempt": 1,
+        "occurred_at": "started-1",
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/managed/worktree-1",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "start-1",
+          "environment": null,
+          "managed": true
+        }
+      },
+      "prepared": {
+        "attempt": 1,
+        "occurred_at": "prepared-1",
+        "event": {
+          "type": "task_execution_prepared",
+          "workspace": {
+            "repository": "/synthetic/repository/.git",
+            "source": "/synthetic/source",
+            "task_baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "start_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "root": "/synthetic/managed/worktree-1",
+            "owner_token": "owner-1",
+            "root_identity": [
+              1,
+              101
+            ],
+            "git_directory": "/synthetic/repository/.git/worktrees/managed-1",
+            "git_identity": [
+              1,
+              201
+            ],
+            "controls": [
+              {
+                "path": ".git",
+                "identity": [
+                  1,
+                  301
+                ],
+                "content": {
+                  "hex": "6769746469723a2073796e7468657469630a"
+                }
+              },
+              {
+                "path": "absent",
+                "identity": null,
+                "content": null
+              },
+              {
+                "path": "empty",
+                "identity": [
+                  1,
+                  401
+                ],
+                "content": {
+                  "hex": ""
+                }
+              },
+              {
+                "path": "binary",
+                "identity": [
+                  1,
+                  501
+                ],
+                "content": {
+                  "hex": "00ff"
+                }
+              }
+            ],
+            "object_format": "sha1"
+          },
+          "initial_workspace_digest": "initial-1",
+          "prompt": "Frozen prompt 1",
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "changed": {
+                "type": "array"
+              }
+            },
+            "unknown": null
+          },
+          "policy": {
+            "provider": "codex",
+            "executable": "/synthetic/codex",
+            "executable_identity": [
+              1,
+              42
+            ],
+            "executable_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "max_attempts": 2,
+            "timeout": 30,
+            "grace": 1
+          },
+          "dispatch_policy": {
+            "task_type": null,
+            "requested": null,
+            "fallbacks": [
+              {
+                "provider": "codex",
+                "model": "requested-coder",
+                "effort": "low"
+              },
+              {
+                "provider": "codex",
+                "model": "requested-coder",
+                "effort": "medium"
+              }
+            ]
+          },
+          "context": {
+            "path": "/synthetic/context-1",
+            "identity": [
+              1,
+              601
+            ],
+            "token": "context-1",
+            "manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        }
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_environment_observed",
+          "environment": {
+            "cli_version": "synthetic",
+            "reported_model": null
+          }
+        },
+        "occurred_at": "event-3"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_diagnostic",
+          "diagnostic": {
+            "type": "error",
+            "detail": "host note"
+          }
+        },
+        "occurred_at": "event-4"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "session_started",
+          "session_id": "actual-session"
+        },
+        "occurred_at": "event-5"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "usage",
+          "counts": {
+            "tokens": 3
+          }
+        },
+        "occurred_at": "event-6"
+      },
+      "expect": {
+        "phase": "implementing",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "completed",
+          "result": {
+            "changed": [
+              "src/module.py"
+            ]
+          },
+          "reported_model": "actual-coder"
+        },
+        "occurred_at": "event-7"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "process_exited",
+          "exit_code": -15,
+          "raw_type": "actual.model.exit"
+        },
+        "occurred_at": "event-8"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": null,
+          "process_stopped": true,
+          "detail": "actual host facts",
+          "log_path": "/synthetic/execution.json",
+          "log_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "occurred_at": "event-9"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": "final-1",
+          "process_stopped": true,
+          "detail": "actual host facts",
+          "log_path": "/synthetic/execution.json",
+          "log_sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "occurred_at": "event-11"
+      },
+      "expect": {
+        "phase": "awaiting_delivery",
+        "current_attempt": 1,
+        "delivery_ready": true
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_scope_blocked",
+          "reason": "requires extra path",
+          "required_paths": [
+            "shared/interface.py"
+          ]
+        },
+        "occurred_at": "event-12"
+      },
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "event",
+      "envelope": {
+        "attempt": 1,
+        "event": {
+          "type": "task_reconciled",
+          "worktree_digest": null,
+          "process_stopped": false,
+          "detail": "later stop is unknown",
+          "log_path": null,
+          "log_sha256": null
+        },
+        "occurred_at": "event-13"
+      },
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "disposition": "applied"
+    },
+    {
+      "op": "reserve",
+      "started": {
+        "attempt": 2,
+        "occurred_at": "started-2",
+        "event": {
+          "type": "task_attempt_started",
+          "worktree": "/synthetic/managed/worktree-2",
+          "prompt_template_version": "implementation-replay-v1",
+          "started_at": "start-2",
+          "environment": null,
+          "managed": true
+        }
+      },
+      "prepared": {
+        "attempt": 2,
+        "occurred_at": "prepared-2",
+        "event": {
+          "type": "task_execution_prepared",
+          "workspace": {
+            "repository": "/synthetic/repository/.git",
+            "source": "/synthetic/source",
+            "task_baseline": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "start_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "root": "/synthetic/managed/worktree-2",
+            "owner_token": "owner-2",
+            "root_identity": [
+              1,
+              102
+            ],
+            "git_directory": "/synthetic/repository/.git/worktrees/managed-2",
+            "git_identity": [
+              1,
+              202
+            ],
+            "controls": [
+              {
+                "path": ".git",
+                "identity": [
+                  1,
+                  302
+                ],
+                "content": {
+                  "hex": "6769746469723a2073796e7468657469630a"
+                }
+              },
+              {
+                "path": "absent",
+                "identity": null,
+                "content": null
+              },
+              {
+                "path": "empty",
+                "identity": [
+                  1,
+                  402
+                ],
+                "content": {
+                  "hex": ""
+                }
+              },
+              {
+                "path": "binary",
+                "identity": [
+                  1,
+                  502
+                ],
+                "content": {
+                  "hex": "00ff"
+                }
+              }
+            ],
+            "object_format": "sha1"
+          },
+          "initial_workspace_digest": "initial-2",
+          "prompt": "Frozen prompt 2",
+          "output_schema": {
+            "type": "object",
+            "properties": {
+              "changed": {
+                "type": "array"
+              }
+            },
+            "unknown": null
+          },
+          "policy": {
+            "provider": "codex",
+            "executable": "/synthetic/codex",
+            "executable_identity": [
+              1,
+              42
+            ],
+            "executable_sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+            "max_attempts": 2,
+            "timeout": 30,
+            "grace": 1
+          },
+          "dispatch_policy": {
+            "task_type": null,
+            "requested": null,
+            "fallbacks": [
+              {
+                "provider": "codex",
+                "model": "requested-coder",
+                "effort": "low"
+              },
+              {
+                "provider": "codex",
+                "model": "requested-coder",
+                "effort": "medium"
+              }
+            ]
+          },
+          "context": {
+            "path": "/synthetic/context-2",
+            "identity": [
+              1,
+              602
+            ],
+            "token": "context-2",
+            "manifest_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          }
+        }
+      },
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 1,
+        "delivery_ready": false
+      },
+      "error": "ValueError"
+    },
+    {
+      "op": "reopen",
+      "expect": {
+        "phase": "planning_required",
+        "current_attempt": 1,
+        "delivery_ready": false
+      }
+    }
+  ],
+  "final": {
+    "scope_block": {
+      "reason": "requires extra path",
+      "required_paths": [
+        "shared/interface.py"
+      ]
+    },
+    "phase": "planning_required",
+    "current_attempt": 1,
+    "delivery_ready": false,
+    "attempts": {
+      "1": {
+        "status": "succeeded",
+        "failure_category": null,
+        "detail": null,
+        "retry_after": null,
+        "session_id": "actual-session",
+        "reported_model": "actual-coder",
+        "reported_effort": null,
+        "reported_model_source": {
+          "event_type": "completed",
+          "raw_type": null
+        },
+        "reported_effort_source": null,
+        "result": {
+          "changed": [
+            "src/module.py"
+          ]
+        },
+        "exit_code": -15,
+        "reconciliation": {
+          "worktree_digest": null,
+          "process_stopped": false,
+          "detail": "later stop is unknown",
+          "log_path": null,
+          "log_sha256": null
+        },
+        "managed": true,
+        "event_types": [
+          "task_attempt_started",
+          "task_execution_prepared",
+          "task_environment_observed",
+          "task_diagnostic",
+          "session_started",
+          "usage",
+          "completed",
+          "process_exited",
+          "task_reconciled",
+          "task_reconciled",
+          "task_scope_blocked",
+          "task_reconciled"
+        ]
+      }
+    }
+  }
+}

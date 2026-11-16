@@ -30,9 +30,18 @@ from multi_agent.core.task_events import (
     TaskAttemptStarted,
     TaskDiagnostic,
     TaskEnvelope,
+    TaskEnvironmentObserved,
     TaskEvent,
+    TaskEvidenceRejected,
+    TaskExecutionPrepared,
     TaskReconciled,
     TaskScopeBlocked,
+)
+from multi_agent.core.task_execution import (
+    TaskDispatchPolicy,
+    TaskExecutionContext,
+    TaskExecutionPolicy,
+    task_execution_value,
 )
 from multi_agent.core.task_state import TaskAttempt, TaskInput
 from multi_agent.core.tasks import (
@@ -44,6 +53,7 @@ from multi_agent.core.tasks import (
     TaskCard,
     TaskTypeRestriction,
 )
+from multi_agent.core.workspaces import WorkspaceControl, WorkspaceRecord
 
 _RUNTIME_TYPES: dict[str, type[AdapterEvent | CancelRequested]] = {
     event.kind: event
@@ -158,12 +168,94 @@ def _started(value: dict[str, Any]) -> TaskAttemptStarted:
         value["prompt_template_version"],
         value["started_at"],
         value["environment"],
+        value.get("managed", False),
+    )
+
+
+def _reconciliation_payload(event: TaskReconciled) -> dict[str, Any]:
+    value: dict[str, Any] = {
+        "worktree_digest": event.worktree_digest,
+        "process_stopped": event.process_stopped,
+        "detail": event.detail,
+    }
+    if event.log_path is not None or event.log_sha256 is not None:
+        value["log_path"] = event.log_path
+        value["log_sha256"] = event.log_sha256
+    return value
+
+
+def _reconciled(value: dict[str, Any]) -> TaskReconciled:
+    return TaskReconciled(
+        value["worktree_digest"],
+        value["process_stopped"],
+        value["detail"],
+        value.get("log_path"),
+        value.get("log_sha256"),
+    )
+
+
+def _workspace(value: dict[str, Any]) -> WorkspaceRecord:
+    return WorkspaceRecord(
+        repository=value["repository"],
+        source=value["source"],
+        task_baseline=value["task_baseline"],
+        start_commit=value["start_commit"],
+        root=value["root"],
+        owner_token=value["owner_token"],
+        root_identity=tuple(value["root_identity"]),
+        git_directory=value["git_directory"],
+        git_identity=tuple(value["git_identity"]),
+        controls=tuple(
+            WorkspaceControl(
+                item["path"],
+                tuple(item["identity"]) if item["identity"] is not None else None,
+                bytes.fromhex(item["content"]["hex"])
+                if item["content"] is not None
+                else None,
+            )
+            for item in value["controls"]
+        ),
+        object_format=value["object_format"],
+    )
+
+
+def _prepared(value: dict[str, Any]) -> TaskExecutionPrepared:
+    policy = value["policy"]
+    dispatch = value["dispatch_policy"]
+    context = value["context"]
+    return TaskExecutionPrepared(
+        workspace=_workspace(value["workspace"]),
+        initial_workspace_digest=value["initial_workspace_digest"],
+        prompt=value["prompt"],
+        output_schema=value["output_schema"],
+        policy=TaskExecutionPolicy(
+            policy["provider"],
+            policy["executable"],
+            tuple(policy["executable_identity"]),
+            policy["executable_sha256"],
+            policy["max_attempts"],
+            policy["timeout"],
+            policy["grace"],
+        ),
+        dispatch_policy=TaskDispatchPolicy(
+            dispatch["task_type"],
+            ImplementationChoice(**dispatch["requested"])
+            if dispatch["requested"] is not None
+            else None,
+            tuple(ImplementationChoice(**item) for item in dispatch["fallbacks"]),
+        ),
+        context=TaskExecutionContext(
+            context["path"],
+            tuple(context["identity"]),
+            context["token"],
+            context["manifest_sha256"],
+        ),
     )
 
 
 def _event_payload(event: TaskEvent) -> dict[str, Any]:
     if isinstance(event, TaskAttemptStarted):
-        return {
+        value: dict[str, Any] = {
             "type": event.kind,
             "decision": asdict(event.decision),
             "worktree": event.worktree,
@@ -171,6 +263,24 @@ def _event_payload(event: TaskEvent) -> dict[str, Any]:
             "started_at": event.started_at,
             "environment": thaw_json(event.environment),
         }
+        if event.managed:
+            value["managed"] = True
+        return value
+    if isinstance(event, TaskExecutionPrepared):
+        return {
+            "type": event.kind,
+            "workspace": task_execution_value(event.workspace),
+            "initial_workspace_digest": event.initial_workspace_digest,
+            "prompt": event.prompt,
+            "output_schema": thaw_json(event.output_schema),
+            "policy": asdict(event.policy),
+            "dispatch_policy": asdict(event.dispatch_policy),
+            "context": asdict(event.context),
+        }
+    if isinstance(event, TaskEnvironmentObserved):
+        return {"type": event.kind, "environment": thaw_json(event.environment)}
+    if isinstance(event, TaskReconciled):
+        return {"type": event.kind, **_reconciliation_payload(event)}
     if isinstance(event, TaskDiagnostic):
         return {"type": event.kind, "diagnostic": _event_payload(event.diagnostic)}
     result = {field.name: getattr(event, field.name) for field in fields(event)}
@@ -197,10 +307,14 @@ def _event(value: dict[str, Any]) -> TaskEvent:
     kind = value["type"]
     if kind == TaskAttemptStarted.kind:
         return _started(value)
+    if kind == TaskExecutionPrepared.kind:
+        return _prepared(value)
+    if kind == TaskEnvironmentObserved.kind:
+        return TaskEnvironmentObserved(value["environment"])
+    if kind == TaskEvidenceRejected.kind:
+        return TaskEvidenceRejected(value["detail"])
     if kind == TaskReconciled.kind:
-        return TaskReconciled(
-            value["worktree_digest"], value["process_stopped"], value["detail"]
-        )
+        return _reconciled(value)
     if kind == TaskScopeBlocked.kind:
         return TaskScopeBlocked(value["reason"], tuple(value["required_paths"]))
     if kind == TaskDiagnostic.kind:
@@ -265,15 +379,16 @@ def _runtime(value: dict[str, Any]) -> AttemptState:
 
 
 def encode_task_attempt(attempt: TaskAttempt) -> str:
-    return _encode(
-        {
-            "request": _event_payload(attempt.request),
-            "runtime": _runtime_payload(attempt.runtime),
-            "reconciliation": asdict(attempt.reconciliation)
-            if attempt.reconciliation is not None
-            else None,
-        }
-    )
+    value: dict[str, Any] = {
+        "request": _event_payload(attempt.request),
+        "runtime": _runtime_payload(attempt.runtime),
+        "reconciliation": _reconciliation_payload(attempt.reconciliation)
+        if attempt.reconciliation is not None
+        else None,
+    }
+    if attempt.request.managed or attempt.events:
+        value["events"] = [_event_payload(event) for event in attempt.events]
+    return _encode(value)
 
 
 def decode_task_attempt(encoded: str) -> TaskAttempt:
@@ -281,7 +396,8 @@ def decode_task_attempt(encoded: str) -> TaskAttempt:
     return TaskAttempt(
         _started(value["request"]),
         _runtime(value["runtime"]),
-        TaskReconciled(**value["reconciliation"])
+        _reconciled(value["reconciliation"])
         if value["reconciliation"] is not None
         else None,
+        tuple(_event(event) for event in value.get("events", [])),
     )
