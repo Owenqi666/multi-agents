@@ -1,6 +1,6 @@
 # 产品任务卡与基线规则（v1）
 
-T28 提供输入契约；派发限制求交、工作树、状态存储、模型与测试执行器由后续卡实现。开发期任务卡继续使用 `scripts/verify.sh --list` 的五个名称，产品任务卡的 `test_refs` 则只对照所选基线 `.multi-agent/rules.yaml` 的 `commands`。
+T28 提供输入契约，T29 提供符号路径判定和单执行者派发解析。工作树、状态存储、模型与测试执行器由后续卡实现。开发期任务卡继续使用 `scripts/verify.sh --list` 的五个名称，产品任务卡的 `test_refs` 则只对照所选基线 `.multi-agent/rules.yaml` 的 `commands`。
 
 ## 任务卡入口
 
@@ -53,9 +53,9 @@ YAML 采用自定义 SafeLoader，拒绝重复键、非字符串键、自定义�
 
 路径必须相对仓库，使用 `/`，大小写保留。普通文件名、段内 `*`/`?`、独立整段 `**` 是 v1 支持的语法。`*` 匹配一个路径段内零个或多个字符，`?` 匹配一个非 `/` 字符；`**` 表示零个或多个完整路径段。路径不得包含空段、`.`/`..`、反斜杠、控制字符、尾随点或空格、任意层级的 `.git`（Unicode NFC 后不区分大小写），也不能使用字符类、brace 或 extglob。精确路径匹配自身；目录子树应显式写 `dir/**`。
 
-这些模式可以指向将来新增的文件。后续派发必须求写入范围与规则语言的交集，不能用当前存在文件枚举，也不能把 `frontend/**` 当字面路径传给 fnmatch。各个命中路径/任务类型的 provider 与 allowed_models 限制同时成立；不兼容就交回拆卡。实现角色默认、用户覆盖、有序备选链必须满足此集合。审核角色独立选择，前端实现规则不禁止 GPT 审核。
+这些模式可以指向将来新增的文件。派发求写入范围与规则语言的交集，不能用当前存在文件枚举，也不能把 `frontend/**` 当字面路径传给 fnmatch。各个命中路径/任务类型的 provider 与 allowed_models 限制同时成立；不兼容就交回拆卡。实现角色默认、用户覆盖、有序备选链必须满足此集合。审核角色独立选择，前端实现规则不禁止 GPT 审核。
 
-本模块只保存保护模式，不判定实际交付。后续校验需独立检查新建、未跟踪、删除、重命名两侧及工作站大小写/Unicode 别名，不允许受保护文件变更通过。不把“提示模型不要改”当权限隔离证据。
+输入模块只保存保护模式；T29 的派发解析先拒绝与保护模式相交的声明范围，但仍不判定实际交付。后续校验需独立检查新建、未跟踪、删除、重命名两侧及工作站大小写/Unicode 别名，不允许受保护文件变更通过。不把“提示模型不要改”当权限隔离证据。
 
 ## 冻结与证据
 
@@ -64,3 +64,24 @@ YAML 采用自定义 SafeLoader，拒绝重复键、非字符串键、自定义�
 返回 `FrozenProjectRules`：Git common-dir 仓库标识、完整 baseline_commit、blob_oid、raw_text 和不可变 ProjectRules。`rules_hash` 为原始 UTF-8 字节 SHA256，注释、换行和空白变化都改变 hash。任务重试/返工应复用已持久化的同一个冻结对象，不能重新读取候选或脏工作树规则。存储与恢复将在后续卡落地。
 
 这些配置都是请求/约束，不记录为运行时实际模型或 effort。产品实际配置与用量仍仅根据运行时报告保存；缺少报告时标为未确认。
+
+
+## T29：符号判定与单执行者派发
+
+`core.path_patterns` 提供 `normalize_path`、`path_matches`、`patterns_intersect` 与 `patterns_cover`。模式和实际路径均先 NFC+casefold，再解释 glob；大小写/Unicode 别名视为同一个路径。`?` 指一个规范化后的码点，例如 `ß` 规范化为 `ss`，故 `?` 不允许这个路径而 `??` 允许；`ﬁ` 和 NFD 组合也按同一规则处理。后续实际交付必须调用相同判定，不能先允许原字形再按另一套语义做保护检查。
+
+符号算法在所有非空、无空段的路径语言上判断相交或覆盖，不依赖文件是否已存在。覆盖取规则模式并集；只有确实存在未覆盖路径时才启用 default_implementation。由于别名同路径，规则 `frontend/**` 同时覆盖范围 `FRONTEND/**`，不会额外套用默认提供方。
+
+每次相交/覆盖搜索最多出队 `DEFAULT_STATE_BUDGET=100000` 个状态，自动机最多 `MAX_NFA_STATES=4096` 个状态。搜索公开参数 `state_budget` 可用于确定性测试；超限抛 `PatternBudgetExceeded`，没有近似允许结果。此错误直接向调用边界传播。
+
+`resolve_dispatch(card, frozen, *, task_type=None, requested=None, fallbacks=(), unavailable=frozenset())` 处理已校验并通过引用检查的任务和规则：
+
+1. 任一声明范围与 protected_paths 相交就抛 `ProtectedScopeError`，要求缩小写入范围；实际交付检查仍不可省略。
+2. 所有相交 implementation 规则按索引顺序约束同一个执行者。存在未覆盖范围时，将 default_implementation 加在末尾；没有默认则抛 `RuleConflict`。
+3. provider 必须一致，allowed_models 求交；显式 task_type 必须已配置，并继续约束 provider/模型。跨前后端不同提供方或空模型交集要求拆卡。任务类型不提供默认配置。
+4. 显式 requested 必须在交集内，否则立即抛 `RuleConflict`。无显式选择时，按上述顺序取第一个处于公共模型集合内的 default_model；若全部默认都不合，按首条配置的 allowed_models 顺序取首个公共模型，使用该配置的 default_effort，并记录此原因。
+5. 自动主选这一步不排除 unavailable。主选确已由调用方报告不可用后，只依次尝试用户传入的 fallbacks；不擅自遍历公共模型集。备选违反规则或已知不可用会被跳过并留记录。未知可用性不触发备选。全部耗尽抛 `NoImplementationAvailable`，其 selection_history 保留每次原因。
+
+ImplementationChoice 的 provider/model/effort 都是请求值。规则没有 effort 白名单，显式档位是否受运行时支持由后续执行边界核验。DispatchDecision 保存选择、原因、历史、命中规则索引、是否使用默认、task_type、原 requested、传入的 unavailable_models，以及任务/规则 hash；这些字段不声称已经调用过模型，不能作为 reported_model/reported_effort。实际运行仍需环境检查。
+
+这套规则只解析实现及返工角色，不修改审核席位、只读权限或审核模型选择。前端被派给 Claude 后，仍可将相同候选交给 GPT 单审或既有双审。

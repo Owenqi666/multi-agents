@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "id": "T-0029",
+  "goal": "根据冻结规则与完整写入范围解析可用实现提供方和模型，明确拒绝冲突/保护路径，并记录覆盖及有序备选的选择理由。",
+  "baseline_commit": "a0c9d0705439b1ce044ed44212cbc92af524c102",
+  "write_scope": [
+    "src/multi_agent/core/path_patterns.py",
+    "src/multi_agent/core/dispatch.py",
+    "tests/unit/test_path_patterns.py",
+    "tests/unit/test_dispatch.py",
+    "docs/task-rules.md",
+    "tasks/T-0029-dispatch-rules.json",
+    "docs/deliveries/T-0029.md"
+  ],
+  "depends_on": [
+    "T-0028"
+  ],
+  "interface_contracts": [
+    {
+      "name": "symbolic paths",
+      "definition": "复用 T28 支持的 POSIX glob 语义（段内*/?，整段**可零段）。patterns_intersect(left,right)->bool 与 patterns_cover(scope,covering:tuple[str,...])->bool 用有限自动机或等价的符号语言判定，限制为非空路径段，不枚举现有文件。比较采用 NFC+casefold 以保守覆盖本工作站别名。多模式覆盖取并集；default仅约束未被任何 implementation paths 覆盖的范围。计算复杂度超过显式有限预算则抛错误拒绝派发，不用近似的允许结果。对已校验输入工作，core不吞异常。 细化：glob和实际路径均先normalize_path=NFC+casefold，*和?在该规范化字符串上解释，?匹配一个规范化后码点；别名视为同一路径，覆盖与相交都用此定义。提供path_matches(path,pattern)。DEFAULT_STATE_BUDGET=100000（每次搜索出队状态数），MAX_NFA_STATES=4096；公开搜索函数支持keyword state_budget注入测试；超限抛PatternBudgetExceeded(ValueError)。"
+    },
+    {
+      "name": "dispatch constraints",
+      "definition": "resolve_dispatch(card:TaskCard,frozen:FrozenProjectRules,*,task_type:str|None=None,requested:ImplementationChoice|None=None,fallbacks:tuple[ImplementationChoice,...]=(),unavailable:frozenset[tuple[str,str]]=frozenset())->DispatchDecision。每个与写入范围相交的实现规则都约束整个任务的同一执行者，provider必须一致，allowed_models求交；跨前后端不同provider须拆卡。未覆盖范围必须有default_implementation并加入约束。显式task_type必须已配置且同时求交。任何写入范围与protected_paths相交均拒绝派发，后续实际交付仍需独立检查。规则检查只约束实现/返工，不接入审核席位。"
+    },
+    {
+      "name": "selection and evidence",
+      "definition": "ImplementationChoice(provider,model,effort)是请求值。显式requested若不满足约束直接拒绝；无覆盖时按相关配置顺序先选可用交集内的default_model，均不在交集则按首条配置allowed_models顺序选首个公共模型，effort使用选中配置的default_effort，记录理由。只有提供方/模型被调用方明确报告unavailable时才触发用户传入的有序fallbacks；跳过不满足规则或已知不可用候选并记录原因。不把未报告可用性视为不可用，不把请求值填成实际模型/effort。DispatchDecision包含choice/reason/selection_history/matched_rule_indices/used_default/task_hash/rules_hash，所有值不可变。 细化：相关配置顺序为命中规则索引升序，然后default；task_type仅限制集合不提供默认。自动主选时不排除unavailable，主选被报告不可用后只进入用户fallbacks，不在公共模型集自动继续挑选。requested违规直接RuleConflict，fallback违规则跳过留历史；effort只有请求值，规则无白名单，运行时支持由后续边界核验。全部候选耗尽抛NoImplementationAvailable并携带selection_history。决策增加task_type/requested/unavailable_models用于追溯。"
+    },
+    {
+      "name": "scope and continuation",
+      "definition": "只实现纯派发解析与模式运算，不调用模型/创建worktree/改状态表；拒绝是显式错误，不新增失败枚举。T28任务卡/规则输入契约不变；docs说明具体公共API、选择顺序和复杂度拒绝。本卡完整verify后独立提交，再规划状态持久化卡。 具体错误：RuleConflict(ValueError)、ProtectedScopeError(ValueError)、NoImplementationAvailable(ValueError)；预算错误直接透传，不把错误当允许。"
+    }
+  ],
+  "deliverables": [
+    "core/path_patterns.py符号模式交集/覆盖与core/dispatch.py不可变决策。",
+    "命名路径/派发测试，更新规则文档与T29交付记录。"
+  ],
+  "acceptance_criteria": [
+    "unit test_future_frontend_paths_require_claude：尚不存在路径、宽模式与规则相交均参与约束，不能通过fnmatch模式字面值或现有文件枚举绕过。",
+    "unit test_conflicting_rules_require_split / test_compatible_model_limits_intersect / test_task_type_limits_apply：跨provider/空模型交集/无默认的未覆盖路径拒绝，兼容限制求交。",
+    "unit test_default_applies_only_to_uncovered_paths / test_union_of_rules_covers_scope：只给真实未覆盖范围套默认，多个模式联合覆盖正确。",
+    "unit test_override_and_fallback_obey_rules / test_unknown_availability_does_not_trigger_fallback：按顺序选择，记录每次拒绝/选择，不产生伪运行时证据。",
+    "unit test_protected_scope_is_rejected / test_case_and_unicode_aliases_are_checked / test_symbolic_budget_failure_never_allows_dispatch：保护范围及别名、复杂度失败均拒绝。 Unicode测试含ß→ss、ﬁ→fi、NFD组合，明确规范化后?长度及别名视为同一路径。",
+    "unit test_frontend_dispatch_does_not_restrict_review：前端实现规则不改变既有审核模型选择或权限；不改审核代码。",
+    "diff和完整verify：仅卡范围、旧测试不变，lint/format/typecheck/unit/replay全通过，开工HEAD/候选SHA/逐项验收/路径记录后正常独立提交。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
