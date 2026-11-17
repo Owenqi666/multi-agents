@@ -2,8 +2,9 @@
   "schema_version": 1,
   "id": "T-0055",
   "goal": "从正常审核执行入口自动完成一次符合准入的原范围返工、新候选完整复测和原配置复审，使调用方无需分别发起三个业务命令。",
-  "baseline_commit": "928d1096f93ae208609fea09cee45a0de45bb608",
+  "baseline_commit": "178e365a8959fa9617bc1f4bbe32a47f7352cdee",
   "write_scope": [
+    "src/multi_agent/cli/task_cli.py",
     "src/multi_agent/cli/task_review_cli.py",
     "src/multi_agent/cli/task_review_workflow.py",
     "tests/unit/test_task_review_workflow.py",
@@ -23,7 +24,7 @@
   "interface_contracts": [
     {
       "name": "user scope and one functional card",
-      "definition": "用户原文：把这个缺口发给阶段2窗口，用一张功能卡打通：审核发现符合条件的阻塞问题后，自动返工一次，对新候选重新运行原完整测试并复审。补齐端到端回归，完整运行 verify 后提交，结果交回本窗口验收。 主窗口授权本窗口在928d109基线上实现、完整verify、正常提交，并主动向01a1d67a-72a6-7882-9c9e-1b42351d746c回传完整SHA、路径、实际入口与端到端证据。只用一张功能卡；复用既有准入、一次原子预留、预算、候选冻结及测试/审核入口，不创建新状态/事件/SQL/协议，不改保护配置、旧S9证据或其它worktree。"
+      "definition": "用户原文：把这个缺口发给阶段2窗口，用一张功能卡打通：审核发现符合条件的阻塞问题后，自动返工一次，对新候选重新运行原完整测试并复审。补齐端到端回归，完整运行 verify 后提交，结果交回本窗口验收。 主窗口授权本窗口在928d109基线上实现、完整verify、正常提交，并主动向01a1d67a-72a6-7882-9c9e-1b42351d746c回传完整SHA、路径、实际入口与端到端证据。只用一张功能卡；复用既有准入、一次原子预留、预算、候选冻结及测试/审核入口，不创建新状态/事件/SQL/协议，不改保护配置、旧S9证据或其它worktree。 原始基线为 928d1096f93ae208609fea09cee45a0de45bb608。主窗口验收首个候选 178e365a8959fa9617bc1f4bbe32a47f7352cdee 时发现两处结果处理缺陷，授权从该候选在本卡追加修复并保留原交付证据。"
     },
     {
       "name": "normal review entry and compatibility",
@@ -39,7 +40,7 @@
     },
     {
       "name": "execution outcomes cancellation and output",
-      "definition": "续接只调用已有Python执行服务，不经shell、不递归启动CLI、不虚构成功。返工失败/取消/宿主错误即停止；新测试完整合格的非零结果仍可按既有语义送复审，超时/缺命令/停止未知/证据不合格则停止。复审仍阻塞就返回该实际结果，不启动第二次返工；复审失败也保留原有失败席retry语义。取消沿各阶段现有stop/结算机制；任一阶段interrupted/130或阶段交界KeyboardInterrupt均中止后续，不丢停止意图。异常保持2和stderr/notes，明确来源审核及已到阶段，已产生记录不回滚删除。正常JSON顶层保持最终可查看review字段，追加workflow对象说明source_review_round_id、阶段、outcome/reason、返工/测试结果和最终review坐标；政策拒绝与真正运行失败区分。最终接受/合并和阶段3不自动执行。 退出码明确：当前最终ready为0；政策拒绝、二审仍阻塞、模型失败或测试运行负向停止为1；输入/CAS/宿主异常为2；任一阶段中断为130。复用task_cli._rework/_interruptible/_freeze均不修改task_cli.py，也不改runner/store；若确有范围不足则交回本卡修订。"
+      "definition": "续接只调用已有Python执行服务，不经shell、不递归启动CLI、不虚构成功。返工失败/取消/宿主错误即停止；新测试完整合格的非零结果仍可按既有语义送复审，超时/缺命令/停止未知/证据不合格则停止。复审仍阻塞就返回该实际结果，不启动第二次返工；复审失败也保留原有失败席retry语义。取消沿各阶段现有stop/结算机制；任一阶段interrupted/130或阶段交界KeyboardInterrupt均中止后续，不丢停止意图。异常保持2和stderr/notes，明确来源审核及已到阶段，已产生记录不回滚删除。正常JSON顶层保持最终可查看review字段，追加workflow对象说明source_review_round_id、阶段、outcome/reason、返工/测试结果和最终review坐标；政策拒绝与真正运行失败区分。最终接受/合并和阶段3不自动执行。 退出码明确：当前最终ready为0；政策拒绝、二审仍阻塞、模型失败或测试运行负向停止为1；输入/CAS/宿主异常为2；任一阶段中断为130。继续复用既有执行与预留。task_cli.py 的改动仅限返工取消已结算后首次 view_task 失败时保留 130 与原诊断，以及传递本次调用实际收到的 ReworkRefused 结果。编排层据此区分 refused 与已执行后 stopped，runner 和 store 沿用原实现。"
     },
     {
       "name": "end-to-end and preservation",
@@ -56,7 +57,7 @@
     "test_task_review_workflow_retry_automates_when_complete、test_task_review_workflow_confirm_automates、test_task_review_workflow_confirmation_retry_automates：正常失败席补跑或显式开启自动的确认/确认补跑在当前执行完整后触发；父审核全部席位/配置继承，成功席不重复。",
     "test_task_review_workflow_stops_after_second_blocker：第二次审核仍阻塞时只有两次总实现，不发起第三次；旧新报告可追溯。",
     "test_task_review_workflow_refuses_unqualified：不完整、引用未核、范围外、仅测试失败无定位blocker或预算/一次耗尽，原task/test/ref不被下游写入，拒绝解释明确；show保持只读。",
-    "test_task_review_workflow_stops_on_execution_failure按返工/复测/复审阶段参数化；test_task_review_workflow_cancel_stops_followup按阶段验证取消后不启动下一步；test_task_review_workflow_handoff_interrupt_stops验证交界KeyboardInterrupt不写后续；test_task_review_workflow_nonzero_complete_suite_is_reviewed验证完整非零复测仍送审；test_task_review_workflow_rereview_retry_never_reworks_again验证失败复审补跑后即使阻塞也不二次返工。运行失败保留既有证据/退出语义，单测边界注入可补关键CLI E2E，不需全场景笛卡尔。 test_task_review_workflow_interruption_survives_display_error与test_task_review_workflow_entry_interruption_survives_display_error覆盖已知中断后展示读取异常仍为130、原诊断保留且不续接。",
+    "test_task_review_workflow_stops_on_execution_failure按返工/复测/复审阶段参数化；test_task_review_workflow_cancel_stops_followup按阶段验证取消后不启动下一步；test_task_review_workflow_handoff_interrupt_stops验证交界KeyboardInterrupt不写后续；test_task_review_workflow_nonzero_complete_suite_is_reviewed验证完整非零复测仍送审；test_task_review_workflow_rereview_retry_never_reworks_again验证失败复审补跑后即使阻塞也不二次返工。运行失败保留既有证据/退出语义，单测边界注入可补关键CLI E2E，不需全场景笛卡尔。 test_task_review_workflow_interruption_survives_display_error与test_task_review_workflow_entry_interruption_survives_display_error覆盖已知中断后展示读取异常仍为130、原诊断保留且不续接。 test_task_review_workflow_inner_rework_display_preserves_interrupt 覆盖真实 _rework 的首次展示抛 OSError。test_task_review_workflow_competing_reservation_reports_refused 覆盖另一调用先取得唯一预留、本次被拒，显示新尝试号仍返回 refused。两项均核对后续测试及复审没有启动。",
     "旧分步入口显式关闭自动后继续通过全部原断言，默认新入口真正自动；完整lint/format/typecheck/unit/replay及正常提交hook通过。"
   ],
   "test_refs": [

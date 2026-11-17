@@ -49,7 +49,7 @@ from .task_context import (
     capture_task_policy,
 )
 from .task_inputs import _input_text, _unique_json, freeze_project_rules
-from .task_review_cli import view_task_review
+from .task_review_cli import _preserve_interruption, view_task_review
 from .task_rework import ReworkRefused
 from .task_runner import execute_task_attempt
 from .task_test_cli import _existing_lease, view_task_test
@@ -836,6 +836,7 @@ def _rework(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             "rework",
             error.kind,
             str(error),
+            rework_refusal_kind=error.kind,
             source_review_round_id=args.review_round_id,
             parent_candidate=source.candidate.delivery.candidate,
         )
@@ -844,7 +845,8 @@ def _rework(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             f"Rework task retained: {identifier}; source review: {args.review_round_id}; directory: {args.directory}"
         )
         raise
-    result = view_task(database, task_run_id=identifier)
+    with _preserve_interruption(interrupted):
+        result = view_task(database, task_run_id=identifier)
     result.update(
         operation="rework",
         source_review_round_id=args.review_round_id,
@@ -889,5 +891,8 @@ def main(args: argparse.Namespace) -> int:
         for note in getattr(error, "__notes__", ()):
             print(note, file=sys.stderr)
         return 2
-    except KeyboardInterrupt:
+    except KeyboardInterrupt as error:
+        if args.task_operation == "rework":
+            for note in getattr(error, "__notes__", ()):
+                print(note, file=sys.stderr)
         return 130

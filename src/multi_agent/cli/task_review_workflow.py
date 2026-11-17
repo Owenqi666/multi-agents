@@ -217,11 +217,7 @@ def continue_task_review(
                 130,
             )
         if code != 0:
-            outcome = (
-                "refused"
-                if rework["implementation_attempt"] == result["implementation_attempt"]
-                else "stopped"
-            )
+            outcome = "refused" if "rework_refusal_kind" in rework else "stopped"
             return _finish(
                 original, workflow, outcome, rework["next_action"]["detail"], 1
             )

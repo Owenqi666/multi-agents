@@ -751,3 +751,104 @@ def test_task_review_workflow_entry_interruption_survives_display_error(
     assert len(command_requests(workflow)) == 2
     assert len(reviews(workflow)) == (1 if operation == "retry" else 0)
     assert_no_downstream(workflow)
+
+
+@pytest.mark.parametrize("entry", ["task-review", "task"])
+def test_task_review_workflow_inner_rework_display_preserves_interrupt(
+    workflow, monkeypatch, capsys, entry
+):
+    from multi_agent.cli import task_cli
+    from multi_agent.cli.main import main
+
+    prepare(workflow)
+    argv = review_arguments(workflow)
+    if entry == "task":
+        parent = helpers.successful(*argv, "--no-auto-rework", code=1)
+        argv = [
+            "task",
+            "rework",
+            parent["round_id"],
+            "--database",
+            workflow.database,
+            "--directory",
+            workflow.base / "manual-rework",
+        ]
+    interruptible = task_cli._interruptible
+    observed = []
+
+    async def settled_interruption(operation):
+        state, interrupted = await interruptible(operation)
+        assert not interrupted and state.current_attempt.number == 2
+        observed.append("settled")
+        return state, True
+
+    def broken_task_view(database, *, task_run_id):
+        assert observed == ["settled"]
+        assert task_run_id == workflow.first["task_run_id"]
+        observed.append("inner view")
+        raise OSError("cannot read the settled rework result")
+
+    monkeypatch.setattr(task_cli, "_interruptible", settled_interruption)
+    monkeypatch.setattr(task_cli, "view_task", broken_task_view)
+    code = main([str(arg) for arg in argv])
+    captured = capsys.readouterr()
+    assert observed == ["settled", "inner view"]
+    assert len(implementation_calls(workflow)) == 2
+    assert len(command_requests(workflow)) == 2 and len(reviews(workflow)) == 1
+    with TaskReviewStore.open_readonly(workflow.database) as store:
+        assert len(store.load_task(workflow.first["task_run_id"]).attempts) == 2
+        assert len(store.list_reviews()) == 1
+    assert code == 130, captured.err
+    assert not captured.out
+    assert "OSError: cannot read the settled rework result" in captured.err
+    if entry == "task-review":
+        assert "stage rework" in captured.err
+
+
+def test_task_review_workflow_competing_reservation_reports_refused(
+    workflow, monkeypatch, capsys
+):
+    from multi_agent.cli import task_cli
+    from multi_agent.cli import task_review_workflow as automatic
+    from multi_agent.cli.main import main
+
+    prepare(workflow)
+    original_enabled = automatic._enabled
+    winner_directory = workflow.base / "competing-rework"
+    run_id = workflow.first["task_run_id"]
+    winner = {}
+
+    def enable_after_competitor(database, parent_id, override):
+        enabled = original_enabled(database, parent_id, override)
+        # The initiating review already observed attempt 1. Another caller now
+        # takes the sole reservation before this workflow attempts to acquire it.
+        result, code = task_cli._rework(
+            argparse.Namespace(
+                database=database, review_round_id=parent_id, directory=winner_directory
+            )
+        )
+        assert code == 0 and result["implementation_attempt"] == 2
+        winner["candidate"] = result["candidate"]
+        with TaskReviewStore.open_readonly(database) as store:
+            winner["history"] = store.load_task_history(run_id)
+        return enabled
+
+    monkeypatch.setattr(automatic, "_enabled", enable_after_competitor)
+    assert main([str(arg) for arg in review_arguments(workflow)]) == 1
+    result = json.loads(capsys.readouterr().out)
+    chain = result["workflow"]
+    assert result["implementation_attempt"] == 1 and not result["source_current"]
+    assert result["candidate"] == workflow.first["candidate"]
+    assert chain["rework"]["implementation_attempt"] == 2
+    assert chain["rework"]["candidate"] == winner["candidate"]
+    assert chain["rework"]["next_action"]["kind"] == "user_decision"
+    assert "reservation is already used" in chain["reason"]
+    assert chain["stage"] == "rework" and chain["outcome"] == "refused"
+    assert chain["tests"] is None and chain["final_review_round_id"] is None
+    assert len(implementation_calls(workflow)) == 2
+    assert len(command_requests(workflow)) == 2 and len(reviews(workflow)) == 1
+    assert not list(workflow.base.glob("automatic-*"))
+    with TaskReviewStore.open_readonly(workflow.database) as store:
+        assert store.load_task_history(run_id) == winner["history"]
+        assert len(store.load_task(run_id).attempts) == 2
+        assert len(store.list_reviews()) == 1
