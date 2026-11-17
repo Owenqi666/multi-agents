@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "T-0048",
+  "goal": "在真实已核验候选上冻结调用方明确声明的完整测试集合，保留命令名称、顺序、原规则来源及后续原子登记所需历史锚点。",
+  "baseline_commit": "cdf381c5306743a579bbd946a97f76ab42bef25a",
+  "write_scope": [
+    "src/multi_agent/core/task_test_input.py",
+    "src/multi_agent/cli/task_test_inputs.py",
+    "tests/unit/test_task_test_inputs.py",
+    "docs/task-tests.md",
+    "docs/deliveries/T-0048.md",
+    "tasks/T-0048-task-test-input.json"
+  ],
+  "depends_on": [
+    "T-0047"
+  ],
+  "interface_contracts": [
+    {
+      "name": "stage and scope",
+      "definition": "S6的测试输入卡，仅新增不可变TaskTestInput值与prepare_task_test_input(store:PlanningStore,task_run_id:str,attempt:int,lease:ExecutorLease,*,required_commands:tuple[str,...],declaration_source:str)->TaskTestInput。当前任务实现attempt已固定Candidate。没有测试命令执行、工作区创建、状态/event/SQL迁移、CLI子命令、审核绑定或返工；不修改旧Snapshot/TestEvidence/user_supplied含义。后续测试状态/persistence独立卡接本输入。 cli目录表示系统输入边界helper模块，本卡不注册argparse/子命令；main.py及任何旧CLI文件不在scope，检查diff确认注册保持原样。"
+    },
+    {
+      "name": "explicit complete suite",
+      "definition": "required_commands必须显式非空、有序、名称唯一的tuple[str,...]，精确名称来自原TaskInput.frozen_rules.rules.commands；freeze时按用户声明顺序解析NamedCommand，名称不同但argv完全相同仍分别保留。所有未知/空/重复/非字符串/非法名称/错误容器均在任何Git检查前ValueError。rules.commands是已批准注册表，不表示所有项目测试；card.test_refs只是子集也可为空，proposed_tests不是已批准命令，不能默认补入。不给参数默认，不从package/README/当前工作树/候选修改规则推断。input仅声明这些命令是调用方指定的完整测试集合，不证明覆盖了所有验收项。 错误优先级明确：先参数容器/文本/名字/重复/声明字节预算，再当前task/state/DB/lease门禁，再原registry解析未知名字，最后actual candidate inspector。若state与未知名字同时不合格，state先拒，仍无Git。已读T47 _capture及task_context._check_lease/_store_database均只读DB/文件身份，不运行Git。"
+    },
+    {
+      "name": "declaration provenance",
+      "definition": "declaration_source是显式非空、有限UTF-8说明，按原字符串冻结进入hash，不对描述的文件/URL做读取，也不把caller提供的来源文字当独立验证过的授权证明。固定provenance为caller_declared；标识只证明谁提供输入的类别，不能冒充命令已执行或证明实机权限。source禁止NUL/无效Unicode；预算精确定义为task_execution_json({required_commands:声明名字tuple,declaration_source:原source字符串}).encode(UTF-8)的字节数（无末尾LF），最多1,048,576bytes，等于通过、超过拒绝；canonical JSON采用现有sort_keys、ensure_ascii=False、紧凑separators。预算只约束这份调用方声明，不宣称整个嵌套TaskInput或候选对象都在1MiB以内；没有自动trim规范化。 非空沿现snapshot._string(nonempty=True)语义：strip()为空的纯空白也拒绝；只用strip判空，不把trim后的值存入input，合法source前后空白原样保留。"
+    },
+    {
+      "name": "frozen value and hashing",
+      "definition": "core.task_test_input.TaskTestInput frozen slots，字段version=1（实际编码域）、task_run_id、implementation_attempt、task_id、task_hash、rules_hash、task_input_hash、candidate:TaskCandidateFrozen、commands:tuple[NamedCommand,...]、declaration_source、source_kind=caller_declared、task_history_length、task_history_hash；input_hash使用既有task_execution_hash自有字段，candidate_hash属性是完整candidate事件哈希，包括实际execution log path/sha而非只有commit。baseline/tree/digest/ref从candidate.delivery获得，不再复制独立漂移字段。完整原TaskInput哈希含requirements和created_at，原hist含HISTORY_ONLY。core信任已校验值、不做路径/类型兜底；历史检查点是本次准备时实际读到的事实，不能视为未来登记或测试成功。"
+    },
+    {
+      "name": "actual candidate and same history",
+      "definition": "CLI先校验参数形状，再用T47 _capture(bound=True)抓取原state/TaskInput/fullH与实际DB和lease身份；从其原frozenrules精确解析所有命令并验证run_id/attempt；通过实际inspect_task_candidate核已绑定当前candidate/Git/归档；返回的候选必须等于最初guard.state.current_candidate，guard.check()保持最初H及所有当前来源未变，最后才返回input。不刷新H、不把candidate_ready当实际核验、不重新freeze或seal，不恢复旧runtime owner。原stop/phase/currentattempt不合格拒绝时不得扫描可能仍活动workspace。参数和已批准名称不合格在inspect之前拒。 调用最末guard.check后只能用初始guard.value/history与已检查candidate构造输入，不load最新值。T47正式提交后重新核实际_capture签名/语义与所用私有字段，再正式派发；如接口漂移先修卡而非假设兼容。 参数形状阶段也明确核task_run_id为合法UTF-8、无NUL且非纯空白的字符串，attempt为正int并拒bool，均在_capture之前；合法字符串但未知run仍保留store原KeyError，不兜底转换。"
+    },
+    {
+      "name": "lease and read-only contract",
+      "definition": "调用方持同一实际有效common-dir lease及store到函数结束和后续依赖操作完成。可在T45作用域结束后新lease调用。没有数据库写入、文件写入、adapter、子进程测试命令、取消或lease释放；T47正常只读Git核验允许。失效/替换DB/lease、actualarchive/Git不符、完整history包括HISTORY_ONLY变化均保留底层原错并拒绝，不自动修复/重试。"
+    },
+    {
+      "name": "future reservation boundary",
+      "definition": "后续store必须在同一BEGIN IMMEDIATE中核currentimplementationattempt+candidate_ready+exactfullcandidate+task输入hash+原task_history_length/hash与冻结命令来源再登记新testattempt；本卡只提供不可变输入，不声称已实现这个事务。历史锚点不自动更新以绕过变化。测试命令结果/退出/停止/日志/独立checkout及版本化执行来源在后卡实现。 未来登记之前还必须在同一lease内重新actualinspect候选，并原子核测试阶段自己的current/唯一预留约束，单靠task H不防两个同输入并发预留。返回值不是跨时间可缓存的执行许可。原TaskInput.registry须逐条对照输入NamedCommand name+argv，防只匹配rules_hash却塞任意命令。"
+    },
+    {
+      "name": "compatibility and tests",
+      "definition": "新增tests仅在本文件；复用T47/T44真实Git/SQLite/Recorder夹具，synthetic owner明确标注；至少一条actualfreeze->prepare、cold reopen/newlease的实际集成，重复调用无历史或文件变化。其它输入矩阵可使用信任fixture，关键actualinspect不可全部stub。保留所有旧规则/hash/TaskInput/候选/legacySnapshot/TestEvidence编码字节，不修改旧检查。无新state/event/schema，因此不需要迁移或新状态回放。"
+    },
+    {
+      "name": "formal dispatch",
+      "definition": "草案已在T47期间经Claude跨提供方文字复核；正式派发基于T47实际提交cdf381c5306743a579bbd946a97f76ab42bef25a，--dispatchable/ancestor/scope overlap通过，并重新核对T47私有接口及旧golden来源文件哈希。原用户需求“新开一个阶段2窗口开始按开发顺序继续执行”随卡复核。来源代码与测试独立分工，完整verify/正常hook；未允许真实模型/权限探测。"
+    }
+  ],
+  "deliverables": [
+    "冻结声明完整测试命令与已核验候选的不可变输入/hash。",
+    "只读CLI边界准备函数与独立输入/来源稳定性验收。",
+    "明确后续事务、运行与版本化审核证据仍待实现的文档。"
+  ],
+  "acceptance_criteria": [
+    "test_prepare_task_test_input_binds_actual_candidate：实际T47freeze后返回原任务/规则/hash/完整candidate/命令顺序/声明来源/fullhistory锚点，只有真实已核验候选合格。",
+    "test_required_commands_are_explicit_ordered_unique：缺少必填参数或empty/duplicate/unknown/wrongtype/illegalname拒绝，未调用candidate inspector或任何命令；不能从test_refs/registry/proposed_tests补齐。",
+    "test_distinct_names_with_identical_argv_are_preserved：同argv不同names分别冻结，顺序保持且变更顺序改变hash。",
+    "test_test_input_hash_covers_provenance：命令name/executable/args/order、声明source、完整候选执行anchor、taskrun/attempt/TaskInputhash/historycheckpoints任一事实改变会改变inputhash；相同输入稳定，tuple深冻结。",
+    "test_declared_source_is_unverified_text：保留精确Unicode/空白，不访问提供文件或URL，拒空/NUL/invalidunicode/总字节超限，固定caller_declared不声称执行。 命名边界例覆盖canonical declaration恰等于1,048,576bytes允许、超1byte拒绝和多字节Unicode按字节计。",
+    "test_prepare_test_input_keeps_original_history：actualinspect前后追加APPLIED或HISTORY_ONLY变化拒绝，不能接收新H或相同commit但不同candidateanchor。",
+    "test_test_input_requires_current_actual_candidate：旧/future/legacy/缺stop/缺candidate/负向Recon及篡改archive/Git候选拒绝，早期不合格不扫描workspace。",
+    "test_test_input_readonly_cold_reopen：关闭原store并新lease实际可准备，所有history/state/context/log/ref bytes保持，未知runtime字段仍未知。",
+    "test_test_input_rejects_database_and_lease_changes：失效/错误仓库/中途替换DB或lease拒绝，原异常不被兜底吞。",
+    "完整五步及正常hook通过；只六路径；旧hash/字节语义和所有旧tests/config不改，不宣称testexecutor或实机权限已完成。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
