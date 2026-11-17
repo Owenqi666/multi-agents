@@ -1,6 +1,6 @@
 # 阶段 2 命令行工作流
 
-工作流是明确的分步操作：需求 → 规划 → 实现及固定候选 → 测试 → 审核 → 至多一次返工 → 新测试和审核。各步返回实际 run、attempt、candidate 或 round ID，下一步使用这些值。最终接受和合并由用户处理。
+工作流从需求 → 规划 → 实现及固定候选 → 测试进入审核。正常 `task-review run` 默认在审核发现符合条件的阻塞问题后，自动完成至多一次原范围返工、固定新候选、重跑原完整测试并按原配置复审；调用方无需分别发起后三步。各阶段仍记录实际 run、attempt、candidate 和 round ID，旧证据保持原关联。最终接受和合并由用户处理。
 
 ## 规划
 
@@ -52,14 +52,20 @@ uv run python -m multi_agent task run PLAN_RUN_ID \
 
 ## 测试、审核与返工
 
-用返回的 task ID 和 implementation attempt，按 [候选测试说明](task-tests.md) 显式声明完整具名测试集合并执行；随后按 [同候选审核说明](task-reviews.md) 选择一个或两个审核席位。`task-test` 与 `task-review` 的已有输入和退出语义保持。
+用返回的 task ID 和 implementation attempt，按 [候选测试说明](task-tests.md) 显式声明完整具名测试集合并执行；随后按 [同候选审核说明](task-reviews.md) 选择一个或两个审核席位。正常审核调用会在首次取得符合现有准入条件的完整结果后自动续接一次返工、复测和复审。返回值保留最终审核字段，并附 `workflow` 说明来源审核、已执行阶段和停止原因。
+
+失败席补跑和交叉确认也可在本次执行后触发续接；默认继承父审核的自动选择。三个执行入口均支持 `--auto-rework` 或 `--no-auto-rework`，补跑或确认的显式选择只影响本次调用。旧记录缺少自动选择时保持分步行为。`show` 始终只读。
+
+需要手动控制每个阶段时，在首次 `task-review run` 加 `--no-auto-rework`，之后仍可使用原命令：
 
 ```bash
 uv run python -m multi_agent task rework REVIEW_ROUND_ID \
   --database /absolute/data/runs.sqlite3 --directory /absolute/data/rework-1
 ```
 
-该命令从当前审核候选建立新 worktree，仍使用原任务、规则和预算。准入、一次限制及交接预算见 [返工说明](task-rework.md)。新候选必须重新执行原完整有序测试集合，再建立新审核；旧报告保留在旧候选上。
+独立的 `task rework` 命令仍只固定新候选，手动调用方须继续运行完整测试与新审核。自动续接复用相同准入、预算和执行器，并继承原审核绑定的完整有序测试及测试策略。新审核沿父审核全部席位、模型请求、effort、timeout、grace 和可执行文件请求字符串；确认轮的席位子集不会代替原选择。准入、一次限制及交接预算见 [返工说明](task-rework.md)。
+
+不完整报告、范围不符、未核引用或预算/一次额度不足会返回可解释结果，不启动下游写入。返工失败、取消、复测缺失或运行证据不合格时停止；完整且合格的非零测试仍可进入复审。复审仍有阻塞问题时保留该结果，不再返工。复审失败席仍可按原入口补跑，但不会获得第二次返工机会。
 
 ## 查看与取消
 

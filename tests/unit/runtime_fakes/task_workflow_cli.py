@@ -103,18 +103,57 @@ if settings["role"] == "implementation":
         sys.stdin = requests()
 
 if settings["role"] == "review":
-    os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(
-        settings.get("report", {"summary": "Synthetic review", "findings": []})
-    )
+    report = settings.get("report", {"summary": "Synthetic review", "findings": []})
+    frozen_review = None
+    confirmation = False
+    if Path("review-input.json").is_file():
+        frozen_review = json.loads(Path("review-input.json").read_text())
+        if "reports_by_candidate" in settings or "modes_by_candidate" in settings:
+            candidate = frozen_review["source"]["candidate"]
+            report = settings.get("reports_by_candidate", {}).get(candidate, report)
+            os.environ["FAKE_RUNTIME_MODE"] = settings.get(
+                "modes_by_candidate", {}
+            ).get(candidate, settings.get("mode", "success"))
+        targets = Path("confirmation-targets.json")
+        if settings.get("generate_confirmations", False) and targets.is_file():
+            confirmation = True
+            report = {
+                "summary": "Synthetic cross-confirmation of the frozen candidate",
+                "confirmations": [
+                    {
+                        "target_seat": item["target_seat"],
+                        "finding_id": item["finding_id"],
+                        "decision": settings.get("confirmation_decision", "agree"),
+                        "reason": "Synthetic decision on the exact frozen reference.",
+                    }
+                    for item in json.loads(targets.read_text())
+                ],
+            }
+    os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(report)
     if Path("review-input.json").is_file() and arguments[:1] in (
         ["-p"],
         ["app-server"],
     ):
+        extra = (
+            {
+                "confirmation": confirmation,
+                "logs_hex": {
+                    command[stream]["path"]: Path(command[stream]["path"])
+                    .read_bytes()
+                    .hex()
+                    for command in frozen_review["executed_suite"]["commands"]
+                    for stream in ("stdout", "stderr")
+                },
+            }
+            if settings.get("generate_confirmations")
+            else {}
+        )
         capture(
             "review-input",
             cwd=str(Path.cwd()),
-            payload=json.loads(Path("review-input.json").read_text()),
+            payload=frozen_review,
             diff_hex=Path("diff.patch").read_bytes().hex(),
+            **extra,
         )
 
 runpy.run_path(settings["transport"], run_name="__main__")

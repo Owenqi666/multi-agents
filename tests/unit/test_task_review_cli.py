@@ -74,6 +74,7 @@ def run_arguments(feature, executables, *, dual=True):
     arguments = [
         "run",
         "implementation",
+        "--no-auto-rework",
         "--database",
         str(feature.database),
         "--implementation-attempt",

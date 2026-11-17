@@ -534,6 +534,7 @@ def review_arguments(workflow, task_id, attempt, test_attempt, program):
         "task-review",
         "run",
         task_id,
+        "--no-auto-rework",
         "--database",
         workflow.database,
         "--implementation-attempt",

@@ -6,11 +6,14 @@ import json
 import signal
 import sqlite3
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from multi_agent.core import RoundState, SeatConfig, SeatState
+from multi_agent.core.events import JSONValue
 from multi_agent.core.review_input import ExecutedReviewInput
 from multi_agent.core.task_execution import prepared_for_task, task_execution_hash
 from multi_agent.store.task_review_store import TaskReviewStore
@@ -44,6 +47,15 @@ def add_parser(commands: Any) -> None:
         operation = operations.add_parser(name)
         operation.add_argument("task_run_id" if name == "run" else "round_id")
         operation.add_argument("--database", type=Path, required=True)
+        if name != "show":
+            automatic = operation.add_mutually_exclusive_group()
+            automatic.add_argument(
+                "--auto-rework", dest="automatic_rework", action="store_true"
+            )
+            automatic.add_argument(
+                "--no-auto-rework", dest="automatic_rework", action="store_false"
+            )
+            operation.set_defaults(automatic_rework=None)
         if name == "show":
             operation.add_argument("--history", action="store_true")
         elif name == "retry":
@@ -65,6 +77,32 @@ def add_parser(commands: Any) -> None:
             operation.add_argument("--grace", type=float, default=2)
             operation.add_argument("--codex-bin", default="codex")
             operation.add_argument("--claude-bin", default="claude")
+
+
+@contextmanager
+def _preserve_interruption(interrupted: bool) -> Iterator[None]:
+    """Keep a known interruption when subsequent checks or display fail."""
+    try:
+        yield
+    except Exception as error:
+        if interrupted:
+            cancellation = KeyboardInterrupt("post-interruption verification failed")
+            cancellation.add_note(
+                f"Interruption was already recorded; subsequent check or result display failed: {type(error).__name__}: {error}"
+            )
+            raise cancellation from error
+        raise
+
+
+def _automatic_selection(
+    metadata: dict[str, Any], override: bool | None, *, default: bool = False
+) -> bool:
+    stored = metadata.get("automatic_rework", default)
+    if not isinstance(stored, bool):
+        raise TypeError("stored automatic rework selection must be a boolean")
+    if override is not None and not isinstance(override, bool):
+        raise TypeError("automatic rework override must be a boolean or None")
+    return stored if override is None else override
 
 
 def _input(store: TaskReviewStore, identifier: str) -> ExecutedReviewInput:
@@ -193,45 +231,56 @@ async def _execute(
         signal.signal(signal.SIGINT, previous)
 
 
-def _run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
-    database = _database(args.database)
-    seats = tuple(
-        SeatConfig(f"reviewer-{index}", *fields)
-        for index, fields in enumerate(args.seat, 1)
-    )
-    runner.validate_review_settings(seats, timeout=args.timeout, grace=args.grace)
-    for executable in (args.codex_bin, args.claude_bin):
+def _create_review(
+    database_path: str | Path,
+    task_run_id: str,
+    implementation_attempt: int,
+    test_attempt: int,
+    repository: Path,
+    directory: Path,
+    seats: tuple[SeatConfig, ...],
+    *,
+    timeout: float,
+    grace: float,
+    executables: dict[str, str],
+    automatic_rework: bool,
+    rework_from_round_id: str | None = None,
+) -> tuple[dict[str, Any], bool]:
+    """Create one independent review; continuation is owned by the caller."""
+    automatic_rework = _automatic_selection({}, automatic_rework)
+    database = _database(database_path)
+    runner.validate_review_settings(seats, timeout=timeout, grace=grace)
+    for executable in executables.values():
         _text(executable, "review executable")
     with (
         TaskReviewStore(database.path) as store,
-        executor_lock(args.repository) as lease,
+        executor_lock(repository) as lease,
     ):
         database.check()
         if _store_database(store) != database:
             raise ValueError("review database connection identity changed")
-        directory = _new_root(args.directory, database, lease)
+        directory = _new_root(directory, database, lease)
         identifier = uuid4().hex
         directory.mkdir(mode=0o700)
         try:
             with runner.execution_lock(directory):
                 value = prepare_task_review_input(
-                    store,
-                    args.task_run_id,
-                    args.implementation_attempt,
-                    args.test_attempt,
-                    lease,
+                    store, task_run_id, implementation_attempt, test_attempt, lease
                 )
-                metadata = {
+                metadata: dict[str, JSONValue] = {
                     "kind": "review",
                     "created_at": runner.now(),
-                    "timeout": args.timeout,
-                    "grace": args.grace,
-                    "executables": {"codex": args.codex_bin, "claude": args.claude_bin},
+                    "timeout": timeout,
+                    "grace": grace,
+                    "executables": executables,
                     "parent_round_id": None,
                     "repository": str(lease.source),
                     "directory": str(directory),
                     "directory_identity": _identity(_directory(directory)),
+                    "automatic_rework": automatic_rework,
                 }
+                if rework_from_round_id is not None:
+                    metadata["rework_from_round_id"] = rework_from_round_id
                 database.check()
                 store.create_task_review(
                     identifier,
@@ -245,9 +294,10 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
                 )
                 inspect_task_review_source(store, value, lease)
                 interrupted = asyncio.run(_execute(store, identifier, directory))
-                database.check()
-                _check_lease(lease)
-                return _view(store, identifier, lease=lease), interrupted
+                with _preserve_interruption(interrupted):
+                    database.check()
+                    _check_lease(lease)
+                    return _view(store, identifier, lease=lease), interrupted
         except BaseException as error:
             error.add_note(
                 f"Review directory retained: {directory}; inspect round {identifier} for any committed binding."
@@ -255,11 +305,40 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
             raise
 
 
+def _run(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
+    seats = tuple(
+        SeatConfig(f"reviewer-{index}", *fields)
+        for index, fields in enumerate(args.seat, 1)
+    )
+    automatic = _automatic_selection(
+        {}, getattr(args, "automatic_rework", None), default=True
+    )
+    return _create_review(
+        args.database,
+        args.task_run_id,
+        args.implementation_attempt,
+        args.test_attempt,
+        args.repository,
+        args.directory,
+        seats,
+        timeout=args.timeout,
+        grace=args.grace,
+        executables={"codex": args.codex_bin, "claude": args.claude_bin},
+        automatic_rework=automatic,
+    )
+
+
 def _continue(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
     database = _database(args.database)
     with TaskReviewStore(database.path) as store:
         value = _input(store, args.round_id)
         metadata = runner.metadata_for(store, args.round_id)
+        parent_metadata = (
+            runner.metadata_for(store, metadata["parent_round_id"])
+            if metadata["kind"] == "confirmation"
+            else metadata
+        )
+        _automatic_selection(parent_metadata, getattr(args, "automatic_rework", None))
         repository = _origin(store, value, metadata)
         with executor_lock(repository) as lease:
             database.check()
@@ -283,9 +362,10 @@ def _continue(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
                     interrupted = asyncio.run(
                         _execute(store, identifier, directory, seat_keys)
                     )
-                    database.check()
-                    _check_lease(lease)
-                    return _view(store, identifier, lease=lease), interrupted
+                    with _preserve_interruption(interrupted):
+                        database.check()
+                        _check_lease(lease)
+                        return _view(store, identifier, lease=lease), interrupted
                 except BaseException as error:
                     error.add_note(
                         f"Review records and directory retained: {directory}; round {identifier}."
@@ -304,9 +384,18 @@ def main(args: argparse.Namespace) -> int:
             result, interrupted = (
                 _run(args) if args.review_operation == "run" else _continue(args)
             )
-            code = 130 if interrupted else 0 if result["current_eligible"] else 1
-    except KeyboardInterrupt:
+            from .task_review_workflow import continue_task_review
+
+            result, code = continue_task_review(
+                args.database,
+                result,
+                interrupted,
+                override=getattr(args, "automatic_rework", None),
+            )
+    except KeyboardInterrupt as error:
         print("multi-agent: task review interrupted after settlement", file=sys.stderr)
+        for note in getattr(error, "__notes__", ()):
+            print(note, file=sys.stderr)
         return 130
     except (*_READ_ERRORS, RuntimeError) as error:
         print(f"multi-agent: {error}", file=sys.stderr)

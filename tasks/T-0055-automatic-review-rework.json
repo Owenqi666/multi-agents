@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "id": "T-0055",
+  "goal": "从正常审核执行入口自动完成一次符合准入的原范围返工、新候选完整复测和原配置复审，使调用方无需分别发起三个业务命令。",
+  "baseline_commit": "928d1096f93ae208609fea09cee45a0de45bb608",
+  "write_scope": [
+    "src/multi_agent/cli/task_review_cli.py",
+    "src/multi_agent/cli/task_review_workflow.py",
+    "tests/unit/test_task_review_workflow.py",
+    "tests/unit/test_task_workflow_cli.py",
+    "tests/unit/test_task_review_cli.py",
+    "tests/unit/runtime_fakes/task_workflow_cli.py",
+    "docs/task-reviews.md",
+    "docs/task-rework.md",
+    "docs/task-workflow.md",
+    "docs/phase-two-development.md",
+    "docs/deliveries/T-0055.md",
+    "tasks/T-0055-automatic-review-rework.json"
+  ],
+  "depends_on": [
+    "T-0054"
+  ],
+  "interface_contracts": [
+    {
+      "name": "user scope and one functional card",
+      "definition": "用户原文：把这个缺口发给阶段2窗口，用一张功能卡打通：审核发现符合条件的阻塞问题后，自动返工一次，对新候选重新运行原完整测试并复审。补齐端到端回归，完整运行 verify 后提交，结果交回本窗口验收。 主窗口授权本窗口在928d109基线上实现、完整verify、正常提交，并主动向01a1d67a-72a6-7882-9c9e-1b42351d746c回传完整SHA、路径、实际入口与端到端证据。只用一张功能卡；复用既有准入、一次原子预留、预算、候选冻结及测试/审核入口，不创建新状态/事件/SQL/协议，不改保护配置、旧S9证据或其它worktree。"
+    },
+    {
+      "name": "normal review entry and compatibility",
+      "definition": "task-review run/retry/confirm均增加互斥--auto-rework/--no-auto-rework，Namespace automatic_rework为bool或None。run新建审核默认True并将选择写入metadata automatic_rework:boolean；retry/confirm未显式选项时读父审核metadata，缺字段按False；显式选项只覆盖本次执行，不改写旧父metadata。复审新round automatic_rework=False，失败席仍可retry但不递归；即使显式开启也由既有唯一预留拒绝第二次返工。三个入口实际执行结算并释放锁后统一续接；confirm归一assessment_round_id父审核，show只读永不触发。旧分步workflow/review测试仅在输入helper明确--no-auto-rework、全部旧断言保留。新run自动E2E不传flag；confirm自动E2E允许先合法手动初审，再单次confirm --auto-rework，确认失败后retry --auto-rework；不得靠测试改DB假造准入或内部显式拼三个业务命令。"
+    },
+    {
+      "name": "one continuation and qualification",
+      "definition": "在原审核executor/review锁释放后编排，避免重入；真正写入仍由现prepare_task_rework_source/prepare_task_rework_launch及reserve_task_rework_execution重新核当前来源和原子CAS，不把显示assessment当授权。初审不完整/分歧/无符合原范围verified P0/P1/预算不足/已经返工时，保留原审核并返回可解释结果，零下游实施/测试/新审核；审核入口本身的记录仍可合法写入。复用task_cli._rework或等价现控制器完成一次实施及候选冻结，不循环，不增加预算、不改frontend Claude规则。"
+    },
+    {
+      "name": "frozen configuration and source binding",
+      "definition": "返工成功后，从实际TaskReworkStarted.source绑定的父审核checkpoint取原配置；核review_checkpoint_hash相同，禁止拿观察时旧配置与另一次预留混用。测试policy直接沿ExecutedReviewInput.executed_suite.prepared.policy，完整有序NamedCommand沿其checkout.input.commands，保留名称、executable字面值和args、declaration_source；不重新capture默认值或读取新候选规则。审核从父RoundState全部seats配置及metadata timeout/grace/executables继承，不使用确认轮子集。旧审核只冻结执行文件请求字符串，不能声称固定了审核二进制hash。新审核使用kind=review,parent_round_id=None、新候选和新实测证据，metadata可记录rework_from_round_id与原审核相连，不冒充confirmation。"
+    },
+    {
+      "name": "execution outcomes cancellation and output",
+      "definition": "续接只调用已有Python执行服务，不经shell、不递归启动CLI、不虚构成功。返工失败/取消/宿主错误即停止；新测试完整合格的非零结果仍可按既有语义送复审，超时/缺命令/停止未知/证据不合格则停止。复审仍阻塞就返回该实际结果，不启动第二次返工；复审失败也保留原有失败席retry语义。取消沿各阶段现有stop/结算机制；任一阶段interrupted/130或阶段交界KeyboardInterrupt均中止后续，不丢停止意图。异常保持2和stderr/notes，明确来源审核及已到阶段，已产生记录不回滚删除。正常JSON顶层保持最终可查看review字段，追加workflow对象说明source_review_round_id、阶段、outcome/reason、返工/测试结果和最终review坐标；政策拒绝与真正运行失败区分。最终接受/合并和阶段3不自动执行。 退出码明确：当前最终ready为0；政策拒绝、二审仍阻塞、模型失败或测试运行负向停止为1；输入/CAS/宿主异常为2；任一阶段中断为130。复用task_cli._rework/_interruptible/_freeze均不修改task_cli.py，也不改runner/store；若确有范围不足则交回本卡修订。"
+    },
+    {
+      "name": "end-to-end and preservation",
+      "definition": "新增test_task_review_workflow.py从现workflow真实临时Git+模块CLI规划/实现/初测出发，在唯一被测task-review run/retry/confirm调用内观察后续链；外部模型用fake，测试用真实微型build/test。fake仅新增默认关闭的候选报告映射（旧candidate→blocker，其他→ready）与按既有confirmation-targets协议生成确认，不按spawn次数判断模型调用。核实际实现/reviewer/command次数、新commit parent、旧TaskInput/规则/预算/原历史与旧snapshot保留、新输入和测试坐标、单/双审配置继承；覆盖第二次阻塞停止、不准入无下游写、运行失败与取消停步。新增测试先留当前基线真实失败，旧分步测试保留。所有检查经scripts/verify.sh，相关回归后完整五步与正常hook；日志仓库外T55新目录。 fake仅在本卡task_workflow_cli.py加入候选报告/故障mode映射及confirmation生成；其它fake不改。基线red在仓库外T55/baseline-red.json/.txt记录完整argv、用例名、exit与输出，交付明确基线SHA。 新增测试观测可在同一默认关闭分支记录冻结审核的实际日志字节，完整对照既有materialized payload布局；不更改公共fake的协议或档位断言。"
+    }
+  ],
+  "deliverables": [
+    "正常审核执行入口默认完成一次合格返工→新候选→原完整测试→原配置复审，保留显式分步兼容。",
+    "从真实模块CLI进入的端到端回归，证明自动调用次数、来源关联、一次上限和拒绝/失败路径。",
+    "更新用户工作流与交付记录，完整检查、正常提交回执和主窗口回传。"
+  ],
+  "acceptance_criteria": [
+    "test_task_review_workflow_run_automates_one_rework：单次正常run经历初审、一次Claude返工、原build/test真实重跑、新审核；旧新候选/证据关联准确且最终当前ready。",
+    "test_task_review_workflow_retry_automates_when_complete、test_task_review_workflow_confirm_automates、test_task_review_workflow_confirmation_retry_automates：正常失败席补跑或显式开启自动的确认/确认补跑在当前执行完整后触发；父审核全部席位/配置继承，成功席不重复。",
+    "test_task_review_workflow_stops_after_second_blocker：第二次审核仍阻塞时只有两次总实现，不发起第三次；旧新报告可追溯。",
+    "test_task_review_workflow_refuses_unqualified：不完整、引用未核、范围外、仅测试失败无定位blocker或预算/一次耗尽，原task/test/ref不被下游写入，拒绝解释明确；show保持只读。",
+    "test_task_review_workflow_stops_on_execution_failure按返工/复测/复审阶段参数化；test_task_review_workflow_cancel_stops_followup按阶段验证取消后不启动下一步；test_task_review_workflow_handoff_interrupt_stops验证交界KeyboardInterrupt不写后续；test_task_review_workflow_nonzero_complete_suite_is_reviewed验证完整非零复测仍送审；test_task_review_workflow_rereview_retry_never_reworks_again验证失败复审补跑后即使阻塞也不二次返工。运行失败保留既有证据/退出语义，单测边界注入可补关键CLI E2E，不需全场景笛卡尔。 test_task_review_workflow_interruption_survives_display_error与test_task_review_workflow_entry_interruption_survives_display_error覆盖已知中断后展示读取异常仍为130、原诊断保留且不续接。",
+    "旧分步入口显式关闭自动后继续通过全部原断言，默认新入口真正自动；完整lint/format/typecheck/unit/replay及正常提交hook通过。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
