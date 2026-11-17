@@ -25,3 +25,19 @@ T46 在现有实现尝试中保存候选提交与执行证据的不可变关联�
 ## 兼容范围
 
 本卡没有新增 phase、SQL 表或列；既有 attempt JSON 和 history 表保存新事件，因此不需要迁移。旧事件/尝试的编码和省略规则保持，旧 FrozenSnapshot、TestEvidence、snapshot_id 和 user_supplied 来源也保持。独立测试执行记录及其版本化来源属于后续 S6 卡。
+
+## 实际冻结与消费核验（T47）
+
+`freeze_task_candidate(store, task_run_id, attempt, lease)` 把 T44 合格实现归档、T31 实际 Git 冻结和 T46 原子记录接在同一次持锁操作中。`inspect_task_candidate` 使用相同参数，只重新核验已经绑定的当前候选。调用方保持同一个实际 store 与 Git common-dir lease，直至本次操作以及需要在锁内进行的后续消费结束。
+
+T45 返回时已经关闭原执行作用域；后续可以重新取得相同仓库的有效 lease，核验已保存的归档。这不会重启或恢复旧运行时 owner。当前接口支持实现阶段的 `awaiting_delivery` 和当前候选；未来测试、审核或返工改变状态关联时，需要对应的边界扩展。
+
+入口先检查当前 managed 尝试、Prepared、实际停止、最终 digest 和执行锚点。缺少这些事实时拒绝，不能先扫描可能仍活跃的工作区。实际归档必须 qualified、delivery_eligible 且报告为 completed；合格的范围交回报告也不能冻结成候选。
+
+冻结前捕获完整历史 H，包含 HISTORY_ONLY。归档核验、Git 冻结和数据库登记使用同一个 H；期间历史变化即拒绝，不改用新历史继续。只有实际 APPLIED 才算登记成功。末次实际 inspection 之后还核历史恰为 H 加本次原 envelope/APPLIED，避免重新进入 inspector 时意外放宽原始比较条件。
+
+Git 核验包括确切 ref、commit、tree、唯一父提交、完整文件内容和原基线变更集；二进制、执行位、symlink 和重命名两侧均计入。实际读取的 commit、递归 tree 和 blob 按 Git 对象 header 加原始 body 重算内容寻址哈希，不能只信 Git 输出中的 OID 文本。路径范围使用原 TaskInput 的冻结卡片与规则。direct packed ref 可核验；symbolic、symlink、垃圾 loose ref 或身份变化拒绝。
+
+Git ref 与 SQLite 事务不能跨资源原子提交。ref 已创建后数据库或末次检查失败时，保留真实 ref、工作区、归档和最初异常；不删除 ref、不重新冻结、不自动收养。数据库提交后抛错时，只回读一次完整历史，按原 envelope 说明是否确认 APPLIED；回读失败保持未知，不宣称回滚或撤销成功。
+
+已有候选只能 inspect。inspect 不写历史、核对记录或文件，也不重封日志。每次消费都重新核原归档、当前候选、Git 内容、数据库历史和身份；不能把首次成功缓存为永久资格。原工作区、context、日志仍须保留。这里沿用合作式宿主锁和现有文件边界，不宣称防御任意敌意宿主并发。

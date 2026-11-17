@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "id": "T-0047",
+  "goal": "从合格实现归档实际冻结并持久绑定一个Git候选，使后续消费者每次都能重新核验同一提交和原执行证据。",
+  "baseline_commit": "e24619bccc2c2a0131f83ff8dc6adaaff7919b2f",
+  "write_scope": [
+    "src/multi_agent/cli/task_candidates.py",
+    "tests/unit/test_task_candidates.py",
+    "docs/task-candidates.md",
+    "docs/deliveries/T-0047.md",
+    "tasks/T-0047-task-candidate-boundary.json"
+  ],
+  "depends_on": [
+    "T-0046"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and public API",
+      "definition": "S6第二张卡仅新增同步freeze_task_candidate(store:PlanningStore,task_run_id:str,attempt:int,lease:ExecutorLease)->TaskCandidateFrozen及同签名inspect_task_candidate。T46已提供current_candidate/candidate_ready、TaskCandidateFrozen(delivery,execution_log_path,execution_log_sha256)、record_task_candidate fullhistory CAS。不改core/store/runner/task_evidence/workspaces/旧tests，不创建测试检出、不执行测试/审核/重试/返工，不新增phase/事件/迁移/CLI命令，不自动接受或合并。 本卡只保证T46当前实现阶段的awaiting_delivery/current candidate消费，不提前设计未来test/review/rework状态；后续卡若改变TaskPhase/attempt/Recon关联，须明确扩展边界并补兼容验收，不在此处猜测未来phase或自动放宽门禁。"
+    },
+    {
+      "name": "caller lease and identity",
+      "definition": "caller持同一个实际有效common-dir lease与原store直到本次检查/冻结/登记/返回结束，后续消费者在该lease内inspect后再继续。T45返回已关闭原launch/lease；独立调用重新取得同一common-dir有效lease并核归档，不恢复runtime owner。用task_context._store_database捕获实际连接DB/path/parent身份并反复check，_check_lease核真实fd/inode/active/canonicalcommon；T44实际context再核DB/lease/workspace/规划来源。"
+    },
+    {
+      "name": "early state gate without live scan",
+      "definition": "函数先load当前TaskState，要求attempt精确current、managed、Prepared存在、phase awaiting_delivery及delivery_ready（inspect还要求candidate_ready与当前candidate）；lateststop/digest/执行anchor缺任一即抛ValueError，任何Git/workspace扫描前拒绝。不把PID/exit/requested字段当actual停止。freeze看到已有candidate无论是否ready均拒，只能inspect；legacy/旧attempt/future/scope_blocked不冻结。"
+    },
+    {
+      "name": "stable original history",
+      "definition": "捕获完整ordered history H、len及task_execution_hash(H)，含HISTORY_ONLY；冻结全程保留原H。首次actualarchive前后及freeze前核H未变；任何新history即失败，不刷新CAS到最新prefix、不重试。这样迟到但HISTORY_ONLY的冲突Completed不能绕过T44完整历史检查。inspect也捕获H并在全部归档/Git读取后确认H、当前candidate与来源未变。"
+    },
+    {
+      "name": "actual execution qualification",
+      "definition": "调用现inspect_task_execution(store,run,attempt,lease)，必须qualified、delivery_eligible、report.outcome=completed；load原TaskInput与Prepared，用原card/frozenrules，不从工作区读取修改后的规则。T44允许合格scope_blocked在planning_required归档，但不代表可冻结candidate。CandidateFrozen是合法普通host suffix，T44现_pair/_check_prefix/_qualified已允许，不为新候选修改旧封存或重seal。原workspace/context/logs必须保留。"
+    },
+    {
+      "name": "freeze once and exact binding",
+      "definition": "实际调用T31 freeze_delivery(lease,Prepared.workspace,card,frozen_rules)一次。返回delivery.digest必须等于原archive.final_digest与原Recon.worktree_digest，baseline等于原task baseline。新TaskCandidateFrozen使用实际delivery与原archive.path/sha256，绝不根据请求或stub补事实。核真实Git后以原H调用record_task_candidate，要求实际Disposition.APPLIED；任何其它Disposition不是成功。成功后核完整历史恰为H加本次原envelope/APPLIED、当前candidate等值，再进行实际inspect后返回。 末次public inspect返回后再核history仍精确H+本envelope/APPLIED、currentcandidate和DB/lease身份；不能让inspect在两调用间捕获更新H，变相刷新freeze原H合同。可用内部共享expected-H inspector，但公共签名不变。"
+    },
+    {
+      "name": "Git commit and ref checks",
+      "definition": "按Prepared.workspace.owner_token派生唯一完整refs/multi-agent/candidates/<owner>并核delivery.ref精确等值。现存refs/multi-agent/candidates祖先须真实目录；loose ref如存在须普通非symlink文件；拒绝symbolic含dangling，不使用会mkdir/拒已有ref的_candidate_ref做inspect。可支持实际direct packed ref，祖先若缺失须与packed实际解析一致。Git查询精确refname、full candidate OID、objecttype commit且symref空，不接受prefix/tag peel。按Prepared.object_format核full OID；raw commit header精确tree==delivery.tree且恰一个parent==Prepared.workspace.start_commit，不能用受shallow/graft影响的历史遍历推父提交。 loose direct ref存在时以NOFOLLOW/NONBLOCK有界读取并核实际内容为精确完整OID（正常LF编码），拒绝垃圾/额外内容，即使packed有同名可解析项；packed-refs如存在也须实际regular非symlink，读前后元数据/路径身份稳定，不跟随外部ref文件。"
+    },
+    {
+      "name": "Git content and original scope",
+      "definition": "复用workspaces._git（下层snapshot._git已禁replace objects/hooks/config/filter等）、_baseline_files、_inspection，core.path_patterns.path_matches。以candidate完整原blob/files含binary/mode/symlink重算同T31 digest，与delivery/archive/Recon相等；与原task baseline完整files比较得到精确sorted changed_paths（新增/删除/重命名两侧/模式变化），逐条核card.write_scope及冻结protected_paths。范围拒绝沿DeliveryRejected分类，不通过修改规则/文件/反向patch变绿。Git对象/ref事实与archive前后复核；复用现大小/路径限制，不宣称对任意敌意宿主并发的原子快照保证。 当前实源码签名为_baseline_files(repo:Path,revision:str)->tuple[WorkspaceFile,...]及_inspection(files:tuple[WorkspaceFile,...])->WorkspaceInspection，两者不是扫描工作区专用；前者已按path排序，后者正是inspect_workspace末尾调用的同一digest函数。新test直接核Git files重算与T31实际freeze/原archive digest相等，不另实现算法。 不把cat-file响应中的声明OID当内容寻址证明：对实际读取的candidate/原baseline（及不同start_commit）raw commit、candidate与baseline的每个递归tree及blob，按Git对象header(kind+空格+byte长度+NUL)+原body和Prepared.object_format重算OID。blob可用既有_blob_id；tree可由root tree加ls-tree -r -t列出的去重tree OID通过受控_git/cat-file batch读取验证，支持真实空tree，不用丢弃空目录的flat map去猜baseline tree。若现helper遇坏对象已拒绝可直接保留原错；不得用Git回显的OID替代实际hash核验。"
+    },
+    {
+      "name": "orphan and immutable artifacts",
+      "definition": "已有DBcandidate只能inspect，已有预期ref却无DBcandidate也拒绝，绝不覆盖/adopt/delete/refreeze；Git创建对象/ref与SQLite不能跨资源原子化。freeze_delivery已发布ref后，任何Git/归档/历史/CAS/DB错误都保留ref、原workspace/context/logs和原异常。没有自动cleanup、补偿性删ref或伪造持久撤销。首次发布失败不自动再调用freeze；后续恢复由独立S8流程决定。"
+    },
+    {
+      "name": "first error and ambiguous commit",
+      "definition": "普通验证拒绝用ValueError/已有DeliveryRejected；底层异常保留原对象，不宽泛吞掉store/core错误。record_task_candidate抛错时，只作一次完整history回读，按本次exact原envelope的APPLIED出现事实加note，区分已绑定、未确认绑定或回读失败unknown；保留最初异常，后续读错只加说明，不冒称rollback/revoke，不返回成功或继续test/review。若发布后末次inspect/DB身份检查失败同样抛原错并保留已存记录/实际ref；派生candidate_ready只为状态门槛，后续每次消费仍需本边界实际inspect。"
+    },
+    {
+      "name": "read-only inspection",
+      "definition": "inspect_task_candidate只读取，不写history/Reconciled/证据拒绝/文件，不重封、不运行adapter或释放lease。先current candidate_ready门禁，再actualarchive+delivery_eligible，再与freeze相同Git核验，最后原H/实际DB与lease身份/当前candidate不变才返回。改变ref、tree、parent、candidate文件、archive/rawlogs/context/workspace、最后Recon或currentattempt会失败；返回事件来自实际已绑定记录。"
+    },
+    {
+      "name": "offline tests and existing helpers",
+      "definition": "新增tests/unit/test_task_candidates.py；复用未改T44的真实文件/Recorder与明确synthetic ownership夹具或T45公共fake CLI，不启动真实模型。至少一条T45实际fake runner→candidate happy集成，其他故障用合成已封存真实Git/DB夹具；标清synthetic owner不是实机权限证明。覆盖cold reopen/new valid lease、两provider或已有provider策略、binary/executable/safe symlink/rename路径。所有check只走verify，旧tests/场景/配置不改。 已有T44实际通过的跨文件fixture注册模式是import test_task_context as contexts，然后在新module显式project=contexts.project、bound=contexts.bound；可同样从test_task_evidence显式注册live/execution并用make/seal/reconcile等函数，不导入test_*函数以免重复收集。若具体复用不适合，全部自建fixture放新test文件，不改旧tests/conftest。"
+    },
+    {
+      "name": "formal baseline and review",
+      "definition": "草案可在T46完整检查/正常hook期间文字复核；正式派发前重定实际T46提交、校验--dispatchable/ancestor/scopeoverlap。原始用户需求“新开一个阶段2窗口开始按开发顺序继续执行”随卡复核。源码/独立测试分工，先保留缺接口red再实现。scope不足交回规划，不扩写旧边界。完整verify与正常hook，actualpaths和candidate SHA由外部回执绑定。"
+    }
+  ],
+  "deliverables": [
+    "持有效lease的真实candidate冻结和只读消费核验API。",
+    "Git对象/路径/执行归档/完整DB历史的共同来源校验。",
+    "跨Git与SQLite失败的原始错误及现场保留，独立离线验证。"
+  ],
+  "acceptance_criteria": [
+    "test_freeze_task_candidate_binds_exact_archive_and_git_objects：实际T31freeze、完整二进制/执行位/安全symlink/rename变更集，原baseline/单parent/树/digest/ref/执行anchor与DB精确绑定，phase仍awaiting_delivery。",
+    "test_task_runner_to_candidate_freeze：T45实际fake执行后持新lease核原归档、冻结candidate；不触发额外model/test/review或改source checkout。",
+    "test_candidate_suffix_keeps_execution_archive_inspectable：APPLIED Candidate后T44归档仍可检；store重新打开与新common-dir lease可inspect，原runtime未知字段不补。",
+    "test_unknown_stop_rejects_before_workspace_scan：legacy/unknownstop/digest/anchor/旧attempt/无Prepared/failed/scopeblocked在Git与workspace读取前拒，inspection只读。",
+    "test_candidate_git_ref_tree_parent_and_paths_are_exact：逐项refname/prefix/symbolic/dangling/symlink/packed/direct/对象类型/tree/单parent/范围/受保护路径或digest不符拒绝，SHA1与适用SHA256不猜长度。",
+    "test_candidate_freeze_uses_original_history_cas：archive前后/冻结前/写DB前加入APPLIED或HISTORY_ONLY历史，都不能刷新H继续；原core当前资格变化同样拦截。",
+    "test_candidate_git_success_database_failure_retains_orphan：已创建ref后precommit/CAS/无效Disposition/末次检查失败保留原ref与错误，不补写/删ref/重试/继续。",
+    "test_candidate_commit_then_raise_reports_actual_binding_and_original_error：postcommit异常首对象保真，exact history APPLIED note真实；读失败unknown，不能猜撤销成功。",
+    "test_candidate_existing_binding_or_orphan_never_refreezes：已有candidate只能inspect，已有无绑定ref即拒，重复调用不新增commit/ref或自动收养。",
+    "test_candidate_inspect_rechecks_every_consumption：改原workspace/context/rawlogs/manifest或Git ref/object/最新Recon后拒，首次成功不能缓存为永久资格。",
+    "test_candidate_database_context_and_lease_replacement_are_rejected：关闭/替换lease、wrongrun/DB路径或parent/context身份改变、过程中metadata替换均失败且不落伪绑定。",
+    "完整lint/format/typecheck/unit/replay、正常hook通过；实际仅五路径，无旧测试/检查配置削弱，无实机sandbox验收声明。",
+    "test_candidate_object_content_addressing_is_verified：修改loose commit的message/author但保持tree/parent、原baseline blob bytes、nested tree body而保留声明OID，都不能通过；直接hash与Git对象header算法一致，实际读取bytes是核验来源。",
+    "test_candidate_final_inspection_cannot_refresh_original_history：第一次postcommit H检查与public inspect入口之间加入HISTORY_ONLY记录，freeze最终仍失败且保留实际record/ref，不把inspect新H当旧H。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
