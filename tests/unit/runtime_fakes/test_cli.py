@@ -32,6 +32,10 @@ def main():
         with lock:
             os.write(1, raw)
 
+    def notifications(phase):
+        for message in settings.get("notifications", {}).get(phase, []):
+            emit(message)
+
     capture("spawn", argv=sys.argv[1:], cwd=os.getcwd(), pid=os.getpid())
     if sys.argv[1:] == ["--version"]:
         time.sleep(settings.get("version_delay", 0))
@@ -66,6 +70,7 @@ def main():
         params = request["params"]
         identifier = request["id"]
         process_id = params["processId"]
+        notifications("command")
         if mode in ("oversized-line", "message-flood", "invalid-utf8"):
             if mode == "oversized-line":
                 os.write(1, b"x" * (1024 * 1024 + 8192))
@@ -191,6 +196,7 @@ def main():
             "result": {"exitCode": code, "stdout": "", "stderr": ""},
         }
         emit(response)
+        notifications("after-final")
         if mode == "duplicate-final":
             emit(response)
 
@@ -203,6 +209,7 @@ def main():
         if method == "initialize":
             result = {"userAgent": "synthetic-codex/0.169.0"}
         elif method == "config/read":
+            notifications("preflight")
             result = {
                 "config": config,
                 "origins": {},

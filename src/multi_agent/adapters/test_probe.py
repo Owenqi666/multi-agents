@@ -81,8 +81,11 @@ def _source_hashes() -> dict[str, str]:
             "CommandExecOutputDeltaNotification.json",
             "CommandExecTerminateParams.json",
             "CommandExecTerminateResponse.json",
+            "ConfigWarningNotification.json",
+            "RemoteControlStatusChangedNotification.json",
         )
     ]
+    paths.append(root / "protocol/codex/schema/ServerNotification.json")
     paths.append(root / "protocol/codex/config.schema.json")
     return {
         str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest()

@@ -101,6 +101,55 @@ def _positive(value: float, name: str) -> None:
         raise ValueError(f"{name} must be finite and positive")
 
 
+def _informational_notification(message: dict[str, Any]) -> bool:
+    # Codex 0.169.0 ServerNotification and the two v2 notification schemas.
+    # Unknown fields remain in the wire log; RPC role conflicts are not notices.
+    method = message.get("method")
+    if method not in ("configWarning", "remoteControl/status/changed"):
+        return False
+    params = message.get("params")
+    timestamp = message.get("emittedAtMs")
+    if (
+        any(key in message for key in ("id", "result", "error"))
+        or not isinstance(params, dict)
+        or "emittedAtMs" in message
+        and (type(timestamp) is not int or not -(2**63) <= timestamp < 2**63)
+    ):
+        raise TestProtocolError("malformed test informational notification")
+    if method == "configWarning":
+        valid = isinstance(params.get("summary"), str) and all(
+            params.get(key) is None or isinstance(params[key], str)
+            for key in ("details", "path")
+        )
+        span = params.get("range")
+        if span is not None:
+            valid = valid and isinstance(span, dict)
+            if valid:
+                for edge in ("start", "end"):
+                    position = span.get(edge)
+                    valid = (
+                        valid
+                        and isinstance(position, dict)
+                        and all(
+                            type(position.get(key)) is int and position[key] >= 0
+                            for key in ("line", "column")
+                        )
+                    )
+    else:
+        valid = all(
+            isinstance(params.get(key), str)
+            for key in ("status", "serverName", "installationId")
+        ) and (
+            params.get("environmentId") is None
+            or isinstance(params["environmentId"], str)
+        )
+    if not valid:
+        raise TestProtocolError("malformed test informational notification")
+    if method == "remoteControl/status/changed" and params["status"] != "disabled":
+        raise TestProtocolError("test remote control is not disabled")
+    return True
+
+
 class TaskTestRuntimeAdapter:
     """No constructor I/O; one owner and one command, with observable cleanup."""
 
@@ -493,6 +542,8 @@ class TaskTestRuntimeAdapter:
         while (message := await self._process.read()) is not None:
             if not isinstance(message, dict):
                 raise TestProtocolError("test runtime returned non-object JSON-RPC")
+            if _informational_notification(message):
+                continue
             if "method" in message:
                 raise TestProtocolError("unexpected test preflight server message")
             if (
@@ -508,6 +559,8 @@ class TaskTestRuntimeAdapter:
     def _consume_message(self, message: Any) -> bool:
         if not isinstance(message, dict):
             raise TestProtocolError("test runtime returned non-object JSON-RPC")
+        if _informational_notification(message):
+            return False
         if message.get("method") == "command/exec/outputDelta" and "id" not in message:
             if self._result.response is not None:
                 raise TestProtocolError("test output arrived after final response")
