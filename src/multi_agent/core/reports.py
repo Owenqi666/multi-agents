@@ -9,8 +9,10 @@ original opinions and cross-confirmation reasons remain available.
 """
 
 from copy import deepcopy
-from typing import Any
+from typing import Any, cast
 
+from .events import thaw_json
+from .review_input import ExecutedReviewInput, ReviewInput, review_source
 from .snapshot import FrozenSnapshot
 
 _LOCATION_FIELDS = ("side", "path", "line_start", "line_end", "category")
@@ -25,8 +27,9 @@ def _lines(text: str) -> list[str]:
     return lines[:-1] if lines[-1] == "" else lines
 
 
-def check_report(report: dict[str, Any], snapshot: FrozenSnapshot) -> dict[str, Any]:
+def check_report(report: dict[str, Any], snapshot: ReviewInput) -> dict[str, Any]:
     """Annotate a validated report without mutating or discarding its fields."""
+    snapshot = review_source(snapshot)
     checked = deepcopy(report)
     files = {(item.side, item.path): item for item in snapshot.files}
     for finding in checked["findings"]:
@@ -96,6 +99,77 @@ def _test_evidence(snapshot: FrozenSnapshot) -> dict[str, Any]:
     }
 
 
+def _executed_test_evidence(value: ExecutedReviewInput) -> dict[str, Any]:
+    suite = value.executed_suite
+    declared = suite.prepared.checkout.input
+    required = [
+        {"sequence": index, "name": command.name, "argv": list(command.argv)}
+        for index, command in enumerate(declared.commands, 1)
+    ]
+    records = []
+    failed = []
+    mismatched = []
+    for index, command in enumerate(suite.commands):
+        manifest = cast(dict[str, Any], thaw_json(command.manifest))
+        actual = cast(dict[str, Any], manifest["actual_result"])
+        sequence = manifest["sequence"]
+        if (
+            sequence != index + 1
+            or sequence > len(required)
+            or manifest["test_attempt"] != suite.test_attempt
+            or manifest["task_run_id"] != declared.task_run_id
+            or manifest["implementation_attempt"] != declared.implementation_attempt
+            or manifest["input_hash"] != declared.input_hash
+            or not manifest["qualified"]
+            or manifest["process_stopped"] is not True
+        ):
+            mismatched.append(index)
+        if actual["exit_code"] != 0:
+            failed.append(index)
+        records.append(
+            {
+                "sequence": sequence,
+                "name": declared.commands[index].name
+                if index < len(declared.commands)
+                else None,
+                "reported_exit_code": actual["reported_exit_code"],
+                "exit_code": actual["exit_code"],
+                "stop_scope": manifest["stop_scope"],
+                "output_scope": manifest["output_scope"],
+                "stdout": {
+                    "byte_count": command.stdout.byte_count,
+                    "sha256": command.stdout.sha256,
+                },
+                "stderr": {
+                    "byte_count": command.stderr.byte_count,
+                    "sha256": command.stderr.sha256,
+                },
+            }
+        )
+    observed = {record["sequence"] for record in records}
+    missing = [item for item in required if item["sequence"] not in observed]
+    status = (
+        "incomplete"
+        if missing or mismatched or not required or len(records) != len(required)
+        else "failed"
+        if failed
+        else "passed"
+    )
+    return {
+        "source": "workbench_executed",
+        "executed_by_workbench": True,
+        "status": status,
+        "task_run_id": declared.task_run_id,
+        "implementation_attempt": declared.implementation_attempt,
+        "test_attempt": suite.test_attempt,
+        "required_commands": required,
+        "commands": records,
+        "missing_commands": missing,
+        "mismatched_records": mismatched,
+        "failed_records": failed,
+    }
+
+
 def _groups(
     reports: dict[str, dict[str, Any]],
     expected_seats: tuple[str, ...],
@@ -133,7 +207,7 @@ def _groups(
 
 
 def assess(
-    snapshot: FrozenSnapshot,
+    snapshot: ReviewInput,
     reports: dict[str, dict[str, Any]],
     expected_seats: tuple[str, ...],
     confirmations: tuple[dict[str, Any], ...] = (),
@@ -152,7 +226,11 @@ def assess(
         if seat in reports
     }
     missing = [seat for seat in expected_seats if seat not in checked]
-    tests = _test_evidence(snapshot)
+    tests = (
+        _executed_test_evidence(snapshot)
+        if isinstance(snapshot, ExecutedReviewInput)
+        else _test_evidence(snapshot)
+    )
     result: dict[str, Any] = {
         "status": "incomplete",
         "reasons": [],
@@ -181,7 +259,7 @@ def assess(
         for confirmation in group["confirmations"]
     )
     reasons: list[str] = []
-    if snapshot.repository is None:
+    if review_source(snapshot).repository is None:
         reasons.append("report_only_input")
     if tests["status"] == "incomplete":
         reasons.append("complete_candidate_test_evidence_missing")

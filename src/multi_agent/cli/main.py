@@ -9,10 +9,10 @@ from pathlib import Path
 from typing import Any, cast
 
 from multi_agent.core import SeatConfig
-from multi_agent.core.events import thaw_json
 from multi_agent.core.snapshot import FrozenSnapshot, TestEvidence
 from multi_agent.store import ReviewStore
 
+from .review_inputs import load_review_input
 from .snapshot import _git, freeze_diff, freeze_repository
 
 
@@ -81,12 +81,14 @@ def data_directory(path: Path, repository: Path | None = None) -> Path:
 
 
 def load_snapshot(store: ReviewStore, identifier: str) -> FrozenSnapshot:
-    return FrozenSnapshot.from_dict(
-        cast(dict[str, Any], thaw_json(store.load_snapshot(identifier)))
-    )
+    value = load_review_input(store, identifier)
+    if not isinstance(value, FrozenSnapshot):
+        raise TypeError("executed task reviews must use task-review commands")
+    return value
 
 
 def parser() -> argparse.ArgumentParser:
+    from .task_review_cli import add_parser as add_task_review_parser
     from .task_test_cli import add_parser as add_task_test_parser
 
     result = argparse.ArgumentParser(
@@ -145,6 +147,7 @@ def parser() -> argparse.ArgumentParser:
     benchmark.add_argument("operation", choices=("prepare", "template", "score"))
     benchmark.add_argument("arguments", nargs=argparse.REMAINDER)
     add_task_test_parser(commands)
+    add_task_review_parser(commands)
     return result
 
 
@@ -209,7 +212,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
         if args.command == "freeze":
             return freeze_input(args, store)
         if args.command == "snapshot":
-            snapshot = load_snapshot(store, args.snapshot_id)
+            snapshot = load_review_input(store, args.snapshot_id)
             return {"snapshot_id": snapshot.snapshot_id, "input": snapshot.to_dict()}
         from . import runner
 
@@ -262,6 +265,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "task-review":
+        from .task_review_cli import main as task_review_main
+
+        return task_review_main(args)
     if args.command == "task-test":
         from .task_test_cli import main as task_test_main
 

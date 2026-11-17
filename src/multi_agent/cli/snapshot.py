@@ -20,6 +20,11 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 from typing import Any
 
+from multi_agent.core.review_input import (
+    ExecutedReviewInput,
+    ReviewInput,
+    review_source,
+)
 from multi_agent.core.snapshot import FrozenFile, FrozenSnapshot, TestEvidence
 
 MAX_FILES = 20_000
@@ -333,6 +338,14 @@ def freeze_diff(
 
 
 def materialize(snapshot: FrozenSnapshot, destination: Path) -> None:
+    _materialize(snapshot, destination)
+
+
+def _materialize(
+    snapshot: FrozenSnapshot,
+    destination: Path,
+    review_manifest: dict[str, Any] | None = None,
+) -> None:
     """Write fresh, non-executable text trees and a manifest for one reviewer.
 
     Existing nonempty destinations and ambiguous paths are refused. No Git
@@ -379,6 +392,7 @@ def materialize(snapshot: FrozenSnapshot, destination: Path) -> None:
                 "omitted_files": omitted,
                 "symlinks_are_inert_text": True,
                 "tests_are_user_supplied": True,
+                **(review_manifest or {}),
             },
             ensure_ascii=False,
             indent=2,
@@ -394,3 +408,59 @@ def materialize(snapshot: FrozenSnapshot, destination: Path) -> None:
     ):
         directory.chmod(0o555)
     destination.chmod(0o555)
+
+
+def materialize_review_input(value: ReviewInput, destination: Path) -> None:
+    """Render one complete reviewer cwd without reading archived host paths."""
+    if destination.is_symlink() or (
+        destination.exists()
+        and (not destination.is_dir() or any(destination.iterdir()))
+    ):
+        raise ValueError("review materialization requires a new or empty directory")
+    destination.mkdir(parents=True, exist_ok=True)
+    source = review_source(value)
+    if isinstance(value, ExecutedReviewInput):
+        _materialize(
+            source,
+            destination / "source",
+            {
+                "snapshot_id": value.snapshot_id,
+                "source_snapshot_id": source.snapshot_id,
+                "tests_are_user_supplied": False,
+                "executed_test_input": "../review-input.json",
+                "executed_log_directory": "../logs",
+            },
+        )
+        review_input = value.to_dict()
+        review_input["snapshot_id"] = value.snapshot_id
+        review_input["source"].pop("files")
+        review_input["source"].pop("diff")
+        for index, command in enumerate(value.executed_suite.commands, 1):
+            directory = destination / "logs" / str(index)
+            directory.mkdir(parents=True)
+            row = review_input["executed_suite"]["commands"][index - 1]
+            for name, log in (("stdout", command.stdout), ("stderr", command.stderr)):
+                relative = f"logs/{index}/{name}.bin"
+                path = destination / relative
+                path.write_bytes(log.content)
+                path.chmod(0o444)
+                row[name] = {
+                    "path": relative,
+                    "byte_count": log.byte_count,
+                    "sha256": log.sha256,
+                    "encoding": "raw bytes; may contain non-UTF-8 data",
+                }
+            directory.chmod(0o555)
+        (destination / "logs").chmod(0o555)
+    else:
+        # Keep the original v1 run_seat JSON and file bytes exactly.
+        materialize(source, destination / "source")
+        review_input = source.to_dict()
+        review_input.pop("files")
+        review_input.pop("diff")
+    for name, text in (
+        ("review-input.json", json.dumps(review_input, ensure_ascii=False)),
+        ("diff.patch", source.diff),
+    ):
+        (destination / name).write_text(text, encoding="utf-8")
+        (destination / name).chmod(0o444)

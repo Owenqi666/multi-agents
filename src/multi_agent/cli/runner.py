@@ -43,7 +43,11 @@ from multi_agent.core.events import (
     thaw_json,
 )
 from multi_agent.core.reports import assess
-from multi_agent.core.snapshot import FrozenSnapshot
+from multi_agent.core.review_input import (
+    ExecutedReviewInput,
+    ReviewInput,
+    review_source,
+)
 from multi_agent.store import ReviewStore
 from multi_agent.store.codec import encode_envelope
 
@@ -51,12 +55,17 @@ from .prompt import (
     CONFIRM_PROMPT,
     CONFIRM_SCHEMA,
     CONFIRM_VERSION,
+    EXECUTED_CONFIRM_PROMPT,
+    EXECUTED_CONFIRM_VERSION,
+    EXECUTED_REVIEW_PROMPT,
+    EXECUTED_REVIEW_VERSION,
     REVIEW_PROMPT,
     REVIEW_VERSION,
     targets_for,
     validate_confirmation,
 )
-from .snapshot import materialize
+from .review_inputs import load_review_input
+from .snapshot import materialize_review_input
 
 
 def now() -> str:
@@ -83,13 +92,12 @@ def metadata_for(store: ReviewStore, identifier: str) -> dict[str, Any]:
     return cast(dict[str, Any], thaw_json(store.load_review(identifier)))
 
 
-def snapshot_for(store: ReviewStore, identifier: str) -> FrozenSnapshot:
-    return FrozenSnapshot.from_dict(
-        cast(dict[str, Any], thaw_json(store.load_snapshot(identifier)))
-    )
+def snapshot_for(store: ReviewStore, identifier: str) -> ReviewInput:
+    return load_review_input(store, identifier)
 
 
-def ensure_external(directory: Path, snapshot: FrozenSnapshot) -> None:
+def ensure_external(directory: Path, snapshot: ReviewInput) -> None:
+    snapshot = review_source(snapshot)
     if snapshot.repository is not None:
         common = Path(snapshot.repository).resolve()
         root = common.parent if common.name == ".git" else common
@@ -97,15 +105,9 @@ def ensure_external(directory: Path, snapshot: FrozenSnapshot) -> None:
             raise ValueError("data/log directory must be outside the target repository")
 
 
-def new_review(
-    store: ReviewStore,
-    snapshot_id: str,
-    seats: tuple[SeatConfig, ...],
-    *,
-    timeout: float,
-    grace: float,
-    executables: dict[str, str],
-) -> str:
+def validate_review_settings(
+    seats: tuple[SeatConfig, ...], *, timeout: float, grace: float
+) -> None:
     if len(seats) not in (1, 2) or len({seat.model for seat in seats}) != len(seats):
         raise ValueError("select one or two distinct models")
     for seat in seats:
@@ -121,12 +123,28 @@ def new_review(
             raise ValueError("seat fields cannot contain NUL")
     if any(not math.isfinite(number) or number <= 0 for number in (timeout, grace)):
         raise ValueError("timeout and grace must be positive finite durations")
-    snapshot_for(store, snapshot_id)
+
+
+def new_review(
+    store: ReviewStore,
+    snapshot_id: str,
+    seats: tuple[SeatConfig, ...],
+    *,
+    timeout: float,
+    grace: float,
+    executables: dict[str, str],
+) -> str:
+    validate_review_settings(seats, timeout=timeout, grace=grace)
+    snapshot = snapshot_for(store, snapshot_id)
     identifier = uuid4().hex
     store.create_review(
         identifier,
         RoundState(
-            snapshot_id, REVIEW_VERSION, tuple(SeatState(seat) for seat in seats)
+            snapshot_id,
+            EXECUTED_REVIEW_VERSION
+            if isinstance(snapshot, ExecutedReviewInput)
+            else REVIEW_VERSION,
+            tuple(SeatState(seat) for seat in seats),
         ),
         {
             "kind": "review",
@@ -172,7 +190,13 @@ def new_confirmation(store: ReviewStore, parent_id: str) -> str:
     identifier = uuid4().hex
     store.create_review(
         identifier,
-        RoundState(parent.snapshot_id, CONFIRM_VERSION, selected),
+        RoundState(
+            parent.snapshot_id,
+            EXECUTED_CONFIRM_VERSION
+            if isinstance(snapshot_for(store, parent.snapshot_id), ExecutedReviewInput)
+            else CONFIRM_VERSION,
+            selected,
+        ),
         {
             **metadata,
             "kind": "confirmation",
@@ -335,8 +359,11 @@ async def execute_round(
     snapshot = snapshot_for(store, state.snapshot_id)
     ensure_external(directory, snapshot)
     confirmation = metadata["kind"] == "confirmation"
+    executed = isinstance(snapshot, ExecutedReviewInput)
+    review_version = EXECUTED_REVIEW_VERSION if executed else REVIEW_VERSION
+    confirm_version = EXECUTED_CONFIRM_VERSION if executed else CONFIRM_VERSION
     if state.prompt_template_version != (
-        CONFIRM_VERSION if confirmation else REVIEW_VERSION
+        confirm_version if confirmation else review_version
     ):
         raise ValueError("unsupported frozen prompt template version")
     parent_reports = (
@@ -384,16 +411,7 @@ async def execute_round(
         try:
             with TemporaryDirectory(prefix="multi-agent-review-") as temporary:
                 cwd = Path(temporary)
-                materialize(snapshot, cwd / "source")
-                review_input = snapshot.to_dict()
-                review_input.pop("files")
-                review_input.pop("diff")
-                for name, text in (
-                    ("review-input.json", json.dumps(review_input, ensure_ascii=False)),
-                    ("diff.patch", snapshot.diff),
-                ):
-                    (cwd / name).write_text(text, encoding="utf-8")
-                    (cwd / name).chmod(0o444)
+                materialize_review_input(snapshot, cwd)
                 targets = targets_for(parent_reports, key) if confirmation else []
                 if confirmation:
                     (cwd / "confirmation-targets.json").write_text(
@@ -499,8 +517,10 @@ async def execute_round(
                         seat.config.model, seat.config.effort, Permission.READ_ONLY, cwd
                     )
                 )
+                review_prompt = EXECUTED_REVIEW_PROMPT if executed else REVIEW_PROMPT
+                confirm_prompt = EXECUTED_CONFIRM_PROMPT if executed else CONFIRM_PROMPT
                 turn = await adapter.submit_turn(
-                    session, CONFIRM_PROMPT if confirmation else REVIEW_PROMPT
+                    session, confirm_prompt if confirmation else review_prompt
                 )
                 terminal: Completed | Error | None = None
                 process_exit: ProcessExited | None = None
@@ -710,6 +730,16 @@ def view_round(
             confirmation_round_id=child_id,
             confirmations=confirmations,
             unanswered_confirmations=missing_targets,
+        )
+    if state.prompt_template_version in (
+        EXECUTED_REVIEW_VERSION,
+        EXECUTED_CONFIRM_VERSION,
+    ):
+        result.update(
+            assessment_scope="historical_frozen_input",
+            source_current=None,
+            verification="unverified",
+            current_eligible=False,
         )
     if history:
         result["history"] = [
