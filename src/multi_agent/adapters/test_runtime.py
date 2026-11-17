@@ -308,7 +308,7 @@ class TaskTestRuntimeAdapter:
     def _check_executable(self) -> None:
         path = Path(self.policy.executable)
         before = path.lstat()
-        if before.st_size > 256 * 1024 * 1024:
+        if before.st_size > 512 * 1024 * 1024:
             raise TestProtocolError("test executable exceeds inspection byte limit")
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
         digest = hashlib.sha256()

@@ -210,7 +210,7 @@ def _binary_hash(path: Path) -> tuple[tuple[int, int], str]:
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         before = os.fstat(descriptor)
-        if not stat.S_ISREG(before.st_mode) or before.st_size > 256 * 1024 * 1024:
+        if not stat.S_ISREG(before.st_mode) or before.st_size > 512 * 1024 * 1024:
             raise ValueError("probe executable is not a bounded regular file")
         remaining = before.st_size
         digest = hashlib.sha256()
