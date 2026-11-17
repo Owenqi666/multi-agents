@@ -1,0 +1,108 @@
+{
+  "schema_version": 1,
+  "id": "T-0052",
+  "goal": "补齐需求规划、实现与候选展示的 CLI，接通同任务至多一次原范围返工，并以真实模块 CLI 验证修订后重新测试和审核的完整闭环。",
+  "baseline_commit": "e694d99a793cb079ac9b7fc1dc9aaef1bc78c64b",
+  "write_scope": [
+    "src/multi_agent/core/task_rework.py",
+    "src/multi_agent/core/task_events.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/task_codec.py",
+    "src/multi_agent/store/task_store.py",
+    "src/multi_agent/store/task_review_store.py",
+    "src/multi_agent/store/task_test_store.py",
+    "src/multi_agent/cli/task_rework.py",
+    "src/multi_agent/cli/task_context.py",
+    "src/multi_agent/cli/task_prompt.py",
+    "src/multi_agent/cli/task_runner.py",
+    "src/multi_agent/cli/task_test_inputs.py",
+    "src/multi_agent/cli/task_cli.py",
+    "src/multi_agent/cli/main.py",
+    "tests/unit/test_task_rework.py",
+    "tests/unit/test_task_rework_context.py",
+    "tests/unit/test_task_workflow_cli.py",
+    "tests/unit/runtime_fakes/task_workflow_cli.py",
+    "tests/replay/test_task_rework_replay.py",
+    "tests/replay/scenarios/task-rework/one-rework-late.json",
+    "tests/replay/scenarios/task-rework/failed-rework-retry-rejected.json",
+    "tests/replay/scenarios/task-rework/cancelled-rework-retry-rejected.json",
+    "docs/task-state.md",
+    "docs/task-workflow.md",
+    "docs/task-rework.md",
+    "docs/phase-two-development.md",
+    "docs/deliveries/T-0052.md",
+    "tasks/T-0052-workflow-rework.json"
+  ],
+  "depends_on": [
+    "T-0051"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and priority",
+      "definition": "原用户需求：新开一个阶段2窗口开始按开发顺序继续执行。2026-11-17调整：优先候选→执行测试→结果，再审核与一轮返工，保留检查、减少碎片化、按实际功能和整体百分比报告。本卡作为一个完整功能补齐S7/S8：task plan/run/show/rework与既有task-test/task-review分步组成可脚本化全链，不另造workflow引擎或持久配置表，不自动接受/合并、无阶段3/前端。T51已正常提交为e694d99a793cb079ac9b7fc1dc9aaef1bc78c64b；完整五步与正常hook均通过3242 unit/61 replay。本卡完成两轮Claude跨提供方文字复核（实际claude-opus-5-5、completed、exit0，effort未报告）；全部意见和共享接口澄清已落实。正式派发前按当前HEAD完成schema/dispatchable/ancestry/overlap审计；先用真实module CLI新task入口留下行为red，再实施。"
+    },
+    {
+      "name": "one rework policy",
+      "definition": "同一个task run、原TaskInput/rules/provenance/执行与派发policy。仅managed当前候选来源实际核验通过、审核报告齐全、assessment=needs_rework且无实质分歧、至少一个有verified完整引用的P0/P1问题，并且所有拟处理阻塞问题literal path均在原card和rules允许scope内且非protected，才可返工；单方有证据的阻塞意见可处理，不强制另一席重复提出。reference verified只证明引用准确，不冒宿主证明诊断。仅测试非零但缺可定位原范围问题、未核引用、范围不明或实质分歧明确交用户，不启动写进程。专用预留提交成功即消耗唯一返工轮次；失败/取消后交用户，不提供本轮技术重试；任何已含返工的任务后续普通Started/retry也拒绝。返工前普通失败重试保持。返工占原max_attempts预算，不提高预算，不将模型成功才当消费。"
+    },
+    {
+      "name": "immutable source and event",
+      "definition": "新core/task_rework.py定义frozen slots kw_only TaskReworkSource，字段固定：task_run_id:str, implementation_attempt:int, task_input_hash:str, candidate_commit:str, candidate_hash:str, task_history_length:int, task_history_hash:str, test_attempt:int, test_history_length:int, test_history_hash:str, review_round_id:str, review_snapshot_id:str, review_checkpoint_hash:str, assessment:JSONValue, version:int=1；assessment经freeze_json，source_hash=task_execution_hash(self)派生。candidate_hash绑定完整TaskCandidateFrozen，commit是新workspace起点，二者从已验outer输入得出并对当前值核对。source不重复128MiB审核输入或日志。新增frozen slots TaskReworkStarted(TaskAttemptStarted)，kind=task_rework_started，唯一新增kw_only source:TaskReworkSource。旧Started类型/字段/编码/hash保持。codec在普通isinstance分支之前编码新kind，decode_task_attempt按实际request[\"type\"]还原子类（event对象仍以kind命名）且类型校验，禁止静默降级。"
+    },
+    {
+      "name": "state transitions and no migration",
+      "definition": "集中转移表仅给AWAITING_DELIVERY增加新ReworkStarted；要求当前managed candidate_ready、source原attempt/commit/完整candidate/hash相符且全链无返工，然后同一个原子pair的Prepared。Prepared.start_commit必须为source.candidate_commit，task_baseline仍原baseline；其余完整准备链/停止/身份/policy/总budget复用。普通Started在已存在ReworkStarted时拒绝，封住FAILED/CANCELLED旁路。纯apply_task对旧attempt先HISTORY_ONLY（包括旧ReworkStarted），不能消费轮次或推进current；store的Started是控制请求，只能当前专用pair且双APPLIED，旧控制请求拒绝不写。旧runtime/diagnostic等观察仍HISTORY_ONLY入库，回放明确区分。无新TaskPhase、失败分类、表、SQL列或迁移：新request/event存在原JSON和history，唯一轮次由实际attempt request派生。更新docs/task-state.md转移表并同卡加pure/SQLite回放。"
+    },
+    {
+      "name": "atomic source checkpoints",
+      "definition": "TaskReviewStore新增load_task_rework_checkpoint(review_round_id:str)->JSONValue及内部同连接读取helper，返回冻结可序列化值，涵盖父round ID/完整RoundState、metadata、execution、完整history，以及confirmation为None或其ID/完整state/metadata/execution/history；None也进入hash。返回结构在两边共用，不从可变值拼不同checkpoint。新增reserve_task_rework_execution(run_id:str,started:TaskEnvelope,prepared:TaskEnvelope)->None。唯一BEGIN IMMEDIATE精确核source.task_run/current implementation/fullTaskInput hash/fullcandidate、当前test attempt和完整task/test H长度/hash、原snapshot存储完整payload的outer hash、上述review+confirmation checkpoint hash，确认轮从None变有也拒。source.assessment为已校验边界值，事务信任形状并核它绑定的实际checkpoint，不在store运行文件检查/schema/猜测。重算原冻结规则dispatch，再复用reserve_task_execution纯fold并原子写Started+Prepared两history。普通TaskStore.apply_task/reserve_task_attempt明确拒新控制事件，不能绕专用CAS。提交前失败全回滚；提交后异常保留记录，禁止自动二次启动。 固定checkpoint结构恰{version:1,review:ROUND,confirmation:ROUND|null}；ROUND恰{round_id,state,input_snapshot_id,parent_round_id,metadata,execution,history}。state=task_execution_value(实际RoundState)，input_snapshot_id/parent_round_id来自round_inputs实际列，metadata/execution是完整现存值，history=task_execution_value(完整有序tuple[(Envelope,Disposition)])；单一读事务并freeze_json。专用reserve还核父RoundState.snapshot_id与round_inputs.snapshot_id均为source.review_snapshot_id，父parent_round_id=None；outer内task/implementation/fullTaskInput/candidate/test与source和当前DB同一，存在confirmation其parent指父轮且snapshot一致，不能只有两个彼此无关联的合法hash。"
+    },
+    {
+      "name": "source boundary and inline handoff",
+      "definition": "新cli/task_rework.py提供prepare_task_rework_source(store:TaskReviewStore,review_round_id:str,lease:ExecutorLease)->TaskReworkSource。只接受父review/v2输入，复用T51 actual current inspector、runner真实assessment、原scope检查，并精确捕获前后同一完整task/test/review checkpoint；不以current_eligible（ready接受资格）代替needs_rework资格。调用方持executor lease→原review execution_lock。task_prompt保持implementation-managed-v1字节，新增rework-managed-v1；新可选kwonly参数rework_source:TaskReworkSource|None和rework_input:ExecutedReviewInput|None。返工payload含原完整TaskInput/provenance/dispatch/workspace、source、该outer的完整diff和全部失败命令的完整具名argv/manifest/stdout/stderr bytes（沿hex编码），不截断、不摘要替代。最终实际prompt UTF-8≤8MiB，含文本和hex膨胀，超限在启动前明确拒绝。意见保留来源，不说诊断已被宿主证明；只处理明确原范围阻塞项。保持内联输入和现原生读写权限，不增加模型外部context读取，不执行项目代码/测试/Git。 明确有效尺寸限制为最终prompt UTF-8和实际序列化context manifest各自≤8MiB（沿原control-file限制，包含重复内联与JSON转义），均在专用reserve之前检查；超限无Started/Prepared、返工未消费，已创建目录按现失败保留规则如实说明。不承诺所有小于该上限的prompt都可由OS argv发送；现Claude -p参数方式可能实际E2BIG，按真实启动失败及原runner结算，预留后的失败仍消费轮次；不扩adapters/probe范围。 明确边界异常ReworkRefused(ValueError)，构造ReworkRefused(kind:str,detail:str)，kind仅user_decision或budget_exhausted，供已知返工政策拒绝返回结构化结果：分歧/未核引用/范围不明或保护路径/无明确原范围阻塞项/唯一返工已用为user_decision，已知预算用满为budget_exhausted。source actual inspector/CAS/解码/身份失败仍原ValueError等宿主或输入错误，不伪装成政策结论。"
+    },
+    {
+      "name": "same managed controller",
+      "definition": "task_context新增prepare_task_rework_launch(database_path,task_run_id,planning_run_id,review_round_id,*,repository,directory,unavailable=frozenset())->contextmanager[TaskLaunch]。普通prepare_task_launch保留原PlanningStore构造与行为。返工用TaskReviewStore，在executor lease→review lock下实际核源/owner/原provenance，创建DB同parent新业务root，通过create_workspace(...start_commit=source.candidate_commit)创建新worktree，原baseline不变，专用reserve后才发fresh TaskLaunch；两锁持到实际runner结算。_create_preparation仅窄加返工参数/专用reserve选择，原分支不改语义。inspect_task_context从已持久request.source和已绑定snapshot重建精确prompt，不在新attempt开始后重新要求旧candidate为current，也不刷新授权checkpoint。execute_task_attempt和内部_execute仅增加kwonly rework_from:str|None，选择对应launch context，其余同一shielded控制器/取消/事件到达顺序/封存/异常结算复用。原policy和dispatch固定，CLI默认沿父attempt已冻结unavailable声明，不凭运行失败猜不可用。 rework_from非None时显式policy/dispatch_policy非None一律拒绝，不能忽略覆盖。unavailable缺省空参数表示沿父attempt.decision.unavailable_models；调用者非空且与父声明不同则拒绝，不以默认空清除已冻结声明。新source只在预留前准备；cold inspect只load_review_input(已绑定outerID)重建prompt，不再跑current source gate。scope/保护路径、预算、执行文件身份与prompt/manifest尺寸等可预见拒绝均在reserve前；来源变化或真实spawn失败保留实际事实。"
+    },
+    {
+      "name": "minimal CLI workflow",
+      "definition": "新增task命名空间，子命令plan/run/show/rework；旧顶层run仍为阶段1审核，task-test/task-review保持。task plan冻结明确repository/baseline的rules和UTF-8需求、user_declared decisions/dependencies，创建PlanningInput并按Claude draft→Codex review调用现runner；问题/失败/范围修订停并展示，模型不能代用户回答。task run PLAN_ID核已验READY规划并bind，执行单实现者，实际delivery合格后freeze候选；不自动测试/审核，后续沿既有明确命令。task show只读现存DB、不创建/迁移/恢复runtime，显示原input/request/reported/attempt/current候选/test/review/下一步，关联按实际DB坐标不按目录猜。task rework ROUND_ID从真实父输入导出task/plan/repository，执行一次返工并freeze新候选，输出必须新test/newreview的下一步；不复用旧证据。Ctrl-C接现stop Event，等实际清理后130；缺停止事实保持unknown且不重派。现settled初始失败可明确重试新root；返工失败不允许重试。 固定公共API为task_cli.add_parser(commands)、main(args)、view_task(database_path,*,planning_run_id=None,task_run_id=None,history=False)。固定命令：task plan --database DB --repository REPO --baseline COMMITISH --requirements FILE --directory NEWROOT [--declarations JSONFILE] [--draft MODEL EFFORT] [--plan-review MODEL EFFORT] [--max-attempts N --timeout SECONDS --grace SECONDS --codex-bin PROGRAM --claude-bin PROGRAM]；或task plan --database DB --retry PLAN_ID（与新输入/策略参数互斥）。新plan默认claude-opus-5-5/high draft、gpt-6.1-sol/high review，max_attempts=2、timeout180/grace2、程序codex/claude，均仅请求。声明JSON严格无重复键/未知字段，顶层恰dependencies/decisions，内容复用既有user_declared验证，严格UTF8需求沿现1MiB边界。plan retry复用旧input/root/policy，AWAITING_REVIEW续review；REVISION_REQUIRED重draft后review；FAILED/CANCELLED按现阶段及可用draft续review或draft；READY/BOUND不重跑，partial Prepared/unknown owner/运行中不猜恢复，新增答案需newplan。task run PLAN_ID --database DB --repository REPO --directory NEWROOT [--implementation PROVIDER MODEL EFFORT] [--fallback PROVIDER MODEL EFFORT重复] [--task-type NAME] [上述budget/time/bin flags]；--retry与新策略flags互斥，只复用plan.bound_task_run_id，FAILED/CANCELLED且无返工/停止合格/预算足够才新尝试。provider=codex或claude-code并显式映射runtime claude。实现默认max_attempts=2（含返工），timeout180/grace2，未指定implementation取原rules默认。fallback按原规则/顺序选择；明确retry仅从实际MODEL_UNAVAILABLE终态累计所请求provider/model为不可用，认证/超时不猜，不自动循环启动。task rework ROUND_ID --database DB --directory NEWROOT不接受模型/意见/预算覆盖。task show --database DB (--plan ID|--task ID) [--history]。可执行名字shutil.which后冻结真实文件。新增TaskReviewStore.planning_run_for_task(task_run_id)->str读取既有task_planning_provenance并核planning.bound_task_run_id，不新表。返回共同最小字段operation/planning_run_id/task_run_id/phase/implementation_attempt/candidate/verification/next_action/details；不适用null，plan附card/questions/attempts/budget，task附attempts/tests/reviews/budget/rework_used，rework附source_review_round_id/parent_candidate。next_action用结构化kind和IDs，不拼shell命令。退出0为本操作目标完成或show成功读取，1正常负向/不完整，2宿主/输入错误，130实际结算后的SIGINT；run/rework候选verified绝不表示已测/已审/已接受。 candidate固定为完整commit字符串或null；next_action固定{kind,planning_run_id,task_run_id,implementation_attempt,test_attempt,review_round_id,detail}，不适用标null，detail人类文本。已知总预算耗尽在启动/预留前返回1、kind=budget_exhausted且zero launch/zero新pair；仍保留核心事务的实际预算门禁。 拒绝输出规则固定：ReworkRefused和CLI已知预算不足→stdout结构化结果、exit1、next_action.kind按user_decision或budget_exhausted；prompt/manifest超限、source/CAS变化、身份/解码/宿主错误→exit2并stderr诊断/原notes，stdout不要求JSON，因此没有next_action。已有task-test的suite删减/改序拒绝沿原exit2+stderr，不改变旧输出合同。库调用rework_from与policy/dispatch/unavailable冲突为ValueError；CLI不接受这些覆盖flag，argparse exit2，均无JSON next_action。测试分别断言所属层次，不给既有工具新增错误协议。"
+    },
+    {
+      "name": "compatibility and functional verification",
+      "definition": "新源/测试/回放全部在卡scope；不改adapters、原nativeprobe合同、workspaces/candidate Git模型、旧v1prompt/hash、迁移、既有测试断言或受保护检查配置。真实module CLI主用例必须从需求plan开始，planning和implementation也经fake runtime events（不能用T50/T51的synthetic pair代替），然后task-test真实微型build/test、T51 fake reviewers、一次前端Claude返工、新candidate、新完整tests/review、cold show；GPT仍能审核前端。新增new fake wrapper可委托旧transport但不改旧fake。先在T51基线留行为red，再实现。所有check仅scripts/verify.sh，完整五步+正常hook；状态/JSON新事件pure和SQLite各重复回放。实际原生写权限仍待S9具体方案+用户终端，不运行产品真实CLI/model/probe。交付按实际可用操作/剩余S9和阶段2整体百分比，不按卡数宣称完成。 新fake源码只在既有scope的.py文件保存，测试复制到临时目录时加当前sys.executable shebang并chmod可执行，相邻JSON控制角色/轮次；--bin使用该具体入口，不在scope外新增repo可执行文件，不放宽产品env白名单。"
+    },
+    {
+      "name": "same complete suite after rework",
+      "definition": "修订后的新test attempt继续原先声明的完整suite，不可缩为合法registry subset。cli/task_test_inputs.prepare_task_test_input对TaskReworkStarted窄分支：局部load_review_input(source.review_snapshot_id)核v2，比较新解析的完整有序NamedCommand元组与old.executed_suite.prepared.checkout.input.commands完全相同（name/executable/args/order，不排序、不按argv去重）；newcandidate/implementation/test/H保持新值，declaration_source是本次真实声明可不同。TaskTestStore._reservation_source在原同事务中加同条件业务门禁：读取已有snapshot可信payload、核完整outer hash，再canonical比较该commands与value.commands。不导入CLI、不运行schema/文件检查、不改观察事件入口；因此所有suite/command预留均受约束，旧观察仍历史/事实可记录。普通实现保持T48/T50行为和TaskTestInput字节；现cold inspector复用同prepare边界自然核。 比较声明层原始NamedCommand(name,executable,args)，executable是冻结rules注册表的字面值，不比较which结果、新worktree内绝对路径或新文件identity；边界和store统一task_execution_json编码比较。"
+    }
+  ],
+  "deliverables": [
+    "可脚本化task plan/run/show/rework，加现task-test/task-review形成需求→规划→实现→固定候选→完整测试→审核→一次返工→新测试审核的完整CLI闭环。",
+    "返工只用原范围/规则/预算和已核来源，原子一次限制、失败/取消后的普通retry旁路拒绝，旧证据保留且不能推进新候选。",
+    "真实模块CLI fake全链、具体故障和纯/SQLite回放；完整verify/正常hook/精确提交证据，明确原生验收仍待S9。"
+  ],
+  "acceptance_criteria": [
+    "test_phase_two_end_to_end：真实module CLI从需求和基线rules起，Claude草拟→GPT复核→真实fake implementation→candidate→build/test→review→cold show，规划/实现非synthetic pair。",
+    "test_frontend_rework_uses_claude：原前端规则贯穿实现和返工；GPT可审核；返工worktree从exact旧candidate，新candidate.parent=旧candidate，累计diff/rules仍原baseline。",
+    "test_second_rework_is_refused：一次reserve成功即消耗，成功/失败/取消均不能第二返工，普通Started/retry不能旁路；预算不增加。",
+    "test_task_rework_source_cas：task/test/review/confirmation current/fullH变化和None→新confirmation均拒，无半pair；提交后错误保留真实消费且未启动模型。",
+    "test_incomplete_or_disputed_review_requires_user：分歧、未核引用、范围不明/越界/保护路径、test-only failure无明确问题不启动；明确原范围单方P0/P1可处理。",
+    "test_new_candidate_requires_new_evidence：新implementation/test/review坐标；旧review历史保留/current false，不沿旧test或snapshot作为修订后通过。",
+    "test_task_rework_inline_handoff：完整原卡/准确diff/意见/具名失败命令及binary logs进入有界8MiB实际prompt，超限不截断不启动；旧implementation v1精确字节兼容。 prompt或实际manifest超限必须在reserve前拒绝、无Started/Prepared、rework_used=false；上限不是OS argv可发送保证。",
+    "test_task_workflow_cancellation_and_recovery：实际CLI SIGINT结算后130并显示保留事实；未知停止拒续，明确初始失败重试使用新root且原policy，返工后拒retry。",
+    "新独立replay场景pure/SQLite各两次，覆盖唯一返工、旧attempt迟到HISTORY_ONLY和失败/取消后普通retry拒绝；不改旧集合或断言。",
+    "完整scripts/verify.sh lint format typecheck unit replay和正常提交hook通过；实际scope/保护文件/旧golden审计及按功能完成百分比交付。",
+    "test_task_workflow_cli_contracts：针对真实公开CLI边界，覆盖plan --retry阶段续跑/冻结输入、run --retry实际MODEL_UNAVAILABLE累计和ordered fallback、declarations严格解析、provider映射与0/1/2退出；覆盖max_attempts用满后返工退出1/next_action=budget_exhausted且无新pair/launch，不扩大适配器故障矩阵。",
+    "test_rework_keeps_complete_test_suite：CLI拒删减/改序原套件且zero launch；直接store reserve同样拒绝无半写；同argv异名不去重，精确原有序commands配新declaration_source可正常执行，新candidate坐标不得仍用旧值。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

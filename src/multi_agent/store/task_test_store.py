@@ -3,10 +3,12 @@
 import sqlite3
 import stat
 from pathlib import Path
-from typing import Self, cast
+from typing import Any, Self, cast
 
 from multi_agent.core import Disposition, transitions
-from multi_agent.core.task_execution import task_execution_hash
+from multi_agent.core.events import thaw_json
+from multi_agent.core.task_events import TaskReworkStarted
+from multi_agent.core.task_execution import task_execution_hash, task_execution_json
 from multi_agent.core.task_state import TaskState
 from multi_agent.core.task_test_events import (
     TaskTestAttemptStarted,
@@ -418,6 +420,18 @@ class TaskTestStore(PlanningStore):
                 raise ValueError(
                     "test command differs from the original approved registry"
                 )
+        if isinstance(current.request, TaskReworkStarted):
+            source = current.request.source
+            payload = cast(
+                dict[str, Any], thaw_json(self.load_snapshot(source.review_snapshot_id))
+            )
+            if task_execution_hash(payload) != source.review_snapshot_id:
+                raise ValueError("rework review input changed before test reservation")
+            required = payload["executed_suite"]["prepared"]["checkout"]["input"][
+                "commands"
+            ]
+            if task_execution_json(value.commands) != task_execution_json(required):
+                raise ValueError("rework tests must retain the complete original suite")
 
     @staticmethod
     def _reservation_cas(

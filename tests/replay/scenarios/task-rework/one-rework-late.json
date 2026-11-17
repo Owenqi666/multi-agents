@@ -1,0 +1,21 @@
+{
+  "id": "one-rework-late",
+  "description": "Trusted synthetic source; one rework, old observations retained and old control rejected only by the store boundary.",
+  "steps": [
+    {"operation":"reserve","phase":"implementing","runtime_status":"running"},
+    {"operation":"observe","label":"old-completed","attempt":1,"event":"completed","result":{"late":true},"disposition":"history_only","phase":"implementing","runtime_status":"running"},
+    {"operation":"old_control","label":"old-control","phase":"implementing","runtime_status":"running"},
+    {"operation":"observe","label":"completed","attempt":2,"event":"completed","result":{"fixed":true},"disposition":"applied","phase":"awaiting_delivery","runtime_status":"succeeded"},
+    {"operation":"observe","label":"exit","attempt":2,"event":"process_exited","exit_code":-15,"disposition":"applied","phase":"awaiting_delivery","runtime_status":"succeeded"},
+    {"operation":"observe","label":"reconciled","attempt":2,"event":"task_reconciled","digest":"fixed-digest","disposition":"applied","phase":"awaiting_delivery","runtime_status":"succeeded"},
+    {"operation":"second_rework","phase":"awaiting_delivery","runtime_status":"succeeded"}
+  ],
+  "expected": {
+    "phase":"awaiting_delivery","runtime_status":"succeeded","failure_category":null,"detail":null,"result":{"fixed":true},"exit_code":-15,"reconciliation":"reconciled",
+    "current_events":["started","prepared","completed","exit","reconciled"],
+    "history": {
+      "pure":[["started","applied"],["prepared","applied"],["old-completed","history_only"],["old-control","history_only"],["completed","applied"],["exit","applied"],["reconciled","applied"]],
+      "sqlite":[["started","applied"],["prepared","applied"],["old-completed","history_only"],["completed","applied"],["exit","applied"],["reconciled","applied"]]
+    }
+  }
+}

@@ -36,6 +36,7 @@ from multi_agent.core.task_events import (
     TaskEvidenceRejected,
     TaskExecutionPrepared,
     TaskReconciled,
+    TaskReworkStarted,
     TaskScopeBlocked,
 )
 from multi_agent.core.task_execution import (
@@ -44,6 +45,7 @@ from multi_agent.core.task_execution import (
     TaskExecutionPolicy,
     task_execution_value,
 )
+from multi_agent.core.task_rework import TaskReworkSource
 from multi_agent.core.task_state import TaskAttempt, TaskInput
 from multi_agent.core.tasks import (
     FrozenProjectRules,
@@ -177,6 +179,35 @@ def _started(value: dict[str, Any]) -> TaskAttemptStarted:
     )
 
 
+def _rework_started(value: dict[str, Any]) -> TaskReworkStarted:
+    source = value["source"]
+    return TaskReworkStarted(
+        _decision(value["decision"]),
+        value["worktree"],
+        value["prompt_template_version"],
+        value["started_at"],
+        value["environment"],
+        value["managed"],
+        source=TaskReworkSource(
+            task_run_id=source["task_run_id"],
+            implementation_attempt=source["implementation_attempt"],
+            task_input_hash=source["task_input_hash"],
+            candidate_commit=source["candidate_commit"],
+            candidate_hash=source["candidate_hash"],
+            task_history_length=source["task_history_length"],
+            task_history_hash=source["task_history_hash"],
+            test_attempt=source["test_attempt"],
+            test_history_length=source["test_history_length"],
+            test_history_hash=source["test_history_hash"],
+            review_round_id=source["review_round_id"],
+            review_snapshot_id=source["review_snapshot_id"],
+            review_checkpoint_hash=source["review_checkpoint_hash"],
+            assessment=source["assessment"],
+            version=source["version"],
+        ),
+    )
+
+
 def _reconciliation_payload(event: TaskReconciled) -> dict[str, Any]:
     value: dict[str, Any] = {
         "worktree_digest": event.worktree_digest,
@@ -275,6 +306,17 @@ def _candidate(value: dict[str, Any]) -> TaskCandidateFrozen:
 
 
 def _event_payload(event: TaskEvent) -> dict[str, Any]:
+    if isinstance(event, TaskReworkStarted):
+        return {
+            "type": event.kind,
+            "decision": asdict(event.decision),
+            "worktree": event.worktree,
+            "prompt_template_version": event.prompt_template_version,
+            "started_at": event.started_at,
+            "environment": thaw_json(event.environment),
+            "managed": event.managed,
+            "source": task_execution_value(event.source),
+        }
     if isinstance(event, TaskAttemptStarted):
         value: dict[str, Any] = {
             "type": event.kind,
@@ -341,6 +383,8 @@ def _error(value: dict[str, Any]) -> Error:
 
 def _event(value: dict[str, Any]) -> TaskEvent:
     kind = value["type"]
+    if kind == TaskReworkStarted.kind:
+        return _rework_started(value)
     if kind == TaskAttemptStarted.kind:
         return _started(value)
     if kind == TaskExecutionPrepared.kind:
@@ -431,8 +475,11 @@ def encode_task_attempt(attempt: TaskAttempt) -> str:
 
 def decode_task_attempt(encoded: str) -> TaskAttempt:
     value = json.loads(encoded)
+    request = _event(value["request"])
+    if not isinstance(request, TaskAttemptStarted):
+        raise TypeError("task attempt request must be a task start event")
     return TaskAttempt(
-        _started(value["request"]),
+        request,
         _runtime(value["runtime"]),
         _reconciled(value["reconciliation"])
         if value["reconciliation"] is not None

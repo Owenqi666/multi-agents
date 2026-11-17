@@ -59,6 +59,7 @@ from .task_events import (
     TaskEvidenceRejected,
     TaskExecutionPrepared,
     TaskReconciled,
+    TaskReworkStarted,
     TaskScopeBlocked,
 )
 from .task_execution import (
@@ -274,6 +275,10 @@ def _task_start(
     event = envelope.event
     assert isinstance(event, TaskAttemptStarted)
     current = state.current_attempt
+    if any(
+        isinstance(attempt.request, TaskReworkStarted) for attempt in state.attempts
+    ):
+        raise ValueError("task has already consumed its only rework")
     if any(attempt.request.managed != event.managed for attempt in state.attempts):
         raise ValueError("managed and legacy task attempts cannot share a chain")
     if event.managed:
@@ -310,6 +315,30 @@ def _task_start(
     )
 
 
+def _task_rework_start(
+    state: TaskState, envelope: TaskEnvelope
+) -> tuple[TaskState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskReworkStarted)
+    current = state.current_attempt
+    candidate = state.current_candidate
+    source = event.source
+    if (
+        current is None
+        or not current.request.managed
+        or not event.managed
+        or not state.candidate_ready
+        or candidate is None
+        or source.implementation_attempt != current.number
+        or source.candidate_commit != candidate.delivery.candidate
+        or source.candidate_hash != task_execution_hash(candidate)
+        or event.decision.unavailable_models
+        != current.request.decision.unavailable_models
+    ):
+        raise ValueError("task rework source differs from the current candidate")
+    return _task_start(state, envelope)
+
+
 def _task_prepare(
     state: TaskState, envelope: TaskEnvelope
 ) -> tuple[TaskState, Disposition]:
@@ -326,6 +355,11 @@ def _task_prepare(
     if state.phase != TaskPhase.IMPLEMENTING or current.events != (current.request,):
         raise ValueError("task preparation must immediately follow a managed start")
     workspace = event.workspace
+    if (
+        isinstance(current.request, TaskReworkStarted)
+        and workspace.start_commit != current.request.source.candidate_commit
+    ):
+        raise ValueError("task rework workspace must start from its source candidate")
     expected_provider = {"codex": "codex", "claude-code": "claude"}[
         current.request.decision.choice.provider
     ]
@@ -620,7 +654,11 @@ _TASK_TRANSITIONS: dict[TaskPhase, dict[type[TaskEvent], TaskTransition | None]]
     TaskPhase.READY: {TaskAttemptStarted: _task_start},
     TaskPhase.IMPLEMENTING: _TASK_ACTIVE,
     TaskPhase.CANCELLING: {**_TASK_ACTIVE, ProcessExited: _task_exit},
-    TaskPhase.AWAITING_DELIVERY: {**_TASK_CLOSED, TaskScopeBlocked: _task_scope_block},
+    TaskPhase.AWAITING_DELIVERY: {
+        **_TASK_CLOSED,
+        TaskScopeBlocked: _task_scope_block,
+        TaskReworkStarted: _task_rework_start,
+    },
     TaskPhase.FAILED: {**_TASK_CLOSED, TaskAttemptStarted: _task_start},
     TaskPhase.CANCELLED: {**_TASK_CLOSED, TaskAttemptStarted: _task_start},
     TaskPhase.PLANNING_REQUIRED: {

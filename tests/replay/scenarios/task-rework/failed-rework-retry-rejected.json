@@ -1,0 +1,20 @@
+{
+  "id":"failed-rework-retry-rejected",
+  "description":"A reserved rework fails; ordinary retry and second rework cannot erase or bypass its consumed allowance.",
+  "steps":[
+    {"operation":"reserve","phase":"implementing","runtime_status":"running"},
+    {"operation":"observe","label":"failure","attempt":2,"event":"error","detail":"failed rework","disposition":"applied","phase":"failed","runtime_status":"failed"},
+    {"operation":"observe","label":"exit","attempt":2,"event":"process_exited","exit_code":1,"disposition":"applied","phase":"failed","runtime_status":"failed"},
+    {"operation":"observe","label":"reconciled","attempt":2,"event":"task_reconciled","digest":"failed-digest","disposition":"applied","phase":"failed","runtime_status":"failed"},
+    {"operation":"retry","phase":"failed","runtime_status":"failed"},
+    {"operation":"second_rework","phase":"failed","runtime_status":"failed"}
+  ],
+  "expected":{
+    "phase":"failed","runtime_status":"failed","failure_category":null,"detail":"failed rework","result":null,"exit_code":1,"reconciliation":"reconciled",
+    "current_events":["started","prepared","failure","exit","reconciled"],
+    "history":{
+      "pure":[["started","applied"],["prepared","applied"],["failure","applied"],["exit","applied"],["reconciled","applied"]],
+      "sqlite":[["started","applied"],["prepared","applied"],["failure","applied"],["exit","applied"],["reconciled","applied"]]
+    }
+  }
+}

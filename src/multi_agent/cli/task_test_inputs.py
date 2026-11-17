@@ -4,6 +4,9 @@ This boundary is read-only. Its result records this preparation's source and
 history checkpoint; it does not reserve a test attempt or grant execution rights.
 """
 
+from multi_agent.core.review_input import ExecutedReviewInput
+from multi_agent.core.state import Disposition
+from multi_agent.core.task_events import TaskReworkStarted
 from multi_agent.core.task_execution import task_execution_hash, task_execution_json
 from multi_agent.core.task_test_input import TaskTestInput
 from multi_agent.store.planning_store import PlanningStore
@@ -63,6 +66,29 @@ def prepare_task_test_input(
             f"test command names are not in the frozen registry: {unknown!r}"
         )
     commands = tuple(registry[name] for name in required_commands)
+    # _capture binds the exact current state to this complete applied history.
+    # An old or HISTORY_ONLY control request cannot identify the current rework.
+    rework = next(
+        (
+            envelope.event
+            for envelope, disposition in guard.history
+            if envelope.attempt == attempt
+            and disposition == Disposition.APPLIED
+            and isinstance(envelope.event, TaskReworkStarted)
+        ),
+        None,
+    )
+    if rework is not None:
+        from .review_inputs import load_review_input
+
+        original = load_review_input(store, rework.source.review_snapshot_id)
+        if not isinstance(original, ExecutedReviewInput):
+            raise TypeError("rework tests require their frozen executed review input")
+        expected = original.executed_suite.prepared.checkout.input.commands
+        if task_execution_json(commands) != task_execution_json(expected):
+            raise ValueError(
+                "rework tests must retain the complete original ordered suite"
+            )
     candidate = inspect_task_candidate(store, task_run_id, attempt, lease)
     if candidate != guard.state.current_candidate:
         raise ValueError("test candidate changed from the original task history")

@@ -58,7 +58,12 @@ from multi_agent.core.task_execution import (
 from multi_agent.core.task_state import TaskPhase, TaskState
 from multi_agent.store.planning_store import PlanningStore
 
-from .task_context import TaskLaunch, _database, prepare_task_launch
+from .task_context import (
+    TaskLaunch,
+    _database,
+    prepare_task_launch,
+    prepare_task_rework_launch,
+)
 from .task_evidence import (
     TaskExecutionBinding,
     TaskExecutionManifest,
@@ -832,6 +837,8 @@ async def _execute(
     unavailable: frozenset[tuple[str, str]],
     intent: asyncio.Event,
     stop: asyncio.Event | None,
+    *,
+    rework_from: str | None = None,
 ) -> _Outcome:
     execution: _Execution | None = None
     state: TaskState | None = None
@@ -840,16 +847,30 @@ async def _execute(
             database = _database(database_path)
             with PlanningStore(database.path) as store:
                 return _Outcome(store.load_task(task_run_id), None)
-        with prepare_task_launch(
-            database_path,
-            task_run_id,
-            planning_run_id,
-            repository=repository,
-            directory=directory,
-            policy=policy,
-            dispatch_policy=dispatch_policy,
-            unavailable=unavailable,
-        ) as launch:
+        if rework_from is None:
+            context = prepare_task_launch(
+                database_path,
+                task_run_id,
+                planning_run_id,
+                repository=repository,
+                directory=directory,
+                policy=policy,
+                dispatch_policy=dispatch_policy,
+                unavailable=unavailable,
+            )
+        else:
+            if policy is not None or dispatch_policy is not None:
+                raise ValueError("rework cannot override execution or dispatch policy")
+            context = prepare_task_rework_launch(
+                database_path,
+                task_run_id,
+                planning_run_id,
+                rework_from,
+                repository=repository,
+                directory=directory,
+                unavailable=unavailable,
+            )
+        with context as launch:
             execution = _Execution(launch, task_run_id, intent, stop)
             await execution.run()
             try:
@@ -884,8 +905,11 @@ async def execute_task_attempt(
     dispatch_policy: TaskDispatchPolicy | None = None,
     unavailable: frozenset[tuple[str, str]] = frozenset(),
     stop: asyncio.Event | None = None,
+    rework_from: str | None = None,
 ) -> TaskState:
     """Run one fresh attempt; caller cancellation waits for the owned worker."""
+    if rework_from is not None and (policy is not None or dispatch_policy is not None):
+        raise ValueError("rework cannot override execution or dispatch policy")
     intent = asyncio.Event()
     worker = _task(
         _execute(
@@ -899,6 +923,7 @@ async def execute_task_attempt(
             unavailable,
             intent,
             stop,
+            rework_from=rework_from,
         )
     )
     cancelled: asyncio.CancelledError | None = None

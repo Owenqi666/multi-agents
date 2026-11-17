@@ -88,6 +88,7 @@ def load_snapshot(store: ReviewStore, identifier: str) -> FrozenSnapshot:
 
 
 def parser() -> argparse.ArgumentParser:
+    from .task_cli import add_parser as add_task_parser
     from .task_review_cli import add_parser as add_task_review_parser
     from .task_test_cli import add_parser as add_task_test_parser
 
@@ -148,6 +149,7 @@ def parser() -> argparse.ArgumentParser:
     benchmark.add_argument("arguments", nargs=argparse.REMAINDER)
     add_task_test_parser(commands)
     add_task_review_parser(commands)
+    add_task_parser(commands)
     return result
 
 
@@ -265,6 +267,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "task":
+        from .task_cli import main as task_main
+
+        return task_main(args)
     if args.command == "task-review":
         from .task_review_cli import main as task_review_main
 

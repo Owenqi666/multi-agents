@@ -29,11 +29,14 @@
 | failed/cancelled | TaskAttemptStarted，下一编号，最近核对确认停止且已检查工作区 | implementing，新尝试；保留旧尝试和历史 |
 | awaiting_delivery | 首个真实 ProcessExited | 保存原始退出码；成功终态且存在退出证据才 delivery_ready=true |
 | awaiting_delivery | TaskScopeBlocked，须delivery_ready | planning_required，保留原因和required_paths，同卡不能继续启动 |
+| awaiting_delivery（managed） | TaskReworkStarted，当前候选可核验、原来源精确绑定、尚无返工、原总预算允许 | implementing，新attempt从当前候选开始；与Prepared同事务预留并消费唯一返工轮次 |
 | 终结后 | 重复终态/迟到消息或重复取消 | HISTORY_ONLY |
 | 已有exit_code后 | 第二个 ProcessExited | HISTORY_ONLY，不能把第一次退出码洗掉 |
 | planning_required | 重复范围阻塞、运行时观察、核对 | HISTORY_ONLY；新的任务卡需另行规划/建立运行 |
 
 取消中重复 CancelRequested 只留历史。当前编号重复 start 是错误，不能把并发重复启动当幂等成功；未来尚未开始编号同样是错误。**attempt < current 的所有事件先路由为 HISTORY_ONLY**，包括旧 start、核对、范围阻塞和退出；不会更新旧聚合记录或当前状态。
+
+T52 的返工请求是独立的 `TaskReworkStarted` 子类，旧 Started 编码不变。已有返工后，普通 Started 在 failed/cancelled 等阶段也被拒绝，不能从原 baseline 绕过一次限制。预留即消费，失败或取消不归还。纯 reducer 对旧控制请求仍先作 HISTORY_ONLY；存储中的 managed Started 和 TaskReworkStarted 控制请求须经当前原子 pair 预留，旧控制请求拒绝不写。legacy Started 入口保持原行为，旧运行时观察仍正常留历史。返工后的 Prepared 要求 start_commit 为已绑定旧候选，task_baseline 和原 policy 保持；没有新 phase、SQL 列或迁移。完整来源与准入见 [返工说明](task-rework.md)。
 
 ## 终态、退出和停止未确认
 

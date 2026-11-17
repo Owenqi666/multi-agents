@@ -1,0 +1,21 @@
+{
+  "id":"cancelled-rework-retry-rejected",
+  "description":"Accepted cancellation preserves actual exit and reconciliation, consumes rework, and retains an old late result only in history.",
+  "steps":[
+    {"operation":"reserve","phase":"implementing","runtime_status":"running"},
+    {"operation":"observe","label":"cancel","attempt":2,"event":"cancel_requested","disposition":"applied","phase":"cancelling","runtime_status":"cancelling"},
+    {"operation":"observe","label":"exit","attempt":2,"event":"process_exited","exit_code":-15,"disposition":"applied","phase":"cancelled","runtime_status":"failed"},
+    {"operation":"observe","label":"reconciled","attempt":2,"event":"task_reconciled","digest":"cancelled-digest","disposition":"applied","phase":"cancelled","runtime_status":"failed"},
+    {"operation":"observe","label":"old-completed","attempt":1,"event":"completed","result":{"late":true},"disposition":"history_only","phase":"cancelled","runtime_status":"failed"},
+    {"operation":"retry","phase":"cancelled","runtime_status":"failed"},
+    {"operation":"second_rework","phase":"cancelled","runtime_status":"failed"}
+  ],
+  "expected":{
+    "phase":"cancelled","runtime_status":"failed","failure_category":"cancelled","detail":null,"result":null,"exit_code":-15,"reconciliation":"reconciled",
+    "current_events":["started","prepared","cancel","exit","reconciled"],
+    "history":{
+      "pure":[["started","applied"],["prepared","applied"],["cancel","applied"],["exit","applied"],["reconciled","applied"],["old-completed","history_only"]],
+      "sqlite":[["started","applied"],["prepared","applied"],["cancel","applied"],["exit","applied"],["reconciled","applied"],["old-completed","history_only"]]
+    }
+  }
+}

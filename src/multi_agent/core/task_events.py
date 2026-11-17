@@ -10,6 +10,7 @@ from .task_execution import (
     TaskExecutionContext,
     TaskExecutionPolicy,
 )
+from .task_rework import TaskReworkSource
 from .workspaces import WorkspaceDelivery, WorkspaceRecord
 
 
@@ -25,6 +26,12 @@ class TaskAttemptStarted:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "environment", freeze_json(self.environment))
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TaskReworkStarted(TaskAttemptStarted):
+    kind: ClassVar[str] = "task_rework_started"
+    source: TaskReworkSource
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,6 +103,7 @@ class TaskDiagnostic:
 
 type TaskEvent = (
     TaskAttemptStarted
+    | TaskReworkStarted
     | TaskExecutionPrepared
     | TaskEnvironmentObserved
     | TaskEvidenceRejected

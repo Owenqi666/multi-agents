@@ -12,6 +12,7 @@ from multi_agent.core.task_events import (
     TaskCandidateFrozen,
     TaskEnvelope,
     TaskExecutionPrepared,
+    TaskReworkStarted,
     TaskScopeBlocked,
 )
 from multi_agent.core.task_execution import (
@@ -68,6 +69,8 @@ class TaskStore(ReviewStore):
         )
 
     def apply_task(self, run_id: str, envelope: TaskEnvelope) -> Disposition:
+        if isinstance(envelope.event, TaskReworkStarted):
+            raise TypeError("task rework requires its dedicated atomic reservation")
         if isinstance(envelope.event, (TaskExecutionPrepared, TaskCandidateFrozen)) or (
             isinstance(envelope.event, TaskAttemptStarted) and envelope.event.managed
         ):
@@ -123,6 +126,8 @@ class TaskStore(ReviewStore):
         expected_history_hash: str,
     ) -> None:
         """Reserve one managed attempt and its exact inputs in one transaction."""
+        if isinstance(started.event, TaskReworkStarted):
+            raise TypeError("task rework requires its dedicated atomic reservation")
         if not isinstance(started.event, TaskAttemptStarted) or not isinstance(
             prepared.event, TaskExecutionPrepared
         ):

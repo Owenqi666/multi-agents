@@ -23,10 +23,12 @@ from uuid import uuid4
 from multi_agent.core import Disposition
 from multi_agent.core.dispatch import ImplementationChoice, resolve_dispatch
 from multi_agent.core.planning import PlanningPhase, PlanningProvenance, planning_json
+from multi_agent.core.review_input import ExecutedReviewInput
 from multi_agent.core.task_events import (
     TaskAttemptStarted,
     TaskEnvelope,
     TaskExecutionPrepared,
+    TaskReworkStarted,
 )
 from multi_agent.core.task_execution import (
     TaskDispatchPolicy,
@@ -37,6 +39,7 @@ from multi_agent.core.task_execution import (
     task_execution_json,
     task_execution_value,
 )
+from multi_agent.core.task_rework import TaskReworkSource
 from multi_agent.core.task_state import TaskAttempt, TaskInput, TaskPhase, TaskState
 from multi_agent.core.transitions import apply_task
 from multi_agent.store.planning_store import PlanningStore
@@ -48,7 +51,12 @@ from .task_inputs import (
     parse_project_rules,
     validate_task_references,
 )
-from .task_prompt import TASK_IMPLEMENTATION_VERSION, task_output_schema, task_prompt
+from .task_prompt import (
+    TASK_IMPLEMENTATION_VERSION,
+    TASK_REWORK_VERSION,
+    task_output_schema,
+    task_prompt,
+)
 from .workspaces import (
     ExecutorLease,
     _git,
@@ -731,6 +739,14 @@ def inspect_task_context(
     planning_run_id = _text(payload["planning_run_id"], "planning run id")
     value, provenance = _provenance(store, run_id, planning_run_id, lease)
     request = selected.request
+    rework: dict[str, Any] = {}
+    if isinstance(request, TaskReworkStarted):
+        from .task_rework import _frozen_input
+
+        rework = {
+            "rework_source": request.source,
+            "rework_input": _frozen_input(store, request.source),
+        }
     prompt = task_prompt(
         value,
         provenance=provenance,
@@ -739,6 +755,7 @@ def inspect_task_context(
         workspace=prepared.workspace,
         initial_workspace_digest=prepared.initial_workspace_digest,
         template_version=request.prompt_template_version,
+        **rework,
     )
     if prompt != prepared.prompt or task_execution_hash(
         task_output_schema()
@@ -932,6 +949,9 @@ def _create_preparation(
     started: TaskEnvelope,
     policy: TaskExecutionPolicy,
     dispatch_policy: TaskDispatchPolicy,
+    *,
+    rework_source: TaskReworkSource | None = None,
+    rework_input: ExecutedReviewInput | None = None,
 ) -> TaskExecutionPrepared:
     token = uuid4().hex
     marker_path = registry / f"{token}.json"
@@ -955,9 +975,17 @@ def _create_preparation(
         root_identity = _identity(_directory(root))
         marker["directory"]["identity"] = root_identity
         _write_marker(fd, marker_path, marker)
-        workspace = create_workspace(
-            lease, value.card.baseline_commit, root / "workspace"
-        )
+        if rework_source is None:
+            workspace = create_workspace(
+                lease, value.card.baseline_commit, root / "workspace"
+            )
+        else:
+            workspace = create_workspace(
+                lease,
+                value.card.baseline_commit,
+                root / "workspace",
+                start_commit=rework_source.candidate_commit,
+            )
         marker["workspace"] = task_execution_value(workspace)
         _write_marker(fd, marker_path, marker)
         if (
@@ -965,7 +993,12 @@ def _create_preparation(
             or workspace.source != str(lease.source)
             or workspace.repository != str(lease.repository)
             or workspace.task_baseline != value.card.baseline_commit
-            or workspace.start_commit != value.card.baseline_commit
+            or workspace.start_commit
+            != (
+                value.card.baseline_commit
+                if rework_source is None
+                else rework_source.candidate_commit
+            )
         ):
             raise ValueError("new workspace differs from its frozen task baseline")
         initial = inspect_workspace(lease, workspace).digest
@@ -979,6 +1012,9 @@ def _create_preparation(
         marker["logs_identity"] = logs_identity
         _write_marker(fd, marker_path, marker)
         assert isinstance(started.event, TaskAttemptStarted)
+        rework: dict[str, Any] = {}
+        if rework_source is not None:
+            rework = {"rework_source": rework_source, "rework_input": rework_input}
         prompt = task_prompt(
             value,
             provenance=provenance,
@@ -987,6 +1023,7 @@ def _create_preparation(
             workspace=workspace,
             initial_workspace_digest=initial,
             template_version=started.event.prompt_template_version,
+            **rework,
         )
         prepared = TaskExecutionPrepared(
             workspace,
@@ -1005,9 +1042,9 @@ def _create_preparation(
                 context_path / "output-schema.json", _json_bytes(prepared.output_schema)
             ),
         }
-        manifest = _write_control(
-            context_path / _MANIFEST,
-            lambda identity: _json_bytes(
+
+        def manifest_bytes(identity: tuple[int, int]) -> bytes:
+            raw = _json_bytes(
                 _manifest_value(
                     database,
                     run_id,
@@ -1025,8 +1062,12 @@ def _create_preparation(
                     files,
                     identity,
                 )
-            ),
-        )
+            )
+            if rework_source is not None and len(raw) > _LIMIT:
+                raise ValueError("rework context manifest exceeds the 8 MiB byte limit")
+            return raw
+
+        manifest = _write_control(context_path / _MANIFEST, manifest_bytes)
         context_path.chmod(0o500)
         _sync_directory(context_path)
         prepared = TaskExecutionPrepared(
@@ -1069,13 +1110,20 @@ def _create_preparation(
         )
         if inspect_workspace(lease, workspace).digest != initial:
             raise ValueError("task workspace changed during preparation")
-        store.reserve_task_attempt(
-            run_id,
-            started,
-            prepared_envelope,
-            expected_history_length=len(history),
-            expected_history_hash=task_execution_hash(history),
-        )
+        if rework_source is None:
+            store.reserve_task_attempt(
+                run_id,
+                started,
+                prepared_envelope,
+                expected_history_length=len(history),
+                expected_history_hash=task_execution_hash(history),
+            )
+        else:
+            from multi_agent.store.task_review_store import TaskReviewStore
+
+            if not isinstance(store, TaskReviewStore):
+                raise TypeError("rework reservation requires a TaskReviewStore")
+            store.reserve_task_rework_execution(run_id, started, prepared_envelope)
         actual = inspect_task_context(store, run_id, started.attempt, lease)
         if task_execution_hash(actual) != task_execution_hash(prepared):
             raise ValueError("task reservation did not retain this exact preparation")
@@ -1199,3 +1247,133 @@ def prepare_task_launch(
             yield launch
         finally:
             launch._expire()
+
+
+@contextmanager
+def prepare_task_rework_launch(
+    database_path: str | Path,
+    task_run_id: str,
+    planning_run_id: str,
+    review_round_id: str,
+    *,
+    repository: Path,
+    directory: Path,
+    unavailable: frozenset[tuple[str, str]] = frozenset(),
+) -> Iterator[TaskLaunch]:
+    """Reserve the one rework and retain both existing locks through settlement."""
+    from multi_agent.store.task_review_store import TaskReviewStore
+
+    from . import runner
+    from .task_review_cli import _input, _origin, _review_directory
+    from .task_rework import ReworkRefused, prepare_task_rework_source
+    from .task_test_context import check_task_test_launch_owners
+
+    database = _database(database_path)
+    _text(task_run_id, "task run id")
+    _text(planning_run_id, "planning run id")
+    _text(review_round_id, "review round id")
+    with TaskReviewStore(database.path) as store, executor_lock(repository) as lease:
+        database.check()
+        if _store_database(store) != database:
+            raise ValueError("task database connection identity differs")
+        review_input = _input(store, review_round_id)
+        metadata = runner.metadata_for(store, review_round_id)
+        if _origin(store, review_input, metadata) != lease.source:
+            raise ValueError("rework repository differs from the reviewed source")
+        review_directory = _review_directory(metadata, lease)
+        with runner.execution_lock(review_directory):
+            source = prepare_task_rework_source(store, review_round_id, lease)
+            if source.task_run_id != task_run_id:
+                raise ValueError("rework round belongs to a different task run")
+            value, provenance = _provenance(store, task_run_id, planning_run_id, lease)
+            root = _new_root(directory, database, lease)
+            state = store.load_task(task_run_id)
+            current = state.current_attempt
+            if current is None or current.number != source.implementation_attempt:
+                raise ValueError("rework implementation changed before preparation")
+            policy, dispatch_policy = _policies(state, None, None)
+            _policy(policy)
+            _dispatch(dispatch_policy, unavailable)
+            original_unavailable = frozenset(
+                current.request.decision.unavailable_models
+            )
+            if unavailable and unavailable != original_unavailable:
+                raise ValueError("rework cannot change frozen unavailable requests")
+            decision = resolve_dispatch(
+                value.card,
+                value.frozen_rules,
+                task_type=dispatch_policy.task_type,
+                requested=dispatch_policy.requested,
+                fallbacks=dispatch_policy.fallbacks,
+                unavailable=original_unavailable,
+            )
+            if (
+                policy.provider
+                != {"codex": "codex", "claude-code": "claude"}[decision.choice.provider]
+            ):
+                raise ValueError(
+                    "task policy provider differs from its selected request"
+                )
+            history = store.load_task_history(task_run_id)
+            if (
+                len(history) != source.task_history_length
+                or task_execution_hash(history) != source.task_history_hash
+            ):
+                raise ValueError("task history changed before rework preparation")
+            number = current.number + 1
+            if number > policy.max_attempts:
+                raise ReworkRefused(
+                    "budget_exhausted",
+                    "the frozen implementation attempt budget is exhausted",
+                )
+            when = datetime.now(UTC).isoformat()
+            started = TaskEnvelope(
+                number,
+                TaskReworkStarted(
+                    decision,
+                    str(root / "workspace"),
+                    TASK_REWORK_VERSION,
+                    when,
+                    managed=True,
+                    source=source,
+                ),
+                when,
+            )
+            _, disposition = apply_task(state, started)
+            if disposition != Disposition.APPLIED:
+                raise ValueError("rework must reserve a new current attempt")
+            registry = _scan_registry(store, lease, database)
+            check_task_test_launch_owners(store, lease)
+            database.check()
+            prepared = _create_preparation(
+                store,
+                lease,
+                database,
+                task_run_id,
+                planning_run_id,
+                root,
+                registry,
+                value,
+                provenance,
+                history,
+                started,
+                policy,
+                dispatch_policy,
+                rework_source=source,
+                rework_input=review_input,
+            )
+            launch = TaskLaunch(
+                store,
+                lease,
+                number,
+                prepared,
+                root / "logs",
+                task_run_id,
+                database,
+                _ISSUED,
+            )
+            try:
+                launch.check()
+                yield launch
+            finally:
+                launch._expire()
