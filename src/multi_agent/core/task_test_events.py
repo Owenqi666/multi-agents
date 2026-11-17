@@ -3,7 +3,13 @@
 from dataclasses import dataclass
 from typing import ClassVar
 
-from .events import FailureCategory
+from .events import FailureCategory, JSONValue, freeze_json
+from .task_test_execution import (
+    TaskTestCheckout,
+    TaskTestContext,
+    TaskTestPolicy,
+    TaskTestScratch,
+)
 from .task_test_input import TaskTestInput
 
 
@@ -11,6 +17,26 @@ from .task_test_input import TaskTestInput
 class TaskTestAttemptStarted:
     kind: ClassVar[str] = "task_test_attempt_started"
     input: TaskTestInput
+
+
+@dataclass(frozen=True, slots=True)
+class TaskTestExecutionPrepared:
+    kind: ClassVar[str] = "task_test_execution_prepared"
+    checkout: TaskTestCheckout
+    context: TaskTestContext
+    policy: TaskTestPolicy
+    scratch: TaskTestScratch
+
+
+@dataclass(frozen=True, slots=True)
+class TaskTestCommandReported:
+    kind: ClassVar[str] = "task_test_command_reported"
+    sequence: int
+    reported_exit_code: int
+    response: JSONValue
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "response", freeze_json(self.response))
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +83,8 @@ class TaskTestAttemptFinished:
 
 type TaskTestEvent = (
     TaskTestAttemptStarted
+    | TaskTestExecutionPrepared
+    | TaskTestCommandReported
     | TaskTestCommandStarted
     | TaskTestCommandExited
     | TaskTestProblem

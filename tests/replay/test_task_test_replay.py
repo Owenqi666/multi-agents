@@ -28,10 +28,19 @@ from multi_agent.core.task_test_events import (
     TaskTestAttemptStarted,
     TaskTestCancelRequested,
     TaskTestCommandExited,
+    TaskTestCommandReported,
     TaskTestCommandStarted,
     TaskTestEnvelope,
+    TaskTestExecutionPrepared,
     TaskTestProblem,
     TaskTestReconciled,
+)
+from multi_agent.core.task_test_execution import (
+    TaskTestCheckout,
+    TaskTestContext,
+    TaskTestPolicy,
+    TaskTestScratch,
+    reserve_task_test_execution,
 )
 from multi_agent.core.task_test_input import TaskTestInput
 from multi_agent.core.task_test_state import (
@@ -47,7 +56,7 @@ from multi_agent.core.transitions import (
     task_test_phase,
     task_test_ready,
 )
-from multi_agent.core.workspaces import WorkspaceDelivery
+from multi_agent.core.workspaces import WorkspaceControl, WorkspaceDelivery
 from multi_agent.store.task_test_store import TaskTestStore
 
 SCENARIOS = Path(__file__).parent / "scenarios" / "test-stages"
@@ -58,6 +67,11 @@ REQUIRED_SCENARIOS = {
     "task_test_late_observations",
     "task_test_fresh_checkpoint",
     "task_test_reconcile_revoked",
+    "task_test_managed_happy",
+    "task_test_managed_nonzero",
+    "task_test_managed_cancel_unknown",
+    "task_test_managed_host_failure",
+    "task_test_managed_restart_stale",
 }
 
 
@@ -137,6 +151,32 @@ class CoreBackend:
 
     def close(self):
         pass
+
+    def reopen(self):
+        pass
+
+    def reserve_pair(self, started, prepared, cas):
+        self._reservation(started, cas)
+        checkout = prepared.event.checkout
+        if (
+            checkout.observed_test_attempt,
+            checkout.test_history_length,
+            checkout.test_history_hash,
+        ) != (
+            self.state.current_attempt.number if self.state.current_attempt else None,
+            len(self.history),
+            task_execution_hash(self.history),
+        ):
+            raise ValueError("managed artifact checkpoint changed")
+        updated = reserve_task_test_execution(
+            self.state, started, prepared, self.implementation
+        )
+        self.state = updated
+        self.history = (
+            *self.history,
+            (started, Disposition.APPLIED),
+            (prepared, Disposition.APPLIED),
+        )
 
     def fresh_input(self):
         return declared(self.implementation, self.value, self.task_history)
@@ -237,6 +277,7 @@ class CoreBackend:
 
 class StoreBackend:
     def __init__(self, path):
+        self.path = path
         self.store = TaskTestStore(path)
         implementation, value, history = source()
         self.value = value
@@ -297,6 +338,13 @@ class StoreBackend:
     def close(self):
         self.store.close()
 
+    def reopen(self):
+        self.store.close()
+        self.store = TaskTestStore(self.path)
+
+    def reserve_pair(self, started, prepared, cas):
+        self.store.reserve_task_test_execution("test-replay", started, prepared, **cas)
+
     def observe_implementation(self, action):
         event = (
             CancelRequested()
@@ -335,6 +383,7 @@ def event_for(step, backend):
             TaskTestCancelRequested,
             TaskTestCommandStarted,
             TaskTestCommandExited,
+            TaskTestCommandReported,
             TaskTestProblem,
             TaskTestReconciled,
         )
@@ -360,6 +409,65 @@ def event_for(step, backend):
     if kind == TaskTestProblem.kind and raw["category"] is not None:
         raw["category"] = FailureCategory(raw["category"])
     return constructors[kind](**raw)
+
+
+def managed_preparation(started, backend, step):
+    number = started.test_attempt
+    root, inode = f"/synthetic/test-stage-{number}", number * 100
+    value = started.event.input
+    current = backend.state.current_attempt
+    prepared = TaskTestExecutionPrepared(
+        TaskTestCheckout(
+            input=value,
+            repository=backend.value.frozen_rules.repository,
+            database_path="/synthetic/test-stage.sqlite",
+            database_identity=(1, 1),
+            database_parent_identity=(1, 2),
+            root=f"{root}/checkout",
+            root_identity=(1, inode),
+            git_directory=f"{root}/checkout/.git",
+            git_identity=(1, inode + 1),
+            owner_token=f"owner-{number}",
+            object_format="sha1",
+            initial_digest=value.candidate.delivery.digest,
+            controls=(WorkspaceControl("HEAD", (1, inode + 2), b"synthetic\n"),),
+            objects=(
+                ("commit", value.candidate.delivery.candidate),
+                ("tree", value.candidate.delivery.tree),
+            ),
+            observed_test_attempt=current.number if current else None,
+            test_history_length=len(backend.history),
+            test_history_hash=task_execution_hash(backend.history),
+        ),
+        TaskTestContext(
+            path=f"{root}/context",
+            identity=(1, inode + 3),
+            token=f"context-{number}",
+            manifest_sha256="c" * 64,
+        ),
+        TaskTestPolicy(
+            executable="/synthetic/codex",
+            executable_identity=(1, 9),
+            executable_sha256="d" * 64,
+            timeout=30,
+            grace=2,
+            output_bytes_limit=8192,
+        ),
+        TaskTestScratch(
+            path=f"{root}/scratch",
+            identity=(1, inode + 4),
+            home_identity=(1, inode + 5),
+            tmp_identity=(1, inode + 6),
+            cache_identity=(1, inode + 7),
+        ),
+    )
+    if step.get("prepared_change") == "checkpoint":
+        prepared = replace(
+            prepared, checkout=replace(prepared.checkout, test_history_hash="0" * 64)
+        )
+    return replace(
+        started, event=prepared, occurred_at=started.occurred_at + ":prepared"
+    )
 
 
 def expected_state(step, envelopes, reference):
@@ -423,7 +531,9 @@ def test_task_test_replays(path, backend_type, tmp_path):
         try:
             for index, step in enumerate(scenario["steps"]):
                 before = backend.state, backend.history
-                if "implementation" in step:
+                if step.get("restart"):
+                    backend.reopen()
+                elif "implementation" in step:
                     backend.observe_implementation(step["implementation"])
                 else:
                     event = event_for(step, backend)
@@ -434,6 +544,10 @@ def test_task_test_replays(path, backend_type, tmp_path):
                         step["occurred_at"],
                     )
                     envelopes[index] = envelope
+                    prepared = None
+                    if step.get("managed"):
+                        prepared = managed_preparation(envelope, backend, step)
+                        envelopes[f"{index}:prepared"] = prepared
                     current = backend.state.current_attempt
                     cas = {
                         "expected_test_attempt": current.number if current else None,
@@ -449,10 +563,16 @@ def test_task_test_replays(path, backend_type, tmp_path):
                     cas.update(step.get("cas", {}))
                     if step.get("error"):
                         with pytest.raises(ValueError):
-                            backend.apply(envelope, cas)
+                            if prepared is None:
+                                backend.apply(envelope, cas)
+                            else:
+                                backend.reserve_pair(envelope, prepared, cas)
                         assert (backend.state, backend.history) == before
                     else:
-                        backend.apply(envelope, cas)
+                        if prepared is None:
+                            backend.apply(envelope, cas)
+                        else:
+                            backend.reserve_pair(envelope, prepared, cas)
                 wanted = expected_state(step, envelopes, backend.reference)
                 assert backend.state == wanted
                 assert task_execution_hash(backend.state) == task_execution_hash(wanted)

@@ -1,6 +1,6 @@
 """Transition tables for events addressed to the current attempt."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import replace
 from typing import Any, cast
 
@@ -72,12 +72,15 @@ from .task_test_events import (
     TaskTestAttemptStarted,
     TaskTestCancelRequested,
     TaskTestCommandExited,
+    TaskTestCommandReported,
     TaskTestCommandStarted,
     TaskTestEnvelope,
     TaskTestEvent,
+    TaskTestExecutionPrepared,
     TaskTestProblem,
     TaskTestReconciled,
 )
+from .task_test_execution import prepared_for_test
 from .task_test_input import TaskTestInput
 from .task_test_state import (
     TaskTestAttempt,
@@ -1315,6 +1318,10 @@ def _task_test_command_start(
     assert isinstance(event, TaskTestCommandStarted)
     current = state.current_attempt
     assert current is not None
+    if any(prepared_for_test(attempt) is not None for attempt in state.attempts) and (
+        prepared_for_test(current) is None
+    ):
+        raise ValueError("managed test commands require their committed preparation")
     if (
         not _task_test_source(state, current.input, implementation)
         or current.finished
@@ -1347,6 +1354,101 @@ def _task_test_command_start(
         ),
         Disposition.APPLIED,
     )
+
+
+def _task_test_owned(
+    prepared: TaskTestExecutionPrepared,
+) -> tuple[set[str], set[tuple[int, int]], set[str]]:
+    checkout, context, scratch = prepared.checkout, prepared.context, prepared.scratch
+    return (
+        {
+            checkout.root,
+            checkout.git_directory,
+            context.path,
+            scratch.path,
+            scratch.home,
+            scratch.tmp,
+            scratch.cache,
+        },
+        {
+            checkout.root_identity,
+            checkout.git_identity,
+            context.identity,
+            scratch.identity,
+            scratch.home_identity,
+            scratch.tmp_identity,
+            scratch.cache_identity,
+            *(
+                control.identity
+                for control in checkout.controls
+                if control.identity is not None
+            ),
+        },
+        {checkout.owner_token, context.token},
+    )
+
+
+def _task_test_prepare(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestExecutionPrepared)
+    current = state.current_attempt
+    assert current is not None
+    existing = prepared_for_test(current)
+    if existing is not None:
+        if task_execution_hash(existing) == task_execution_hash(event):
+            return state, Disposition.HISTORY_ONLY
+        raise ValueError("test attempt already has a different preparation")
+    if (
+        len(current.events) != 1
+        or not isinstance(current.events[0], TaskTestAttemptStarted)
+        or task_execution_hash(event.checkout.input)
+        != task_execution_hash(current.input)
+        or event.checkout.observed_test_attempt
+        != (state.attempts[-2].number if len(state.attempts) > 1 else None)
+        or not _task_test_source(state, current.input, implementation)
+    ):
+        raise ValueError("test preparation must follow its exact current Started")
+    paths, identities, tokens = _task_test_owned(event)
+    for attempt in state.attempts[:-1]:
+        previous = prepared_for_test(attempt)
+        if previous is None:
+            raise ValueError("legacy test stages cannot become managed")
+        if task_execution_hash(previous.policy) != task_execution_hash(event.policy):
+            raise ValueError("managed test policy cannot change on retry")
+        old_paths, old_identities, old_tokens = _task_test_owned(previous)
+        if paths & old_paths or identities & old_identities or tokens & old_tokens:
+            raise ValueError("managed retry must own fresh test resources")
+    return state, Disposition.APPLIED
+
+
+def _task_test_report(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestCommandReported)
+    current = state.current_attempt
+    assert current is not None
+    response = event.response
+    if (
+        type(event.reported_exit_code) is not int
+        or not isinstance(response, Mapping)
+        or type(response.get("exitCode")) is not int
+        or response["exitCode"] != event.reported_exit_code
+        or not isinstance(response.get("stdout"), str)
+        or not isinstance(response.get("stderr"), str)
+    ):
+        raise ValueError("test report must preserve its matching result exit code")
+    for previous in current.events:
+        if (
+            isinstance(previous, TaskTestCommandReported)
+            and previous.sequence == event.sequence
+        ):
+            if task_execution_hash(previous) == task_execution_hash(event):
+                return state, Disposition.HISTORY_ONLY
+            raise ValueError("test command already has another final report")
+    return state, Disposition.APPLIED
 
 
 def _task_test_exit(
@@ -1465,6 +1567,8 @@ def _task_test_finish(
 
 
 _TASK_TEST_OBSERVATIONS: dict[type[TaskTestEvent], TaskTestTransition] = {
+    TaskTestExecutionPrepared: _task_test_prepare,
+    TaskTestCommandReported: _task_test_report,
     TaskTestCommandExited: _task_test_exit,
     TaskTestProblem: _task_test_problem,
     TaskTestReconciled: _task_test_reconcile,
@@ -1504,6 +1608,16 @@ def _task_test_number(value: object) -> None:
 def apply_task_test(
     state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
 ) -> tuple[TaskTestState, Disposition]:
+    return _apply_task_test(state, envelope, implementation)
+
+
+def _apply_task_test(
+    state: TaskTestState,
+    envelope: TaskTestEnvelope,
+    implementation: TaskState,
+    *,
+    managed_reservation: bool = False,
+) -> tuple[TaskTestState, Disposition]:
     """Keep old observations, but never reinterpret stale controller requests."""
     _task_test_number(envelope.implementation_attempt)
     _task_test_number(envelope.test_attempt)
@@ -1515,7 +1629,9 @@ def apply_task_test(
     ):
         raise ValueError("test implementation attempt has not started")
     event = envelope.event
-    if isinstance(event, (TaskTestCommandStarted, TaskTestCommandExited)) or (
+    if isinstance(
+        event, (TaskTestCommandStarted, TaskTestCommandExited, TaskTestCommandReported)
+    ) or (
         isinstance(event, (TaskTestProblem, TaskTestReconciled))
         and event.sequence is not None
     ):
@@ -1526,6 +1642,12 @@ def apply_task_test(
             raise ValueError("cannot reserve tests for an old implementation")
         next_number = 1 if current is None else current.number + 1
         if isinstance(event, TaskTestAttemptStarted):
+            if not managed_reservation and any(
+                prepared_for_test(attempt) is not None for attempt in state.attempts
+            ):
+                raise ValueError(
+                    "managed test stages require an atomic preparation pair"
+                )
             if envelope.test_attempt != next_number:
                 raise ValueError(
                     "test attempt reservation is not the unique next number"
@@ -1542,7 +1664,13 @@ def apply_task_test(
         if selected is None:
             raise ValueError("test attempt has not started")
         if isinstance(
-            event, (TaskTestCommandExited, TaskTestProblem, TaskTestReconciled)
+            event,
+            (
+                TaskTestCommandExited,
+                TaskTestCommandReported,
+                TaskTestProblem,
+                TaskTestReconciled,
+            ),
         ):
             sequence = event.sequence
             if sequence is not None and not any(
@@ -1561,6 +1689,13 @@ def apply_task_test(
             or old_epoch
         ):
             return state, Disposition.HISTORY_ONLY
+    if (
+        isinstance(event, TaskTestExecutionPrepared)
+        and not managed_reservation
+        and current is not None
+        and prepared_for_test(current) is None
+    ):
+        raise ValueError("new test preparations require an atomic reservation")
     registered = _TASK_TEST_TRANSITIONS[state.phase]
     if type(event) not in registered:
         raise ValueError(f"event {event.kind} is invalid in test phase {state.phase}")

@@ -1,0 +1,663 @@
+{
+  "name": "task_test_managed_cancel_unknown",
+  "evidence": "synthetic trusted host facts; no commands executed",
+  "steps": [
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:00",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 1,
+      "managed": true,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared"
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:01",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:02",
+      "event": {
+        "type": "task_test_cancel_requested"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelling",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:03",
+      "event": {
+        "type": "task_test_command_reported",
+        "sequence": 1,
+        "reported_exit_code": 0,
+        "response": {
+          "exitCode": 0,
+          "stdout": "",
+          "stderr": ""
+        }
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelling",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:04",
+      "event": {
+        "type": "task_test_command_exited",
+        "sequence": 1,
+        "exit_code": 0
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelling",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:05",
+      "event": {
+        "type": "task_test_attempt_finished"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelling",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": true,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:06",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": null,
+        "detail": "Synthetic command-request-and-owned-runtime-v1 receipt; descendants unknown",
+        "receipt_path": "/synthetic/command.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelling",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 6,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": true,
+            "reconciliation": 6,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 6,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:07",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "managed": true,
+      "error": "ValueError",
+      "expect": {
+        "phase": "cancelling",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 6,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": true,
+            "reconciliation": 6,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 6,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:08",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": true,
+        "detail": "Synthetic command-request-and-owned-runtime-v1 receipt; descendants unknown",
+        "receipt_path": "/synthetic/command.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelled",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 8,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": true,
+            "reconciliation": 8,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 6,
+            "disposition": "applied"
+          },
+          {
+            "step": 8,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_cancel_unknown:09",
+      "event": {
+        "type": "task_test_cancel_requested"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "cancelled",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 8,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": true,
+            "reconciliation": 8,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              8
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 6,
+            "disposition": "applied"
+          },
+          {
+            "step": 8,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "history_only"
+          }
+        ]
+      }
+    }
+  ]
+}

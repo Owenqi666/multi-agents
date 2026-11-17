@@ -1,7 +1,9 @@
 """Atomic reservations and observations for tests of one implementation attempt."""
 
 import sqlite3
-from typing import cast
+import stat
+from pathlib import Path
+from typing import Self, cast
 
 from multi_agent.core import Disposition, transitions
 from multi_agent.core.task_execution import task_execution_hash
@@ -9,11 +11,14 @@ from multi_agent.core.task_state import TaskState
 from multi_agent.core.task_test_events import (
     TaskTestAttemptStarted,
     TaskTestCommandExited,
+    TaskTestCommandReported,
     TaskTestCommandStarted,
     TaskTestEnvelope,
+    TaskTestExecutionPrepared,
     TaskTestProblem,
     TaskTestReconciled,
 )
+from multi_agent.core.task_test_execution import reserve_task_test_execution
 from multi_agent.core.task_test_input import TaskTestInput
 from multi_agent.core.task_test_state import TaskTestState
 
@@ -42,6 +47,124 @@ def _number(value: int, *, zero: bool = False) -> None:
 
 class TaskTestStore(PlanningStore):
     """One caller-owned connection; no Git access, execution, or automatic retry."""
+
+    @classmethod
+    def open_readonly(cls, path: str | Path, *, timeout: float = 5.0) -> Self:
+        """Read an existing current database, including its committed WAL."""
+        location = Path(path)
+        before = location.lstat()
+        if (
+            not location.is_absolute()
+            or location.resolve(strict=True) != location
+            or not stat.S_ISREG(before.st_mode)
+        ):
+            raise ValueError(
+                "read-only test database must be an existing canonical regular file"
+            )
+        connection = sqlite3.connect(
+            location.as_uri() + "?mode=ro",
+            uri=True,
+            timeout=timeout,
+            isolation_level=None,
+        )
+        try:
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA query_only = ON")
+            connection.execute("PRAGMA foreign_keys = ON")
+            if connection.execute("PRAGMA user_version").fetchone()[0] != 5:
+                raise ValueError("read-only test database requires schema version 5")
+            after = location.lstat()
+            if not stat.S_ISREG(after.st_mode) or (before.st_dev, before.st_ino) != (
+                after.st_dev,
+                after.st_ino,
+            ):
+                raise ValueError("read-only test database identity changed")
+            instance = cls.__new__(cls)
+            instance._connection = connection
+            return instance
+        except BaseException:
+            connection.close()
+            raise
+
+    def reserve_task_test_execution(
+        self,
+        task_run_id: str,
+        started: TaskTestEnvelope,
+        prepared: TaskTestEnvelope,
+        *,
+        expected_test_attempt: int | None,
+        expected_history_length: int,
+        expected_history_hash: str,
+    ) -> None:
+        if not isinstance(started.event, TaskTestAttemptStarted) or not isinstance(
+            prepared.event, TaskTestExecutionPrepared
+        ):
+            raise TypeError("test execution reservation requires Started and Prepared")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            implementation = self._implementation(
+                task_run_id, started.implementation_attempt
+            )
+            value = started.event.input
+            self._reservation_source(
+                task_run_id, started.implementation_attempt, value, implementation
+            )
+            row = self._stage_row(task_run_id, started.implementation_attempt)
+            if row is None:
+                state = TaskTestState(
+                    task_run_id, started.implementation_attempt, value
+                )
+                history: TaskTestHistory = ()
+            else:
+                state = self._read_test(row)
+                history = self._read_test_history(
+                    task_run_id, started.implementation_attempt
+                )
+            self._reservation_cas(
+                state,
+                history,
+                expected_test_attempt,
+                expected_history_length,
+                expected_history_hash,
+            )
+            checkout = prepared.event.checkout
+            checkpoint = (
+                state.current_attempt.number if state.current_attempt else None,
+                len(history),
+                task_execution_hash(history),
+            )
+            if task_execution_hash(
+                (
+                    checkout.observed_test_attempt,
+                    checkout.test_history_length,
+                    checkout.test_history_hash,
+                )
+            ) != task_execution_hash(checkpoint):
+                raise ValueError(
+                    "test checkout was prepared against another original checkpoint"
+                )
+            original = decode_task_input(self._task_row(task_run_id)["input_payload"])
+            if checkout.repository != original.frozen_rules.repository:
+                raise ValueError("test checkout belongs to another source repository")
+            updated = reserve_task_test_execution(
+                state, started, prepared, implementation
+            )
+            if row is None:
+                self._connection.execute(
+                    """INSERT INTO task_test_stages (
+                           task_run_id, implementation_attempt, reference_input_payload,
+                           current_test_attempt
+                       ) VALUES (?, ?, ?, ?)""",
+                    (
+                        task_run_id,
+                        started.implementation_attempt,
+                        encode_task_test_input(value),
+                        started.test_attempt,
+                    ),
+                )
+            self._write_test(updated)
+            self._append_test_history(task_run_id, started, Disposition.APPLIED)
+            self._append_test_history(task_run_id, prepared, Disposition.APPLIED)
 
     def reserve_task_test_attempt(
         self,
@@ -164,6 +287,7 @@ class TaskTestStore(PlanningStore):
         if envelope.event.kind in (
             TaskTestAttemptStarted.kind,
             TaskTestCommandStarted.kind,
+            TaskTestExecutionPrepared.kind,
         ):
             raise ValueError("test controller requests require atomic reservation")
         with self._connection:
@@ -175,7 +299,12 @@ class TaskTestStore(PlanningStore):
             if (
                 isinstance(
                     envelope.event,
-                    (TaskTestCommandExited, TaskTestProblem, TaskTestReconciled),
+                    (
+                        TaskTestCommandExited,
+                        TaskTestCommandReported,
+                        TaskTestProblem,
+                        TaskTestReconciled,
+                    ),
                 )
                 and envelope.event.sequence is not None
             ):
@@ -190,6 +319,30 @@ class TaskTestStore(PlanningStore):
                 self._write_test(updated)
             self._append_test_history(task_run_id, envelope, disposition)
         return disposition
+
+    def list_task_test_stages(self) -> tuple[tuple[str, int], ...]:
+        with self._connection:
+            self._connection.execute("BEGIN")
+            rows = self._connection.execute(
+                """SELECT task_run_id, implementation_attempt FROM task_test_stages
+                   ORDER BY task_run_id, implementation_attempt"""
+            ).fetchall()
+            return tuple(
+                (row["task_run_id"], row["implementation_attempt"]) for row in rows
+            )
+
+    def load_task_test_checkpoint(
+        self, task_run_id: str, implementation_attempt: int
+    ) -> tuple[TaskTestState | None, TaskTestHistory]:
+        with self._connection:
+            self._connection.execute("BEGIN")
+            self._implementation(task_run_id, implementation_attempt)
+            row = self._stage_row(task_run_id, implementation_attempt)
+            if row is None:
+                return None, ()
+            return self._read_test(row), self._read_test_history(
+                task_run_id, implementation_attempt
+            )
 
     def load_task_test(
         self, task_run_id: str, implementation_attempt: int

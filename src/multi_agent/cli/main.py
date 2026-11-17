@@ -87,6 +87,8 @@ def load_snapshot(store: ReviewStore, identifier: str) -> FrozenSnapshot:
 
 
 def parser() -> argparse.ArgumentParser:
+    from .task_test_cli import add_parser as add_task_test_parser
+
     result = argparse.ArgumentParser(
         description="Freeze and independently review committed code."
     )
@@ -142,6 +144,7 @@ def parser() -> argparse.ArgumentParser:
     )
     benchmark.add_argument("operation", choices=("prepare", "template", "score"))
     benchmark.add_argument("arguments", nargs=argparse.REMAINDER)
+    add_task_test_parser(commands)
     return result
 
 
@@ -259,6 +262,10 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
+    if args.command == "task-test":
+        from .task_test_cli import main as task_test_main
+
+        return task_test_main(args)
     if args.command == "benchmark":
         from .benchmark import main as benchmark_main
 

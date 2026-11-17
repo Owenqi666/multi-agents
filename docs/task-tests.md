@@ -1,4 +1,47 @@
-# 独立测试输入与状态
+# 候选测试执行与结果
+
+## 运行与查看
+
+T50 提供 `task-test run/show`，输入为已经核验、冻结到数据库的任务候选。下面的名称必须已经存在于该任务的原始冻结命令注册表中：
+
+```bash
+uv run python -m multi_agent task-test run TASK_RUN_ID \
+  --database /absolute/data/runs.sqlite3 --implementation-attempt 1 \
+  --repository /absolute/repository --directory /absolute/data/test-attempt-1 \
+  --command build --command unit \
+  --declaration-source '本次明确选择的完整测试集合'
+
+uv run python -m multi_agent task-test show TASK_RUN_ID \
+  --database /absolute/data/runs.sqlite3 --implementation-attempt 1
+```
+
+`--directory` 必须尚不存在，且与数据库同父目录、位于原工作区和 Git 元数据之外。命令完整 argv 从冻结 registry 取得，不支持临时 shell 字符串或改写参数。需要额外工具时用 `--tool-directory` 指定目录，读取运行时依赖用 `--runtime-read-path`；路径会冻结到本阶段策略。运行器不安装工具或下载依赖。
+
+同一尝试中的所有命令共享独立检出及 `scratch/home`、`scratch/tmp`、`scratch/cache`，因此 build 的产物可以交给下一条 test。检出只包含候选原始 commit 和完整 tree/blob 对象，保留二进制、可执行位和内部 symlink；独立 `.git` 的 shallow 边界停在候选，无父历史、tags、remotes 或 submodules。依赖这些内容的命令会按真实结果失败。
+
+结果包含候选、整套状态、每条命令名称、报告退出码、可确认的映射退出码及 stdout/stderr/wire 日志路径。`verification=verified` 表示当前归档和来源核验通过；失败命令的证据也可以被核验。读取到历史 `succeeded` 不会绕过现有文件核验。缺失或篡改归档显示 `unverified`，未执行的命令显示 `not_run`。
+
+`run` 返回 0 仅表示整套成功且证据核验通过；已结算的失败或不完整返回 1，输入或宿主错误返回 2，用户中断在实际结算后返回 130。`show` 成功读取返回 0，使用只读 SQLite 连接，不创建或迁移数据库，也不恢复旧进程。它会显示保留目录；活动 lease 无法取得时只展示持久状态，核验保持未确认。
+
+显式重跑需要新目录，且前次已经逻辑结束、所需资源实际停止；整套声明重新运行，策略与命令保持冻结。成功尝试不允许重复派发。日志损坏不会抹去独立核实的停止事实，但也不能使测试通过。未确认停止时，测试与实现两条路线都阻止重新派发。
+
+## 执行证据的范围
+
+每条命令使用一个短命 Codex App Server，只做版本、配置审计和 `command/exec`，不建立模型回合。实际观察必须为 `codex-cli 0.169.0` 才执行；请求版本不能代替实际报告。宿主认证位于临时隔离根，命令的 HOME、TMPDIR 和缓存另设在该尝试的 scratch 中，CODEX_HOME 从子命令环境移除。命令权限固定为检出与 scratch 可写、独立 `.git` 只读、明确运行时目录可读、网络关闭。
+
+**当前原生执行与权限行为仍待 S9 的具体 canary 实测。** 离线 fake 会实际运行微型 build/test，但不是 macOS 权限拒读证明。`python -m multi_agent.adapters.test_probe prepare --output-dir PATH` 生成可审计划，不运行 CLI 或读取认证；真实 `run --plan ... --case native-test-boundary` 按 runtime-protocols 的具体授权和用户终端流程执行。
+
+退出报告按固定版本源码解释：0–255（124 除外）可映射为运行时规范化退出码，其中大于等于 128 既可能是普通退出也可能是信号映射，不能猜原因。124、-1 及其它不支持值保留原报告，可确认退出保持未知并记录问题；只有宿主实际 deadline 到期才记录 TIMEOUT。
+
+停止范围 `command-request-and-owned-runtime-v1` 要求匹配最终响应、请求结算，以及所有登记的宿主辅助进程、App Server、自有组、reader/watcher 和 acquisition 结算。它不声称内部命令私有进程组或任意脱离的后代均停止。尚未触及命令请求的预检失败，只要宿主所有资源确实停止，可以负向结算；已尝试发送请求而没有 final 时仍为未知。
+
+日志范围为 `server-emitted-notifications-v1`：保存实际收到的二进制 stdout/stderr、wire、配置观察与范围收据。服务端有自己的输出 drain 限制，因此生产者 stdout/stderr EOF 始终未确认。输出 cap、本地预算或写入/封存故障使证据不合格；不把 App Server 的 EOF 当成命令退出。
+
+T50 的 Prepared 与 Reported 事件保存在现有 JSON 历史中，没有新迁移。Started+Prepared 原子预留绑定原始 task/test 两份历史 checkpoint、候选、独立检出、scratch、策略和日志根。每个命令必须在新鲜作用域中先预留，再消费一次启动许可；冷 DB/manifest 不能重建该许可。一次性归档重新核对实际日志、完整准备记录及原历史前缀。
+
+同候选审核与至多一轮返工将在此执行入口之后接入。旧四字段 `TestEvidence` 和 `user_supplied` 来源保持不变。
+
+## 输入与状态设计沿革
 
 T48 定义候选上的不可变测试输入。`prepare_task_test_input(store, task_run_id, attempt, lease, *, required_commands, declaration_source)` 准备 `TaskTestInput`，不创建测试检出、不执行命令、不登记测试尝试。
 
@@ -24,7 +67,7 @@ T48 定义候选上的不可变测试输入。`prepare_task_test_input(store, ta
 
 准备好的输入不是可跨时间复用的执行许可。后续独立测试登记仍须实际重新核候选，并在同一个事务里核当前实现、完整候选、原 TaskInput、registry 中的名称和 argv、本次原历史 CAS，以及测试阶段自身的当前尝试与唯一预留约束。
 
-T49 提供下述事务与纯状态；测试执行器、实际归档核验、独立检出及权限隔离仍由后续卡提供。不能从输入或状态记录存在推断测试实际运行过。旧 FrozenSnapshot、四字段 TestEvidence 及 user_supplied 含义保持原样，版本化执行来源在后续审核桥接中处理。
+T49 提供下述事务与纯状态，T50 接入上面的执行流程。不能从输入或状态记录存在推断测试实际运行过。旧 FrozenSnapshot、四字段 TestEvidence 及 user_supplied 含义保持原样，版本化执行来源在后续审核桥接中处理。
 
 ## 原子登记与完整历史
 

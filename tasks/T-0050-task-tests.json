@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "id": "T-0050",
+  "goal": "让用户从已核验的固定候选，一次运行冻结且明确声明的测试套件，在独立检出中顺序执行 build/test，并查看可追溯的成功、失败、退出报告和日志。",
+  "baseline_commit": "eb1dd4590e2270f101afe699d128673397a904f7",
+  "write_scope": [
+    "src/multi_agent/core/task_test_execution.py",
+    "src/multi_agent/core/task_test_events.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/task_test_codec.py",
+    "src/multi_agent/store/task_test_store.py",
+    "src/multi_agent/cli/task_test_checkouts.py",
+    "src/multi_agent/cli/task_test_context.py",
+    "src/multi_agent/cli/task_test_evidence.py",
+    "src/multi_agent/cli/task_test_runner.py",
+    "src/multi_agent/cli/task_test_cli.py",
+    "src/multi_agent/cli/task_context.py",
+    "src/multi_agent/cli/main.py",
+    "src/multi_agent/adapters/test_isolation.py",
+    "src/multi_agent/adapters/test_recording.py",
+    "src/multi_agent/adapters/test_runtime.py",
+    "src/multi_agent/adapters/test_probe.py",
+    "tests/unit/test_task_test_checkouts.py",
+    "tests/unit/test_task_test_execution.py",
+    "tests/unit/test_task_test_execution_store.py",
+    "tests/unit/test_task_test_context.py",
+    "tests/unit/test_task_test_evidence.py",
+    "tests/unit/test_task_test_runtime.py",
+    "tests/unit/test_task_test_runner.py",
+    "tests/unit/test_task_test_cli.py",
+    "tests/unit/test_task_test_probe.py",
+    "tests/unit/runtime_fakes/test_cli.py",
+    "tests/replay/test_task_test_replay.py",
+    "tests/replay/scenarios/test-stages/task_test_managed_*.json",
+    "docs/task-tests.md",
+    "docs/phase-two-development.md",
+    "docs/deliveries/T-0050.md",
+    "tasks/T-0050-task-tests.json"
+  ],
+  "depends_on": [
+    "T-0049"
+  ],
+  "interface_contracts": [
+    {
+      "name": "original request, priority and coherent scope",
+      "definition": "原始用户需求原文：新开一个阶段2窗口开始按开发顺序继续执行。2026-11-17 新指令原文：收尾 T49 后，优先打通“候选提交→执行测试→展示结果”，再接审核和一轮返工。保留现有检查，减少碎片化拆卡和过度防御，后续按实际可用功能和整体完成百分比汇报进度。来源为仓库外 phase-two/priority-adjustment-2026-11-17.json。本卡是一项完整测试功能；不接审核或返工调度、不改旧 Snapshot/TestEvidence、不自动接受/合并、不实现阶段3或前端、不安装容器/工具链、不扩建通用对抗性进程监管框架。T50/design.json 的 standalone-only 拆卡选择已停止，仅其源码事实可参考。 本卡由仓库外草案正式派发，实际基线已重定到T49正常提交eb1dd4590e2270f101afe699d128673397a904f7；T49完整verify及正常hook均通过（3084 unit、51 replay）。正式派发前已完成本实际基线的schema/dispatchable/ancestry/overlap及共享接口复核，记录在仓库外T50/dispatch-validation.txt和baseline-audit.json。Claude实际报告模型claude-opus-5-5，effort未报告；card-reviews/T-0050-text的4项意见已落实为固定scratch、超时先后、实际版本门禁及schema-grounded fake/S9声明。"
+    },
+    {
+      "name": "frozen input and exact original histories",
+      "definition": "所有用户运行入口先在同一真实 Git common-dir executor lease 下调用 T48 prepare_task_test_input，显式 required_commands 和 declaration_source 不省略、不默认读取候选命令配置；只执行原冻结 rules registry 中 name 对应的完整 executable+args，按声明顺序，同 argv 不同 name 仍是不同命令。proposed_tests 不成为批准命令。保留原 TaskTestInput 的完整 task-H 和来源，原 test stage 当前号及完整 test-H 也在创建前捕获；HISTORY_ONLY 亦计入 hash。读取可不存在的test stage调用本卡load_task_test_checkpoint，单BEGIN中仅精确_stage_row None表示不存在；不能捕获任意KeyError/解码错误后伪造空历史。创建末尾在所有依赖读取后重做实际 candidate inspect 和原 guard.check，并核原 test-H/DB/lease；不以刷新 H 消除并发变化。T47 _capture(...,bound=True)、_Guard.check、_objects/_revision 和 T31 有界文件/路径规则可只读复用，不修改原模块。"
+    },
+    {
+      "name": "checkout artifact API and initial bytes",
+      "definition": "core/task_test_execution.py 定义 frozen slots、keyword-only TaskTestCheckout(version=1,layout=\"standalone-shallow-git-v1\",input:TaskTestInput,repository:str,database_path:str,database_identity:tuple[int,int],database_parent_identity:tuple[int,int],root:str,root_identity:tuple[int,int],git_directory:str,git_identity:tuple[int,int],owner_token:str,object_format:str,initial_digest:str,controls:tuple[WorkspaceControl,...],objects:tuple[tuple[str,str],...],observed_test_attempt:int|None,test_history_length:int,test_history_hash:str)。candidate/commit/tree/task/hash/commands 均从完整 input 派生，不另存可漂移副本。cli/task_test_checkouts.py 提供 create_task_test_checkout(store:TaskTestStore,value:TaskTestInput,lease:ExecutorLease,destination:Path)->TaskTestCheckout 和 inspect_initial_task_test_checkout(lease,record)->WorkspaceInspection。前者仅返回 artifact；不是执行许可、reservation、测试结果或结算。只初次 pristine inspector 要求 candidate 原始文件完全相同；命令开始后不得再用 pristine 判断阻止合法 build 产物。 destination固定为已拥有的业务root/checkout；业务root才是actual DB同parent新目录，checkout子目录不能再次套用要求DB-sibling的_new_root。artifact创建须确认持有业务root及父身份、destination尚不存在，返回值仍绑定真实DB/业务父身份。"
+    },
+    {
+      "name": "standalone shallow Git creation and capabilities",
+      "definition": "从已实际核验的 source candidate raw commit、全部递归 tree/blob body 建新仓库，不复制实现工作树当前文件。原始 commit 非 UTF-8 message、binary/CRLF/可执行位/内部 symlink 保留；复核 Git header+body OID。新 root/.git 为真实独立目录，empty template、匹配 object format、最小自有 config、detached HEAD、shallow 文件仅 candidate OID+LF；复制 candidate 及其完整 tree/blob closure（含空 tree），不复制 parent、tags、source refs/config/hooks/remotes/alternates/commondir/index，不硬链接。直接 materialize raw files 后 read-tree 建 index，不执行 filters/hooks/项目脚本。核 exact ls-files --stage -z 的 stage0 路径/mode/OID 清单，并独立核全部 raw tree；不将 write-tree==candidate.tree 作为空目录 tree 的唯一 oracle。自有 nonce 在 .git 中，不污染候选 untracked 文件。实际同 inode/类型/有界 non-follow 稳定读取复用既有边界，危险元数据先于 Git 调用拒绝。支持当前 tree 的普通 Git 查询；明确没有父历史、tags、remote、gitlink/submodule 或自动 fetch。SHA256 object 层可独立测试；现上游 baseline40位限制未在本卡放宽，不声称 full planning→SHA256 已支持。"
+    },
+    {
+      "name": "policy and prepared value APIs",
+      "definition": "同 core/task_test_execution.py 定义 TaskTestPolicy(executable:str,executable_identity:tuple[int,int],executable_sha256:str,timeout:float,grace:float,output_bytes_limit:int,tool_directories:tuple[str,...]=(),runtime_read_paths:tuple[str,...]=(),required_stop_scope:str=\"command-request-and-owned-runtime-v1\",output_scope:str=\"server-emitted-notifications-v1\",version:int=1) 与 TaskTestContext(path:str,identity:tuple[int,int],token:str,manifest_sha256:str)。边界 capture_task_test_policy(executable: str|Path=\"codex\",*,timeout,grace,output_bytes_limit=8388608,tool_directories=(),runtime_read_paths=())->TaskTestPolicy：无目录分量的名称（默认codex）先shutil.which(name)，查不到即拒；显式路径也必须存在，随后canonical化并捕获真实regular executable身份/hash，有限非 bool 正数和预算在资源创建前校验。命令 argv 不因工具解析而改写；受控 PATH 为显式工具目录加固定系统目录，额外只读运行时路径也固定并记录，不能把 HOME、源仓库、DB/context/logs 或凭据根整体放行。无自动下载/网络依赖回退；缺工具/依赖按真实失败显示。配置请求与实际 config/version/requirements observations 分开保存，不以请求值补实际报告。 同模块另定义frozen slots keyword-only TaskTestScratch(path:str,identity:tuple[int,int],home_identity:tuple[int,int],tmp_identity:tuple[int,int],cache_identity:tuple[int,int])，固定path=业务root/scratch，home/tmp/cache三个路径分别由path加固定字面目录名派生为只读properties，不存可漂移重复路径。四个目录全部host新建0700、canonical/non-symlink，实际inode分别核验；内容允许工具写入，目录身份不可替换。 显式tool/runtime读取根不得覆盖业务root（checkout/scratch本身按固定权限另授权）、context/logs/DB、源worktree/Git、真实host HOME本身或其祖先；允许明确声明HOME下的独立已安装runtime子目录，但拒凭据根/其祖先及指向它们的canonical别名。来源worktree范围由持lease的context在绑定前核对；不让adapter反向import CLI查路径。"
+    },
+    {
+      "name": "managed preparation without SQL or legacy hash changes",
+      "definition": "在 task_test_events.py 新增 frozen slots TaskTestExecutionPrepared(checkout:TaskTestCheckout,context:TaskTestContext,policy:TaskTestPolicy,scratch:TaskTestScratch)，kind=task_test_execution_prepared；保留原 TaskTestAttemptStarted(input) 签名、字段和旧编码形状，不追加 managed=False。Prepared 存在 attempt.events，prepared_for_test(attempt) 派生；无需 SQL 表/列或0006，不改0005。Prepared 只能紧接本次 Started 成为第二个 APPLIED event；同一完整 Prepared 重复只 history，不同拒绝；previous attempts 全是 Prepared 链才允许 managed retry，已有 legacy stage 不得中途升级、managed stage 不得退回 Started-only。所有规则在 transitions.py 唯一表中，不另存 SQL phase。新增 pure reserve_task_test_execution(state,started,prepared,implementation)->TaskTestState，局部两步均 APPLIED 后才返回；不能把中间 Started 发布成执行许可。旧观察和旧 stage/core API 保持 T49 行为。 同一managed stage的policy按canonical全字段保持固定；每次显式retry使用全新checkout/context/token/日志根，不能复用任何历史Prepared的路径、identity或token。 scratch也是Prepared实际hash字段，不是sidecar或默认目录；sameattempt各command复用同scratch，retry必须新scratch及全部child身份。"
+    },
+    {
+      "name": "atomic managed store and reported command event",
+      "definition": "TaskTestStore 新增 reserve_task_test_execution(task_run_id,started,prepared,*,expected_test_attempt,expected_history_length,expected_history_hash)->None；同 BEGIN IMMEDIATE 内用现 _reservation_source 核 exact current implementation/full TaskInput/原 registry/input task-H，再核 test current+完整 test-H，调用 pure pair helper，全成功后一次写 stage/current/attempt/history 两条。普通 apply 禁 Prepared，旧 reserve_task_test_attempt 禁从 managed stage 产生 Started-only；错误不写半步，提交后外层错误不声称回滚或补偿。现 reserve_task_test_command 继续是唯一命令 Started 入口，managed 当前必须已有 exact Prepared。另新增 TaskTestCommandReported(sequence:int,reported_exit_code:int,response:JSONValue)，kind=task_test_command_reported，freeze_json response；仅记录实际匹配最终 RPC response，response明确是经校验的command/exec RESULT object（exitCode/stdout/stderr），不是JSON-RPC envelope；原bounded完整result保留且exitCode与reported_exit_code一致，wire envelope及request/process IDs由adapter/archive保存。它不等于 CommandExited、不推进成功；同 sequence exact canonical duplicate H_ONLY、冲突拒绝，旧 impl/test/advanced sequence H_ONLY，未知/future/zero拒绝。只保存 attempt.events，不新增 command state/SQL 冗余字段。codec 只在新 kind 编解码，旧 T49/implementation/legacy snapshot bytes/hash unchanged；新 required fields 不兜底。 TaskTestStore另提供list_task_test_stages()->tuple[tuple[str,int],...]，按稳定创建/键次序列出全部stage供跨路线DB反查，不只列当前成功项；load_task_test_checkpoint(task_run_id,implementation_attempt)->tuple[TaskTestState|None,TaskTestHistory]在单一BEGIN内验证已知implementation后读取_stage_row，精确None返回(None,())，已有stage用_read_test/_read_test_history，任何解码或损坏错误原样抛。CLI创建和owner gate用这两个公开读API，不再私拼业务表或blanketcatch KeyError。 reservation同时核prepared.checkout内observed_test_attempt/test_history_length/test_history_hash与事务原始checkpoint完全相同，不能将旧artifact搭配刷新后的expected CAS接纳。"
+    },
+    {
+      "name": "context and fresh launch API",
+      "definition": "cli/task_test_context.py 提供 prepare_task_test_launch(database_path,task_run_id,implementation_attempt,*,repository,directory,required_commands,declaration_source,policy) contextmanager。内部持有 TaskTestStore 和源 executor_lock 到执行及结算结束；业务 root 是 actual DB 的同 parent 新目录，派生checkout/context/logs/scratch及scratch/{home,tmp,cache}，拒已有目录或 source worktree/Git 内路径。TaskTestLaunch 公共 store/lease/test_attempt/prepared/log_dir，check()->None、claim(sequence:int)->TaskTestExecutionPrepared；copies/deepcopies/replace 共用 active/已消费的私有 capability，离开 with 全部失效。claim 必须在本 sequence 的 exact APPLIED CommandStarted 持久化后、该 sequence 尚未消费时成功；不从冷 DB/Prepared 或 inspect 重建 launch。inspect_task_test_context(store,run_id,implementation_attempt,test_attempt,lease)->Prepared 只核已落盘 exact pair/manifest/identity，不授予执行许可。原 input/policy/initial artifact 与 frozen manifest 同一哈希链；manifest 只绑定 mutable registry inode/身份，不 hash marker 内容造成循环。 launch.scratch为prepared.scratch的只读property。固定context manifest顶层新增scratch=task_execution_value(prepared.scratch)，registry marker同样保存scratch path和四组实际identity；创建逐步失败时先记录已知部分，原子pair只能绑定完整scratch。inspect/check/claim核实际scratch目录身份和mode，不冻结其可变内容。TaskTestContext仍仅path/identity/token/manifest_sha256，scratch独立作为Prepared第四字段，避免不同实现者各加可选字段。"
+    },
+    {
+      "name": "cross-route ownership gate and failures",
+      "definition": "保留现 writer marker schema 和其检查语义；只在 cli/task_context.py 暴露 check_task_launch_owners(store,lease) 包既有 _scan_registry，并在其 prepare 路线同 lease 调新 check_task_test_launch_owners(store,lease)。新 test prepare 同 lease 调两者；不抽象通用 registry 框架。test marker 使用独立固定 namespace，登记 actual canonical DB path+inode、本 root/token/known identities/exact reservation pair。创建 root/checkout 前 O_EXCL 落 durable marker，same inode 更新；外 DB marker 保守阻断，不跟随任意 DB 指针。同 DB marker 以及 DB 中全部 test Prepared 双向核验，删除 marker 不使未知 attempt 消失。partial/unmatched、缺 Prepared、已知自有资源 stop 未确认均阻重发；历史test owner只要exact managed pair/marker/context身份仍匹配，且最新APPLIED Reconciled(process_stopped is True)实际确认命名范围，便可解除物理owner阻塞；archive缺失/封存失败/资格不合格不单独抹去该独立停止事实。测试通过和后续证据消费仍必须合格archive。不要求checkout恢复pristine，也不因all_descendants_stopped=None单独阻断。创建/写入/commit/close 错误保留第一原异常及 retained root/marker notes，不自动删/收养/重新执行。无恢复活进程功能；show 展示未完成及保留路径。 writer prepare_task_launch在原同一with中窄改为构造TaskTestStore（PlanningStore的子类），让两个gate通过公开test读取接口工作；原writer行为和marker编码保持，不私自对PlanningStore猜测test业务表，也不另开跨DB连接。相互调用采用窄local import避免CLI模块循环初始化。"
+    },
+    {
+      "name": "runtime transport API and direct argv",
+      "definition": "adapters/test_runtime.py 定义单命令 TaskTestRuntimeAdapter(*,checkout:TaskTestCheckout,scratch:TaskTestScratch,policy:TaskTestPolicy,log_dir:Path,deadline_at:float|None=None,on_cancel_accepted:Callable[[],None]|None=None)，async run(command:NamedCommand,*,sequence:int)->TestCommandResult、async cancel()->bool、snapshot()->TestCommandResult、ownership_receipt()->RuntimeOwnershipReceipt。snapshot 是不可变已观察事实快照，异常后仍可读已得 facts，不执行/清理；run 单次，cancel 可重复但只接受一次。TestCommandResult为adapters/test_runtime.py内frozen slots keyword-only值，固定字段：sequence:int,request_id:int|None,process_id:str|None,request_attempted:bool,request_settled:bool,reported_exit_code:int|None,response:JSONValue|None,exit_code:int|None,exit_code_provenance:str|None,timeout_observed:bool,cancel_accepted:bool,environment:EnvironmentInfo|None,observations:JSONValue,problems:tuple[Error,...],receipt:RuntimeOwnershipReceipt,stdout_received_bytes:int,stderr_received_bytes:int,stdout_cap_reached:bool|None,stderr_cap_reached:bool|None,output_limit_reached:bool。response是final result object；response/observations经freeze_json。observations仅含实际且已脱敏/验证的version/config/requirements/来源观察，不记录未验证任意config payload。environment只填实际报告，未观测登录/模型catalog保持None。receipt是该owner真实不可变snapshot，初始可为空ledger但不得伪造settled；stdout/stderr/wire沿receipt.logs中的LogOwnership与固定文件名定位，不另造重复日志类或hash字段。cap字段在无对应通知时None。request_attempted只表示已进入本请求写边界，不是实际server spawn证明；成功运行日志名固定stdout.bin、stderr.bin、wire.jsonl。每条命令新建一个短命 Codex App Server；只 initialize/必要配置审计/command RPC，不调用 thread/start、turn/start 或模型。使用本机 v0.169.0 snapshot 的 command/exec，完整 command argv、cwd=同一 checkout、tty=false、streamStdin=false、streamStdoutStderr=true、唯一 connection-scoped processId、显式有界 cap/timeout；不得 shell 包装/拼串，不把 processId 当 OS PID。实现独立 bounded RPC drain，不能复用会无限 deferred notifications 的 _Rpc.request。已有 Process/OwnershipLedger/Recorder 可只读复用；raw output 用新 test_recording.py 的二进制封存 writer，沿同 LogOwnership 接口登记。 T50路径的wire Recorder也必须是新test_recording内有界实现/兼容子类，保留既有脱敏与pending config/read安全结构；closed-file核验最多读取已记录字节预算加一字节，不原样复用旧Recorder的读到EOF核验。旧Recorder源码和旧合同不改，本卡不声称修复其其它调用路径。 在进入command/exec前先由同owner以完整argv [policy.executable,\"--version\"]进行有界实际版本读取，纳入同一host deadline及ownership；正常真实OS exit和有限UTF8输出确认精确codex-cli 0.169.0后才允许命令RPC，未知/损坏/不匹配停止并保留实际报告（不以本地快照常量填environment.cli_version）。每次命令还核executable identity/hash未变；版本辅助进程的exit不可混成command exit。"
+    },
+    {
+      "name": "native permission boundary and honest observations",
+      "definition": "adapters/test_isolation.py 提供测试专用固定权限 profile/隔离工厂，复用现 CodexIsolation 的已知 process/ledger 生命周期做窄组合，不放宽旧 review/write profile；现 implementation helper 要 linked .git file，不能伪装新的 standalone .git directory。要求 clean HOME/CODEX_HOME、环境白名单、固定配置与 config/read layers/requirements 审计；native filesystem 允许本 checkout 与独立 scratch 必要写入、checkout .git 只读、声明工具/runtime roots 和 :minimal 系统运行时读取，禁止源 workspace/common/admin、宿主和临时认证材料、宿主 DB/context/logs，network false；不能用宽泛 read-only/workspace-write 替代。必要官方订阅认证仅存在 host 隔离根，不授予命令读取。清 env/0700 不是 OS 拒读证明；有效配置是实际 observation，实际权限行为待本卡具体 canary 在 S9 授权后验证。新 profile 不能继承旧 T22 只读 profile 的实测结论。 新工厂可组合现policy/auth编码helpers，并直接构造CodexIsolation实例以复用其spawn/terminate/cleanup；从分配根立即publish既有ledger acquisition，初次失败仍归实际owner。不得假设CodexIsolation.create可接任意test config：其旧create固定review/write policy，保持原接口和行为。 固定窄helper APIs：test_policy_config(checkout:TaskTestCheckout,scratch:TaskTestScratch,policy:TaskTestPolicy)->dict[str,Any]，test_command_environment(scratch,policy)->dict[str,str|None]，create_test_isolation(checkout,scratch,policy,recorder,*,log_dir:Path,ownership:OwnershipLedger)->CodexIsolation。host CodexIsolation的HOME/CODEX_HOME仍在每命令独立host私有根，auth仅host可读；被测child通过checked-in CommandExecParams.env显式传HOME=scratch/home、TMPDIR=scratch/tmp、XDG_CACHE_HOME=scratch/cache、CODEX_HOME=null及受控PATH。env是覆盖server计算环境，不能把host auth HOME当child HOME；真实请求和实际权限profile均绑定这些路径。scratch整套命令复用、retry新建，cache不指回宿主真实home。 adapter层只依赖core值、base/ownership/probe及已审adapter helpers，不import由root实现的CLI模块。auth factory单测使用独立fake登录材料和临时宿主环境，不能靠CLI fixture隐式复制真实用户认证；CLI集成fake和auth factory测试分开表述。"
+    },
+    {
+      "name": "deadline cancellation and exact completion semantics",
+      "definition": "同一命令version/preflight/start/request使用一个monotonic deadline_at预算；未传deadline_at时run开始即固定D=loop.time()+policy.timeout，传入则用该有限值。cleanup独立有限grace；不得每操作重置timeout。准备发送command/exec时采样R=D-loop.time()，R<=0时不发送并记录实际host expiry；R>0时timeoutMs=ceil((R+policy.grace)*1000)+1，因此声明的RPC时限严格晚于剩余host deadline再加grace。host自己的实际monotonic计时器先控制超时/取消及结算，server内部timeout只是后备；不承诺任意OS调度暂停下的绝对先后，若仍收到124按歧义处理，不倒推host已超时。只有 host 实际 deadline 到期才记 TIMEOUT Problem，不能从 numeric124推断。取消先持久 accepted CancelRequested（exact once），再等原 matching command final，随后关 App Server、join readers/watchers、核 owner；terminate {} 只是 ack，EOF/App Server exit 不是命令退出。caller CancelledError 转 stop intent 后 shield 同 worker 至结算，再抛首 cancel（保留首 host error cause）；不能放弃 pending spawn/RPC consumer。cancel callback DB 错先 exact-envelope/occurrence 确认是否已提交，再最多一次原 envelope 补写；首 host 异常始终保留，不能经补写恢复资格。取消后实际0仍如实记录但 cancel latch 不变。"
+    },
+    {
+      "name": "reported code provenance and T49 mapping",
+      "definition": "官方 exact rust-v0.169.0 pipe.rs:238-257 在 child.wait 完成后发送 code，正常 status.code 原值、signal规范化128+signal，wait错误-1；command_exec.rs:512-516 会把内部timeout改成124、channel错误变-1。因此 archive 的字段固定 command_reported_exit_code/raw_final_response，不统称 OS wait status。Mac支持路径中0..255除124外可映射为TaskTestCommandExited，附report-source/version及runtime-normalized exit code映射来源；>=128既可能普通exit也可能128+signal，两者均来自成功wait，因此不只因数值较大新增Problem或拒正常exit200。不可把该映射称为原始OS wait status，不能推断是否signal。-1、124以及超出已支持POSIX报告范围的值保留TaskTestCommandReported，但不猜raw exit/signal/timeout，记录category=None的Problem、可确认映射exit为None、证据不合格。额外实际 host timeout可另记TIMEOUT。缺 matching final 不能伪造任何 CommandExited；spawn/协议/审计失败 likewise。非零事实不强制 failfast；已物理结算可继续声明后续命令，最终仍失败。"
+    },
+    {
+      "name": "required stop scope and successful execution",
+      "definition": "固定 required_stop_scope=\"command-request-and-owned-runtime-v1\"：本命令 matching final response 已观察且 RPC request settled；所有 host 登记 operation/acquisition/pending/unknown spawn settled；actual App Server exit、其 owned process group gone、readers/watcher结束；所有已登记 helper 停止。process_stopped=True 仅表示此命名范围实际核对成功，不声称内部 command 私有组或任意后代停止。command_group_gone、all_descendants_stopped、producer_stdout_eof、producer_stderr_eof 固定 None，不能从 groupkill/EOF/final response 反推。源码显示 command 在独立 NewSession，私有 PGID 不暴露，termination/drop 是 best effort，故 App Server group 不包括 command 私有组。已进入command/exec写边界(request_attempted=True)而missing final，或任一已登记资源未结算=>范围stop None/False，阻下一 command/retry/正向资格。歧义 reported code 可保持请求范围已结算但 actual exit未知且有Problem，不冒成功。正常零退出、每条 scope stoptrue、完整已接收日志、无取消/Problem且当前来源成立可 SUCCEEDED，不因上述范围外None永久禁用成功。 若version/config预检失败，request_attempted=False且明确尚未触及命令请求边界，所有已登记辅助/host资源实际结算后可记录负向process_stopped=True，无须伪造不存在命令的final/Exited；这允许T49正常显式重试。开始写请求后的未知发送结果必须request_attempted=True并沿missing-final门禁，不能误用预检例外。"
+    },
+    {
+      "name": "bounded output and command archive API",
+      "definition": "输出范围固定 server-emitted-notifications-v1：逐 processId/stream 严格 base64 解码，按接收顺序精确保存 stdout.bin/stderr.bin 的所有已接收字节（可含任意非UTF8），并记录原 JSON-RPC wire/response、实际 capReached、byte counts/hash、config observations、request IDs、code provenance、receipt及明确None限制。Codex端两秒drain上限/未报告producerEOF意味着不能声称完整生产者输出；capReached、host预算溢出、local write/flush/close failure独立记录。到达local界限保留已写前缀、实际丢失/错误事实并取消/drain，不能声称全部保存或合格；bounded malformed/wrongID/duplicate final拒绝，不无限缓冲。adapters/test_recording.py 成功写字节hash/count且失败sticky，closed后有界NOFOLLOW核regular identity/size/mode/hash；不读open/unsealed日志到EOF。cli/task_test_evidence.py 提供 seal_task_test_command(launch,sequence,result)->TaskTestCommandManifest 和 inspect_task_test_command(store,run_id,implementation_attempt,test_attempt,sequence,lease)->TaskTestCommandManifest。固定 logs/command-N/.seal.json 与 execution.json，一次性封存，错误保留marker；seal消费状态与copy共享。archive存完整input_hash/Prepared hash/command exactargv/current history prefix length/hash/实际 facts，manifest hash作为 Reconciled pair。prefix改写/current切换/当前取消或Problem使资格失败；合法旧观察append可保留历史，不能替换actualreport。冷inspect有界读文件重算事实，不信JSON内 qualified布尔。无stop不扫描checkout；posttest仅核owner/固定Git控件，允许生成物，不把初始manifest当结束证据。 TaskTestCommandManifest在cli/task_test_evidence.py为frozen slots keyword-only，固定字段path:str,sha256:str,task_run_id:str,implementation_attempt:int,test_attempt:int,sequence:int,input_hash:str,prepared_hash:str,history_length:int,history_hash:str,actual_result:JSONValue,process_stopped:bool|None,qualified:bool,validation_error:str|None,version:int=1,stop_scope:str=\"command-request-and-owned-runtime-v1\",output_scope:str=\"server-emitted-notifications-v1\",command_group_gone:None=None,all_descendants_stopped:None=None,producer_stdout_eof:None=None,producer_stderr_eof:None=None。原JSON archive中sha256/path不自引用自身，返回对象由读取路径和实际bytes hash补这两个外部锚；其余字段必须与实际payload一致。scratch绑定通过prepared_hash及完整Prepared内容核验，不另接松散scratch路径参数。 actual_result为运行时TestCommandResult的完整冻结JSON，receipt为从actual_result.receipt经严格解析派生的RuntimeOwnershipReceipt property，不存两份可漂移结果；四个None限制字段继续保留。unknownstop归档不扫描checkout控件，只核宿主日志/context，冷inspect不将存储的qualified字段当证明。"
+    },
+    {
+      "name": "suite runner transaction and failure lifecycle",
+      "definition": "cli/task_test_runner.py 提供 async execute_task_tests(database_path,task_run_id,implementation_attempt,*,repository,directory,required_commands,declaration_source,policy,stop:asyncio.Event|None=None)->TaskTestState。同 with 持lease/store及fresh launch；一次 new checkout 贯穿所有声明命令，绝不在 build→test 之间清理/重新materialize。每条先source/context轻核验，专用 reserve_command CAS，claim后才创建adapter；不能调用模型而声称测试。自然次序保存真实 Reported、可映射 Exited、Problem/Cancel、真实 scope Reconciled，最后Finished；每条evidence封好再advance。第一DB/host错误后不启动新命令，但保留首error并继续drain当前operation，窄有界pending保留原envelope/occurred_at/顺序/次数，exact occurrence回读防postcommit重复；尽力保存独立exit/stop/负向证据，失败不得伪造成功、不得自动retry。所有异常类型先标hostfailure再结算；不得仅在最外层catch而让consumer提前中断。当前真实stop与log资格分开：日志失败可stoptrue+无合格pair，unknownstop则不扫描且保留root。Finished只逻辑结束，T49统一phase/cancel/late rules继续适用。所有declared命令实际零退出和每条合格receipt才能pass，未运行不能补0。"
+    },
+    {
+      "name": "minimal CLI and result view",
+      "definition": "在现 python -m multi_agent 入口新增 task-test 子命令，现 freeze/run/show/retry/confirm/benchmark 完全保持。task-test run TASK_RUN_ID --database PATH --implementation-attempt N --repository PATH --directory ROOT --command NAME（可重复且顺序）--declaration-source TEXT [--codex-bin PATH --timeout SECONDS --grace SECONDS --output-bytes-limit N --tool-directory PATH --runtime-read-path PATH]；不提供任意 --shell 或临时 argv替代registry。task-test show TASK_RUN_ID --database PATH --implementation-attempt N [--test-attempt N] 为只读业务展示，不创建不存在DB/测试attempt/外部目录。输出简明 JSON/文本中的候选、套件结果、每条命令名称/状态/报告退出码/日志路径；详细 raw/权限/stop范围另在details，不散落到正常用户流。实际失败、取消、未运行、证据不完整/归档被改必须区分；历史记录的passed不冒称当前归档仍verified。已完成show须bounded重核archive身份/hash，并显示source-current/verification情况；活动lease不可取得时可显示持久状态但不能晋新的verified资格。run返回0仅合格成功，1为已结算负向或不完整，2为输入/宿主失败，用户中断保留真实结算后130。show本身成功读取返回0。无resume/自动retry；再次run只能经T49显式全套新attempt门禁。 TaskTestStore.open_readonly(path,*,timeout=5.0)->TaskTestStore为此增加窄只读构造：现存regular canonical DB、SQLite URI mode=ro、query_only、Row factory、实际user_version必须等于本卡支持的5；不调用原__init__/_migrate、不CREATE/升级/写业务数据，不用immutable=1忽略活动WAL。show遇缺DB/旧schema明确报错，不自动修复；普通读方法仍同一事务读实际当前状态。 稳定show JSON键为task_run_id,implementation_attempt,test_attempt,candidate,phase,verification,source_current,commands,details；commands逐项为sequence,name,status,reported_exit_code,exit_code,verification,logs:{stdout,stderr,wire}。candidate为固定OID；缺失报告/日志填null，不填0或虚构路径。默认--codex-bin=\"codex\"按capture helper的shutil.which解析，用户可传明确path；不先假定当前系统PATH中必有程序。"
+    },
+    {
+      "name": "reviewable native permission canary in the feature",
+      "definition": "adapters/test_probe.py 提供独立 python -m multi_agent.adapters.test_probe prepare --output-dir PATH 和 run --plan PATH --case native-test-boundary。prepare只生成具体manifest/源码与协议hash/版本要求/完整argv/允许写入的临时树/预期输出/cleanup与receipt方案，不启动任何CLI或读取认证。run只能选择已审具体plan且匹配源码/版本/profile，使用同生产test隔离与command RPC，记录 actual code/output/ownership；无thread/turn/model调用。case覆盖checkout生成并被后续命令读取、原workspace/Git拒写、host与temporary-auth sentinel拒读、日志/DB/context拒读写、明确工具/runtime可读和network拒绝；只用无敏感内容canary，不输出真实credentials。计划中写清退出/保留目录/实际stop scope和未证明项。该工具与离线fake测试是本卡交付；真实run需runtime-protocols规定的具体授权并由用户终端执行，开发/verify/hook不得自动运行，不把提供工具说成已验证权限。 canary明确核child scratch HOME/TMPDIR/XDG_CACHE_HOME实际可写且build生成物后续可读、host auth HOME不同且不可读。源码/版本/profile绑定核的是本次实际版本观测；工具仅离线实现完成时不得称实际native命令或权限已验证，即使所有fake通过也必须在S9由用户终端运行具体已授权plan后才升级该结论。"
+    },
+    {
+      "name": "compatibility, validation and handoff",
+      "definition": "本卡只扩大新test功能调用链，core/store旧trusted API与所有已有JSON/hash/test refs保持；TaskTestStore新Prepared/Reported走现JSON列，无SQL migration。旧 TestEvidence/source=user_supplied 不改，不自动生成审核快照/冒称同候选审核已接通。新pure/core+SQLite replay各重复两次，逐步状态+完整history dispositions；独立namespace test-stages 下新增managed五场景，旧T49六场景/其余回放不修改削弱。实施前用最小新增unit/replay在实际baseline经唯一verify入口留red，缺API collection明确behavioral_red=false；随后意义fake与临时Git/SQLite端到端，未授权真实Codex/Claude或原生probe调用禁止；产品run/show通过fakebackend的真实CLI入口端到端测试明确允许。所有check仅scripts/verify.sh，完整verify和正常hook；不改受保护配置、不加noqa绕检查。跨提供方复核/开工baseline/实际scope与每条验收证据记录外部T50和交付文档。按可执行用户闭环汇报进度，不以卡/commit/test数量代替功能完成。 fake wire不能凭自造协议契约通过：tests/unit/runtime_fakes/test_cli.py及验收测试对实际发出的command/exec/terminate请求params、final result与outputDelta params，使用仓库checked-in protocol/codex/schema/v2/CommandExecParams.json、CommandExecTerminateParams.json、CommandExecResponse.json、CommandExecTerminateResponse.json、CommandExecOutputDeltaNotification.json及ClientRequest/ServerNotification envelope schema校验；合法fake必须通过，故意畸形case单独注明并断言拒绝。无需新生产JSONSchema依赖，沿现测试依赖；不手造或覆写tests/fixtures/runtime实机录制，不把fake验证描述成真实command/exec已运行。"
+    }
+  ],
+  "deliverables": [
+    "一个可调用的 task-test run/show 功能：从既有已绑定候选起步，实际核验来源、创建独立检出、执行冻结命名命令、封存逐命令日志并显示套件结果。整套命令共享同一次新检出，build 产物可被后续 test 使用。",
+    "必要的 Prepared 事件、专用原子 reservation、来源和 owner 门禁、独立 checkout、Codex command/exec 适配器及原生权限配置在本卡一起接通；不再把可用操作拆成多张 primitive 或管理卡。",
+    "可审核且默认不执行的原生权限 canary prepare/run 工具，以及不接触真实模型/CLI 的独立 fake 端到端、状态回放和兼容测试。",
+    "docs/phase-two-development.md 按 2026-11-17 用户优先级更新后续顺序：先可用测试闭环，再同候选审核和至多一轮返工；保留历史和 S9 实机验收边界。交付说明列出实际可用操作、证据范围和未实测项。"
+  ],
+  "acceptance_criteria": [
+    "test_task_test_feature_build_then_test_and_show：临时真实Git+SQLite+fake App Server从已核验candidate执行两条冻结命令；build真实生成artifact，test在同checkout读到，原实现workspace/Git不变；run返回0、show重开后仍可核验candidate/两个零退出/日志。",
+    "test_task_test_checkout_preserves_candidate_raw_bytes_and_independence：binary/executable/CRLF/internal symlink、非UTF8commit message与空tree保留；stage0index精确；独立.git无sourceconfig/hooks/remotes/alternates/hardlinks/parentobjects，不执行filter；SHA256只在实际支持的object层验证。",
+    "test_task_test_managed_reservation_is_atomic_and_legacy_compatible：Started+Prepared原taskH/testH/current/registry同事务，任意precommit失败无半步；postcommit错不假rollback；legacy编码golden不变，managed不能退回legacy，legacy不能升级，普通apply不能绕过。",
+    "test_task_test_launch_requires_fresh_committed_pair_and_shared_claim：初始artifact本身无执行权；exactpair/lease/current不符拒，copy/deepcopy/replace每sequence共用一次消费，离开with均失效，冷inspect不能获得launch。",
+    "test_task_test_and_writer_share_unknown_owner_gate：test和writer两路线跨run扫描marker+DB；partial/缺marker/foreignDB/未知资源stop阻发，foreign指针不跟随；合格声明范围可放行，all_descendants=None本身不阻正常成功。 exactpair/context且latestAPPLIED stoptrue时，archive失败不阻物理owner释放/合法全套retry；仍不得使该次测试pass。",
+    "test_task_test_runtime_uses_frozen_argv_and_native_policy：完整argv无shell、不调用model methods、stream字段精确、同checkout及固定policy实际审计，环境白名单；源workspace与credential不加入允许根，tool/runtime路径显式冻结，fake不是实际OS拒读证明。",
+    "test_task_test_reported_codes_do_not_invent_actual_exit：0..255除124外按runtime-normalized来源映射，普通exit200保持可追溯非零失败，不猜128+signal原因；-1/124保留raw report+Problem、可确认exit未知、不猜timeout；AppServerexit/EOF/terminateack不生成CommandExited。",
+    "test_task_test_scoped_settlement_can_succeed_without_descendant_claim：final0+hostledger真实settled+封存日志成功；group/descendants/producerEOF始终None；missingfinal或已知active/pending/unknown资源不advance、不pass。",
+    "test_task_test_output_bytes_are_bounded_sealed_and_truthful：任意非UTF8/base64chunk精确bytes/hash；capReached/oversize/wrongID/duplicatefinal/invalidJSON或UTF8及write/flush/close故障分别保留负向事实；unsealed FIFO不读，未声明producerEOF，archive篡改inspect拒。",
+    "test_task_test_deadline_cancel_and_host_failure_drain：preflight+command共享deadline；acceptedcancel一次持久化且late0不复活；caller取消、generic异常、DBpre/postcommit故障仍drain同operation、保存actualfacts及首cause，不启动后续命令。",
+    "test_task_test_failure_continues_only_after_actual_scope_stop：正常非零可继续后续声明，最终failed；坏日志stoptrue可保留失败/不完整，未知stop拒继续/retry；没有运行的required命令保持not_run。",
+    "test_task_test_seal_and_cold_inspect_bind_actual_command：exactinput/Prepared/argv/report/currenthistoryprefix/真实日志与receipt相互绑定，消耗后不可reseal；当前取消/Problem/切换拒资格，旧观察不污染当前，但原H改写不可刷新掩盖。",
+    "test_task_test_cli_keeps_existing_commands_and_shows_recovery：旧CLI行为不变，newrun/show正确退出码/结果字段，unknownname/proposedtest/缺声明拒；show不创建资源，历史归档缺失或改动不仍显示verifiedpass，未完成可见且无自动resume。 现存v4/不存在DB的show不迁移/创建，当前v5从readonly连接可见已提交WAL状态；旧数据字节及schema不变。",
+    "test_task_test_probe_prepare_is_inert_and_plan_bound：prepare无CLI/认证/模型I/O；fake run核同生产policy和完整canary计划、源hash版本不符拒；工具默认不在verify/hook真实执行，交付不伪称S9权限已验证。",
+    "test_task_test_managed_replays：新增task_test_managed_happy、task_test_managed_nonzero、task_test_managed_cancel_unknown、task_test_managed_host_failure、task_test_managed_restart_stale；纯fold及SQLite各重复两次，逐步完整state/history，原回放集合不削弱。",
+    "审核diff确认 docs/phase-two-development.md保留历史并按用户操作顺序安排测试→审核→一轮返工，交付以新可用操作/实际权限限制/待S9证据说明；无受保护配置/旧TestEvidence/0005修改，完整verify和正常hook通过。",
+    "test_task_test_scratch_is_bound_shared_and_separate_from_host_auth：manifest/marker/Prepared核固定scratch及三个子目录身份；同attempt build→test可复用scratch/cache，retry新建；actual env覆盖HOME/TMPDIR/XDG_CACHE_HOME且CODEX_HOME置null，替换identity拒；host CLI auth根与child home明确不同。",
+    "test_task_test_actual_version_and_default_executable：默认shutil.which codex再canonical身份/hash；bounded真实fake --version报告精确0.169.0才command，版本错误/unknown/身份变化无command且不补版本；辅助进程exit独立。",
+    "test_task_test_host_deadline_precedes_rpc_budget：fake捕获timeoutMs严格大于采样剩余D+grace，preflight耗时不重置D；实际host expiry才TIMEOUT，提前server124不推断timeout；request_attempted=False的预检失败在真实host资源停后可负向结算/显式retry，已写请求缺final保持unknown。",
+    "test_task_test_fake_wire_matches_checked_in_protocol：合法fake请求/结果/通知经exact v0.169 checked-in schema校验，故意畸形输入独立拒；无伪造live fixture，delivery明确native执行/权限仍待S9用户具体授权canary。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

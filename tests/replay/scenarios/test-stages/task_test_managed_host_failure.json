@@ -1,0 +1,448 @@
+{
+  "name": "task_test_managed_host_failure",
+  "evidence": "synthetic trusted host facts; no commands executed",
+  "steps": [
+    {
+      "occurred_at": "task_test_managed_host_failure:00",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 1,
+      "managed": true,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared"
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_host_failure:01",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_host_failure:02",
+      "event": {
+        "type": "task_test_command_reported",
+        "sequence": 1,
+        "reported_exit_code": 124,
+        "response": {
+          "exitCode": 124,
+          "stdout": "",
+          "stderr": ""
+        }
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_host_failure:03",
+      "event": {
+        "type": "task_test_problem",
+        "sequence": 1,
+        "category": null,
+        "detail": "Synthetic host failure; actual command exit remains unknown"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": [
+                  3
+                ]
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_host_failure:04",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": true,
+        "detail": "Synthetic command-request-and-owned-runtime-v1 receipt; descendants unknown",
+        "receipt_path": null,
+        "receipt_sha256": null,
+        "evidence_qualified": false
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": 4,
+                "problems": [
+                  3
+                ]
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": 4,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_host_failure:05",
+      "event": {
+        "type": "task_test_attempt_finished"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": 4,
+                "problems": [
+                  3
+                ]
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 4,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_managed_host_failure:06",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "managed": true,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": 4,
+                "problems": [
+                  3
+                ]
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 4,
+            "events": [
+              0,
+              "0:prepared",
+              1,
+              2,
+              3,
+              4,
+              5
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 6,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              6,
+              "6:prepared"
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": "0:prepared",
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 4,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 6,
+            "disposition": "applied"
+          },
+          {
+            "step": "6:prepared",
+            "disposition": "applied"
+          }
+        ]
+      }
+    }
+  ]
+}
