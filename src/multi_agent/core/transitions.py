@@ -61,8 +61,30 @@ from .task_events import (
     TaskReconciled,
     TaskScopeBlocked,
 )
-from .task_execution import prepared_for_task, task_execution_hash
+from .task_execution import (
+    prepared_for_task,
+    task_execution_hash,
+    task_execution_value,
+)
 from .task_state import TaskAttempt, TaskPhase, TaskState
+from .task_test_events import (
+    TaskTestAttemptFinished,
+    TaskTestAttemptStarted,
+    TaskTestCancelRequested,
+    TaskTestCommandExited,
+    TaskTestCommandStarted,
+    TaskTestEnvelope,
+    TaskTestEvent,
+    TaskTestProblem,
+    TaskTestReconciled,
+)
+from .task_test_input import TaskTestInput
+from .task_test_state import (
+    TaskTestAttempt,
+    TaskTestCommandState,
+    TaskTestPhase,
+    TaskTestState,
+)
 from .tasks import TaskCard
 
 type Transition = Callable[[AttemptState, ReviewEvent], AttemptState]
@@ -1148,3 +1170,405 @@ def apply_planning(
     if transition is None:
         return state, Disposition.HISTORY_ONLY
     return transition(state, envelope)
+
+
+def _task_test_stopped(attempt: TaskTestAttempt) -> bool:
+    current = attempt.current_command
+    receipt = attempt.reconciliation
+    return (
+        receipt is not None
+        and receipt.sequence == (current.sequence if current is not None else None)
+        and receipt.process_stopped is True
+    )
+
+
+def _task_test_receipt_ready(receipt: TaskTestReconciled | None) -> bool:
+    return (
+        receipt is not None
+        and receipt.process_stopped is True
+        and receipt.evidence_qualified is True
+        and bool(receipt.receipt_path)
+        and bool(receipt.receipt_sha256)
+    )
+
+
+def task_test_phase(attempt: TaskTestAttempt | None) -> TaskTestPhase:
+    """One derivation for both a pure fold and reconstructed persisted facts."""
+    if attempt is None:
+        return TaskTestPhase.READY
+    if attempt.cancel_requested:
+        return (
+            TaskTestPhase.CANCELLED
+            if attempt.finished and _task_test_stopped(attempt)
+            else TaskTestPhase.CANCELLING
+        )
+    if not attempt.finished:
+        return TaskTestPhase.RUNNING
+    if attempt.problems or any(
+        command.problems or command.exit_code is not None and command.exit_code != 0
+        for command in attempt.commands
+    ):
+        return TaskTestPhase.FAILED
+    if (
+        bool(attempt.input.commands)
+        and len(attempt.commands) == len(attempt.input.commands)
+        and all(
+            command.sequence == number
+            and command.exit_code == 0
+            and _task_test_receipt_ready(command.reconciliation)
+            and command.reconciliation is not None
+            and command.reconciliation.sequence == number
+            for number, command in enumerate(attempt.commands, 1)
+        )
+        and _task_test_stopped(attempt)
+        and _task_test_receipt_ready(attempt.reconciliation)
+    ):
+        return TaskTestPhase.SUCCEEDED
+    return TaskTestPhase.AWAITING_EVIDENCE
+
+
+def _task_test_source(
+    state: TaskTestState, value: TaskTestInput, implementation: TaskState
+) -> bool:
+    current = implementation.current_attempt
+    return (
+        current is not None
+        and current.number == state.implementation_attempt
+        and isinstance(value.implementation_attempt, int)
+        and not isinstance(value.implementation_attempt, bool)
+        and value.implementation_attempt == state.implementation_attempt
+        and value.task_run_id == state.task_run_id
+        and value.task_id == implementation.task_id
+        and value.task_hash == implementation.task_hash
+        and value.rules_hash == implementation.rules_hash
+        and implementation.candidate_ready
+        and task_execution_hash(value.candidate)
+        == task_execution_hash(implementation.current_candidate)
+    )
+
+
+def task_test_ready(state: TaskTestState, implementation: TaskState) -> bool:
+    """A current-state gate, never actual archive verification or launch rights."""
+    current = state.current_attempt
+    return (
+        current is not None
+        and state.phase == TaskTestPhase.SUCCEEDED
+        and task_test_phase(current) == TaskTestPhase.SUCCEEDED
+        and _task_test_source(state, current.input, implementation)
+    )
+
+
+def _task_test_semantics(value: TaskTestInput) -> str:
+    semantic = task_execution_value(value)
+    del semantic["task_history_length"]
+    del semantic["task_history_hash"]
+    return task_execution_hash(semantic)
+
+
+def _task_test_replace(state: TaskTestState, attempt: TaskTestAttempt) -> TaskTestState:
+    return replace(
+        state,
+        attempts=state.attempts[:-1] + (attempt,),
+        phase=task_test_phase(attempt),
+    )
+
+
+type TaskTestTransition = Callable[
+    [TaskTestState, TaskTestEnvelope, TaskState], tuple[TaskTestState, Disposition]
+]
+
+
+def _task_test_start(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestAttemptStarted)
+    if not _task_test_source(state, event.input, implementation):
+        raise ValueError("test reservation does not identify the current candidate")
+    if _task_test_semantics(event.input) != _task_test_semantics(state.reference_input):
+        raise ValueError("test attempt changes the stage's frozen semantic input")
+    current = state.current_attempt
+    if current is not None and (
+        not current.finished
+        or task_test_phase(current)
+        not in (
+            TaskTestPhase.FAILED,
+            TaskTestPhase.CANCELLED,
+            TaskTestPhase.AWAITING_EVIDENCE,
+        )
+        or not _task_test_stopped(current)
+    ):
+        raise ValueError("test retry requires logical completion and actual settlement")
+    attempt = TaskTestAttempt(envelope.test_attempt, event.input)
+    return (
+        replace(
+            state, attempts=state.attempts + (attempt,), phase=task_test_phase(attempt)
+        ),
+        Disposition.APPLIED,
+    )
+
+
+def _task_test_command_start(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestCommandStarted)
+    current = state.current_attempt
+    assert current is not None
+    if (
+        not _task_test_source(state, current.input, implementation)
+        or current.finished
+        or current.cancel_requested
+        or current.problems
+        or event.sequence != len(current.commands) + 1
+        or event.sequence > len(current.input.commands)
+    ):
+        raise ValueError("test command is not an authorized next command")
+    previous = current.current_command
+    if previous is not None:
+        if (
+            previous.exit_code is None
+            and not previous.problems
+            or previous.reconciliation is None
+            or previous.reconciliation.process_stopped is not True
+            or not _task_test_stopped(current)
+        ):
+            raise ValueError("previous test command has not actually settled")
+    elif current.reconciliation is not None and not _task_test_stopped(current):
+        raise ValueError("test preflight resources have not actually settled")
+    return (
+        _task_test_replace(
+            state,
+            replace(
+                current,
+                commands=current.commands + (TaskTestCommandState(event.sequence),),
+                reconciliation=None,
+            ),
+        ),
+        Disposition.APPLIED,
+    )
+
+
+def _task_test_exit(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestCommandExited)
+    current = state.current_attempt
+    assert current is not None and current.current_command is not None
+    command = current.current_command
+    if not isinstance(event.exit_code, int) or isinstance(event.exit_code, bool):
+        raise TypeError("test exit code must be an actual integer")
+    if command.exit_code is not None:
+        if event.exit_code == command.exit_code:
+            return state, Disposition.HISTORY_ONLY
+        raise ValueError("test command already has another actual exit code")
+    return (
+        _task_test_replace(
+            state,
+            replace(
+                current,
+                commands=current.commands[:-1]
+                + (replace(command, exit_code=event.exit_code),),
+            ),
+        ),
+        Disposition.APPLIED,
+    )
+
+
+def _task_test_problem(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestProblem)
+    current = state.current_attempt
+    assert current is not None
+    command = current.current_command
+    problems = (
+        current.problems
+        if event.sequence is None
+        else command.problems
+        if command
+        else ()
+    )
+    if any(
+        task_execution_hash(item) == task_execution_hash(event) for item in problems
+    ):
+        return state, Disposition.HISTORY_ONLY
+    if event.sequence is None:
+        updated = replace(current, problems=current.problems + (event,))
+    else:
+        assert command is not None
+        updated = replace(
+            current,
+            commands=current.commands[:-1]
+            + (replace(command, problems=command.problems + (event,)),),
+        )
+    return _task_test_replace(state, updated), Disposition.APPLIED
+
+
+def _task_test_reconcile(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    event = envelope.event
+    assert isinstance(event, TaskTestReconciled)
+    current = state.current_attempt
+    assert current is not None
+    if (
+        event.process_stopped is not None
+        and not isinstance(event.process_stopped, bool)
+        or not isinstance(event.evidence_qualified, bool)
+        or (event.receipt_path is None) != (event.receipt_sha256 is None)
+        or event.evidence_qualified
+        and (not event.receipt_path or not event.receipt_sha256)
+    ):
+        raise ValueError("test reconciliation has inconsistent evidence facts")
+    if task_execution_hash(current.reconciliation) == task_execution_hash(event):
+        return state, Disposition.HISTORY_ONLY
+    commands = current.commands
+    if event.sequence is not None:
+        command = current.current_command
+        assert command is not None
+        commands = commands[:-1] + (replace(command, reconciliation=event),)
+    return (
+        _task_test_replace(
+            state, replace(current, commands=commands, reconciliation=event)
+        ),
+        Disposition.APPLIED,
+    )
+
+
+def _task_test_cancel(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    current = state.current_attempt
+    assert current is not None
+    if current.cancel_requested or (
+        current.finished and task_test_phase(current) != TaskTestPhase.AWAITING_EVIDENCE
+    ):
+        return state, Disposition.HISTORY_ONLY
+    return _task_test_replace(
+        state, replace(current, cancel_requested=True)
+    ), Disposition.APPLIED
+
+
+def _task_test_finish(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    current = state.current_attempt
+    assert current is not None
+    if current.finished:
+        return state, Disposition.HISTORY_ONLY
+    return _task_test_replace(
+        state, replace(current, finished=True)
+    ), Disposition.APPLIED
+
+
+_TASK_TEST_OBSERVATIONS: dict[type[TaskTestEvent], TaskTestTransition] = {
+    TaskTestCommandExited: _task_test_exit,
+    TaskTestProblem: _task_test_problem,
+    TaskTestReconciled: _task_test_reconcile,
+    TaskTestCancelRequested: _task_test_cancel,
+    TaskTestAttemptFinished: _task_test_finish,
+}
+_TASK_TEST_TRANSITIONS: dict[
+    TaskTestPhase, dict[type[TaskTestEvent], TaskTestTransition]
+] = {
+    TaskTestPhase.READY: {TaskTestAttemptStarted: _task_test_start},
+    TaskTestPhase.RUNNING: {
+        **_TASK_TEST_OBSERVATIONS,
+        TaskTestCommandStarted: _task_test_command_start,
+    },
+    TaskTestPhase.CANCELLING: _TASK_TEST_OBSERVATIONS,
+    TaskTestPhase.SUCCEEDED: _TASK_TEST_OBSERVATIONS,
+    TaskTestPhase.AWAITING_EVIDENCE: {
+        **_TASK_TEST_OBSERVATIONS,
+        TaskTestAttemptStarted: _task_test_start,
+    },
+    TaskTestPhase.FAILED: {
+        **_TASK_TEST_OBSERVATIONS,
+        TaskTestAttemptStarted: _task_test_start,
+    },
+    TaskTestPhase.CANCELLED: {
+        **_TASK_TEST_OBSERVATIONS,
+        TaskTestAttemptStarted: _task_test_start,
+    },
+}
+
+
+def _task_test_number(value: object) -> None:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ValueError("test coordinates must be positive integers")
+
+
+def apply_task_test(
+    state: TaskTestState, envelope: TaskTestEnvelope, implementation: TaskState
+) -> tuple[TaskTestState, Disposition]:
+    """Keep old observations, but never reinterpret stale controller requests."""
+    _task_test_number(envelope.implementation_attempt)
+    _task_test_number(envelope.test_attempt)
+    if envelope.implementation_attempt != state.implementation_attempt:
+        raise ValueError("test envelope addresses another implementation stage")
+    actual = implementation.current_attempt
+    if actual is None or not any(
+        item.number == state.implementation_attempt for item in implementation.attempts
+    ):
+        raise ValueError("test implementation attempt has not started")
+    event = envelope.event
+    if isinstance(event, (TaskTestCommandStarted, TaskTestCommandExited)) or (
+        isinstance(event, (TaskTestProblem, TaskTestReconciled))
+        and event.sequence is not None
+    ):
+        _task_test_number(event.sequence)
+    current = state.current_attempt
+    if isinstance(event, (TaskTestAttemptStarted, TaskTestCommandStarted)):
+        if state.implementation_attempt != actual.number:
+            raise ValueError("cannot reserve tests for an old implementation")
+        next_number = 1 if current is None else current.number + 1
+        if isinstance(event, TaskTestAttemptStarted):
+            if envelope.test_attempt != next_number:
+                raise ValueError(
+                    "test attempt reservation is not the unique next number"
+                )
+        elif current is None or envelope.test_attempt != current.number:
+            raise ValueError(
+                "test command reservation requires the current test attempt"
+            )
+    else:
+        selected = next(
+            (item for item in state.attempts if item.number == envelope.test_attempt),
+            None,
+        )
+        if selected is None:
+            raise ValueError("test attempt has not started")
+        if isinstance(
+            event, (TaskTestCommandExited, TaskTestProblem, TaskTestReconciled)
+        ):
+            sequence = event.sequence
+            if sequence is not None and not any(
+                item.sequence == sequence for item in selected.commands
+            ):
+                raise ValueError("test command has not started")
+            old_epoch = (
+                selected.current_command is not None
+                and sequence != selected.current_command.sequence
+            )
+        else:
+            old_epoch = False
+        if (
+            state.implementation_attempt < actual.number
+            or selected != current
+            or old_epoch
+        ):
+            return state, Disposition.HISTORY_ONLY
+    registered = _TASK_TEST_TRANSITIONS[state.phase]
+    if type(event) not in registered:
+        raise ValueError(f"event {event.kind} is invalid in test phase {state.phase}")
+    updated, disposition = registered[type(event)](state, envelope, implementation)
+    if disposition == Disposition.APPLIED:
+        attempt = updated.current_attempt
+        assert attempt is not None
+        updated = _task_test_replace(
+            updated, replace(attempt, events=attempt.events + (event,))
+        )
+    return updated, disposition

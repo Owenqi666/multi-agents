@@ -1,0 +1,1111 @@
+{
+  "name": "task_test_fresh_checkpoint",
+  "evidence": "synthetic trusted host facts; no commands executed",
+  "steps": [
+    {
+      "occurred_at": "task_test_fresh_checkpoint:00",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:01",
+      "event": {
+        "type": "task_test_problem",
+        "sequence": null,
+        "category": null,
+        "detail": "Synthetic host problem"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              1
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:02",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": null,
+        "process_stopped": true,
+        "detail": "Synthetic host receipt",
+        "receipt_path": "/synthetic/test-receipt.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:03",
+      "event": {
+        "type": "task_test_attempt_finished"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:04",
+      "implementation": "append-history",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:05",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "input": "reference",
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:06",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "input_change": "shrink",
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:07",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "input_change": "order",
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:08",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "input_change": "source",
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:09",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "input_change": "anchor",
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:10",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              10
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:11",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 2,
+      "cas": {
+        "expected_test_attempt": 1
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              10
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:12",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 2,
+      "cas": {
+        "expected_command_sequence": 1
+      },
+      "error": "ValueError",
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              10
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:13",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              10,
+              13
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:14",
+      "event": {
+        "type": "task_test_command_exited",
+        "sequence": 1,
+        "exit_code": 0
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              10,
+              13,
+              14
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:15",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": true,
+        "detail": "Synthetic host receipt",
+        "receipt_path": "/synthetic/test-receipt.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 15,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": 15,
+            "events": [
+              10,
+              13,
+              14,
+              15
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          },
+          {
+            "step": 15,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:16",
+      "event": {
+        "type": "task_test_attempt_finished"
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "awaiting_evidence",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 15,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 15,
+            "events": [
+              10,
+              13,
+              14,
+              15,
+              16
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          },
+          {
+            "step": 15,
+            "disposition": "applied"
+          },
+          {
+            "step": 16,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_fresh_checkpoint:17",
+      "event": {
+        "type": "task_test_cancel_requested"
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "cancelled",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [
+              1
+            ],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 2,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 10,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 15,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": true,
+            "finished": true,
+            "reconciliation": 15,
+            "events": [
+              10,
+              13,
+              14,
+              15,
+              16,
+              17
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          },
+          {
+            "step": 15,
+            "disposition": "applied"
+          },
+          {
+            "step": 16,
+            "disposition": "applied"
+          },
+          {
+            "step": 17,
+            "disposition": "applied"
+          }
+        ]
+      }
+    }
+  ]
+}

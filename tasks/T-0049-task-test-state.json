@@ -1,0 +1,137 @@
+{
+  "schema_version": 1,
+  "id": "T-0049",
+  "goal": "把冻结候选的独立测试阶段、尝试和命令序列持久化为可回放状态，原子预留且不把逻辑结束、退出或日志混成测试通过证据。",
+  "baseline_commit": "84dbd02146e39a12c40d4513543e805d9d6c9bdd",
+  "write_scope": [
+    "src/multi_agent/core/task_test_events.py",
+    "src/multi_agent/core/task_test_state.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/task_test_codec.py",
+    "src/multi_agent/store/task_test_store.py",
+    "src/multi_agent/store/migrations/0005_task_tests.sql",
+    "tests/unit/test_task_tests.py",
+    "tests/unit/test_task_test_store.py",
+    "tests/replay/test_task_test_replay.py",
+    "tests/replay/scenarios/test-stages/task_test_*.json",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_store_inputs.py",
+    "tests/unit/test_task_store.py",
+    "tests/unit/test_planning_store.py",
+    "docs/task-tests.md",
+    "docs/deliveries/T-0049.md",
+    "tasks/T-0049-task-test-state.json"
+  ],
+  "depends_on": [
+    "T-0048"
+  ],
+  "interface_contracts": [
+    {
+      "name": "scope and formal dispatch",
+      "definition": "S6纯状态/persistence卡。只实现新测试stage/attempt/command值、唯一转移表、专用原子store、显式codec、0005迁移及独立unit/replay。不创建checkout、不运行命令/adapter/runner、不实现实际archive seal、不修改TaskState/旧Snapshot/TestEvidence/审核绑定、不新增失败分类、不自动retry/accept/merge。草案已随原用户需求“新开一个阶段2窗口开始按开发顺序继续执行”经Claude跨提供方文字复核并处置意见。正式基线为T48实际提交84dbd02146e39a12c40d4513543e805d9d6c9bdd，--dispatchable/ancestor/scope overlap派发前验证。已经按真实来源重新核对四处latest版本断言内容、38个旧回放collect IDs、八份旧golden和源文件哈希。行号只作导航辅助，修改以内容核验为准。"
+    },
+    {
+      "name": "stage identity and input semantics",
+      "definition": "测试stage唯一键为(task_run_id,implementation_attempt)，不另引入stage_id，不提供独立create_stage。首次reserve在一个事务内创建stage、首attempt、current和history。stage保留第一份完整TaskTestInput作为reference_input；每个test attempt保留此次新prepare_task_test_input所得完整input。比较stage语义时从task_execution_value(input)仅删除task_history_length和task_history_hash，其余全部字段严格相同，含version/source_kind、声明原文、命令name/executable/args/order、task/run/impl/fullTaskInputhash、完整candidate事件。不能只比较候选commit或选取部分字段，也不能要求新input_hash仍等于首次的瞬时history hash。 严格语义比较使用剩余值的task_execution_json或task_execution_hash，不用普通Python映射==混同True/1。task_execution_value只编码dataclass实际fields，input_hash/candidate_hash是property，不进入值；此事实已由T48真实实现与测试固定。"
+    },
+    {
+      "name": "frozen state values",
+      "definition": "core/task_test_state.py定义frozen slots TaskTestCommandState(sequence:int,exit_code:int|None=None,reconciliation:TaskTestReconciled|None=None,problems:tuple[TaskTestProblem,...]=())；TaskTestAttempt(number:int,input:TaskTestInput,commands:tuple[TaskTestCommandState,...]=(),problems:tuple[TaskTestProblem,...]=(),cancel_requested:bool=False,finished:bool=False,reconciliation:TaskTestReconciled|None=None,events:tuple[TaskTestEvent,...]=())；TaskTestState(task_run_id:str,implementation_attempt:int,reference_input:TaskTestInput,phase:TaskTestPhase=READY,attempts:tuple[TaskTestAttempt,...]=())，current_attempt/current_command仅派生。READY仅供首次reserve的局部空state，成功数据库stage总有至少一次预留。序列由input.commands唯一决定，不另存可漂移argv/name副本；命令的实际记录始终按sequence映射原NamedCommand。 attempt.problems只保存sequence=None的preflight问题；命令开始后的宿主问题必须带当前sequence并保存在对应command.problems，不混入preflight守卫。"
+    },
+    {
+      "name": "event and envelope APIs",
+      "definition": "core/task_test_events.py定义frozen slots及固定snake_case kind：TaskTestAttemptStarted(input:TaskTestInput)；TaskTestCommandStarted(sequence:int)；TaskTestCommandExited(sequence:int,exit_code:int)；TaskTestProblem(sequence:int|None,category:FailureCategory|None,detail:str)；TaskTestCancelRequested()；TaskTestReconciled(sequence:int|None,process_stopped:bool|None,detail:str,receipt_path:str|None=None,receipt_sha256:str|None=None,evidence_qualified:bool=False)；TaskTestAttemptFinished()。TaskTestEnvelope(implementation_attempt:int,test_attempt:int,event:TaskTestEvent,occurred_at:str|None=None)。两个Started是controller授权请求；其余是已接受控制/实际观察的记录，Finished也不能携带passed。TaskTestProblem不伪造CommandExited；AppServer退出/EOF不属于CommandExited的来源。category复用既有FailureCategory，None保留未分类宿主问题。 TaskTestProblem.sequence=None仅表示preflight epoch，不表示任意时刻全局宿主错误；开始命令后的宿主错误须显式使用当前sequence，晚到preflight仍保留HISTORY_ONLY。"
+    },
+    {
+      "name": "pure reducer and current implementation",
+      "definition": "在core/transitions.py新增唯一显式_TASK_TEST_TRANSITIONS及apply_task_test(state:TaskTestState,envelope:TaskTestEnvelope,implementation:TaskState)->tuple[TaskTestState,Disposition]。不在store建立第二套phase转移；store只作事务source/CAS与调用纯fold。task_test_ready(state,implementation)->bool位于同一转移模块，要求本测试phase SUCCEEDED且implementation仍精确当前、candidate_ready、fullcandidate及task/rules来源一致。它只是当前状态/来源门槛，不是实际archive验证或可缓存执行许可；未来边界仍须同lease actualinspect与事务核对。已撤销candidate资格的当前implementation仍可收实际exit/stop/Problem/Finished，但两个Started禁止。core不做Git/DB I/O。 同模块定义task_test_phase(attempt:TaskTestAttempt|None)->TaskTestPhase，按下述唯一派生规则计算；fold设置内存TaskTestState.phase、store load重建phase都复用这一纯函数，不另复制判断分支。SQL不另存phase副本。"
+    },
+    {
+      "name": "controller reservation and monotonic numbering",
+      "definition": "首次AttemptStarted必须test_attempt=1；之后必须当前number+1。当前成功SUCCEEDED不允许新attempt；仅当前已finished且FAILED/CANCELLED/AWAITING_EVIDENCE，并有当前epoch实际process_stopped is True，才可显式全套重试。无命令的attempt也须收到sequence=None的实际stop核对，不能由空列表/Finished推导停止。新的attempt清空命令/取消/finished/receipt，不复用成功前缀。CommandStarted仅当前test attempt、未finished/未cancel、无attempt-level(sequence=None)Problem时允许。首命令sequence=1且尚未占用命令资源，可从RUNNING开始，不要求虚构初始stop；已有None epoch Reconciled明确False/None时不得据此声称可继续。后续命令必须严格当前sequence+1且<=N，上一命令有actual exit或command Problem且其最新process_stopped is True。非零exit可继续，日志不合格可继续，均不隐含failfast。每次CommandStarted清空attempt.reconciliation，新命令stop/receipt未知，旧true不能授权新epoch。"
+    },
+    {
+      "name": "phases and logical outcomes",
+      "definition": "TaskTestPhase固定READY/RUNNING/CANCELLING/AWAITING_EVIDENCE/SUCCEEDED/FAILED/CANCELLED。未Finished且未cancel为RUNNING，即使某命令已有非零exit；cancel已接受则CANCELLING，停止事实独立。Finished首次把finished置True并停止新command；随后按优先级推导：cancel latch=>当前epoch实际process_stopped is True时CANCELLED，否则CANCELLING（host Finished本身不是实际停止或取消完成证明）；任意实际非零exit或已记录Problem=>FAILED；否则全部N命令均已开始且各actual exit=0、每条最新receipt合格且当前epoch整体receipt合格=>SUCCEEDED；其余=>AWAITING_EVIDENCE。未开始的命令是not_run/不完整，不能由Finished填0或通过；AWAITING_EVIDENCE允许在实际stop后显式全套retry，即使缺失名字不会再由旧attempt补开。FAILED可伴stop未知；CANCELLED要求已Finished且当前epoch实际stoptrue，停止资格撤销时回CANCELLING。任何phase均不能单独替代receipt核验，也不单独授予cleanup/retry。nonzero事实立即保存在command中，不因缺日志或后续Problem改变实际exit或被归为模型Error。"
+    },
+    {
+      "name": "reconciliation epochs and qualification",
+      "definition": "sequence=None标识尚无CommandStarted的attempt/preflight epoch；开始命令后使用当前命令sequence。每个命令保留自己的最新Reconciled，attempt.reconciliation只指当前epoch最近一次。process_stopped严格保留None/False/True，不coerce；True是host对该epoch所需资源停止范围的实际核对，不能由AppServer exit、EOF、terminate ack或owned group gone自动升级为全部descendants已停；缺所需scope证据保留None。evidence_qualified是host实际核验归档结果，pair存在本身不构成资格；此卡不猜raw outputs/logs/checkout/permission/stop_scope的未来archive schema。合格receipt要求process_stopped is True、evidence_qualified is True、receipt_path和receipt_sha256均非空。两字段必须同有/同无，evidence_qualified=True要求完整pair，但可以与后续stop=False/None共同保存并使资格为false。stoptrue+坏日志可物理结算、继续或重试，却不可通过。 明确后果：允许stoptrue但receipt不合格后advance，只保留可追溯失败/不完整事实；旧sequence的迟到receipt不能补成通过，整attempt不能SUCCEEDED。未来runner若希望通过须在advance前封好每条命令receipt，否则显式全套retry，不把最终receipt替代各命令缺失资格。"
+    },
+    {
+      "name": "late facts and negative revocation",
+      "definition": "Finished不是物理封存：同一current command/attempt的迟到Exited、Problem、Reconciled仍按合法规则APPLIED。SUCCEEDED收到最新stop=False/None、evidence_qualified=False或无pair的Reconciled，立即转AWAITING_EVIDENCE且task_test_ready=False，保留Finished、实际exit、先前events；后续同epoch真正合格Reconciled可恢复SUCCEEDED。FAILED保留失败事实，不被正向receipt或late exit0恢复成功。cancel latch永久保留；其最新stop=False/None时为CANCELLING，已Finished且实际stoptrue后为CANCELLED；未Finished时即使stoptrue仍CANCELLING，包括撤销先前停止资格时也不伪称已取消完成，永不恢复SUCCEEDED。任一current command新Problem令finished attempt为FAILED（cancel优先），未finished仍可记实际事实。已advance的旧sequence观察仅HISTORY_ONLY，不能撤销/恢复新epoch；未来实际host需以current epoch核完整相关资源/归档，不把旧序号回报当当前事实。"
+    },
+    {
+      "name": "routing and duplicates",
+      "definition": "先校验envelope implementation/test番号为正int非bool、命令sequence如非None为正int非bool，并与stage实现键一致；观察必须指向state内确实存在的test attempt和已开始sequence，unknown/future/zero拒ValueError，不把未来当旧结果收养。若stage implementation早于真实TaskState.current_attempt，已存在的合法观察HISTORY_ONLY；若current implementation但test attempt旧，观察HISTORY_ONLY；若current test但sequence已advance（含旧None epoch），观察HISTORY_ONLY，均先于当前phase/资格检查。两个Started不走旧观察路线，旧/重复/不正确next一律拒绝。current同命令Exited相同exit重复HISTORY_ONLY、不同exit拒ValueError；相同Problem重复HISTORY_ONLY、不同Problem追加；同一个latest Reconciled完全相同HISTORY_ONLY，不同Reconciled APPLIED并替换latest（即使内容曾更早出现）；Cancel首次在未Finished或Finished但仍AWAITING_EVIDENCE时接受并latch；同类重复或已SUCCEEDED/FAILED/CANCELLED的latecancel仅HISTORY_ONLY，不反改已有完成结果；Finished首次APPLIED、重复HISTORY_ONLY。所有APPLIED events进入attempt.events，所有合法envelope连同原occurred_at/disposition保留完整history，非法事件不记history。 sequence路由只用于有该字段的epoch事件：Exited必须具体已开始命令；Problem/Reconciled的None才是preflight。CancelRequested和AttemptFinished是整个test attempt的事件，没有sequence；不得用getattr缺字段默认None把它们误路由成旧preflight，也不要求命令已开始才能记录它们。它们仍遵守旧implementation/test attempt的HISTORY_ONLY隔离。"
+    },
+    {
+      "name": "store API and dedicated authorization",
+      "definition": "新增TaskTestStore(PlanningStore)，不改旧store类。API：reserve_task_test_attempt(task_run_id:str,envelope:TaskTestEnvelope,*,expected_test_attempt:int|None,expected_history_length:int,expected_history_hash:str)->None；reserve_task_test_command(task_run_id:str,envelope:TaskTestEnvelope,*,expected_test_attempt:int,expected_command_sequence:int|None,expected_history_length:int,expected_history_hash:str)->None；apply_task_test(task_run_id:str,envelope:TaskTestEnvelope)->Disposition；load_task_test(task_run_id:str,implementation_attempt:int)->TaskTestState；load_task_test_history(task_run_id:str,implementation_attempt:int)->tuple[tuple[TaskTestEnvelope,Disposition],...]. envelope实现号确定stage键，AttemptStarted.input.task_run_id/implementation_attempt必须与store键/envelope精确一致。专用入口传错event类型TypeError；普通apply即使是旧/重复Started也ValueError拒绝，不能绕过专用授权。未知task/stage由KeyError表明，不偷偷创建；只有首次reserve允许stage不存在。合法失败不吞原异常。 编号错误优先级：已知task时先拒零/非法号码及超过真实current implementation的future实现号，再按合法(task_run_id,implementation_attempt)读取stage；合法已存在实现attempt尚未有test stage时普通apply/load为KeyError。不得把future implementation包装成unknown stage来模糊其错误，也不得创建未知stage收养观察。"
+    },
+    {
+      "name": "three-layer atomic reservation",
+      "definition": "两个reserve均BEGIN IMMEDIATE后读取实际TaskState、原TaskInput、完整task history、当前test stage/attempt/command及完整test history，然后在任何业务写前完成：(1)implementation当前且candidate_ready、exactfullcandidate、task_id/task_hash/rules_hash、task_execution_hash完整原TaskInput及T48每个NamedCommand name+argv与原registry逐条一致，input.task_history_length/hash与完整实际taskH相等；(2)test stage当前attempt与显式expected_test_attempt一致、完整testH length/hash一致，首次stage期望None与空H canonicalhash；(3)纯fold要求合法唯一next attempt/command，command reserve额外比expected_command_sequence与实际current。test_attempt新input除history checkpoint外与reference_input全字段语义相等。CommandStarted使用当前attempt.input的taskH，不能刷新到最新；两连接即使taskH相同也只能一方成功。首次同事务插stage/首attempt/current/history；后续同事务UPSERT attempt/current/history，不delete旧attempt。提交前的验证或写入失败全回滚，不能先写stage占位再留下半步。 不从任意抛错反推事务未提交：实际提交后调用方再抛错或结果含糊时，可能已完整绑定。此卡不自动删除/重试/补偿；未来caller须按exact原envelope回读实际历史，再决定恢复，不能因异常自动重新启动。原异常原样传播。"
+    },
+    {
+      "name": "observation persistence and source changes",
+      "definition": "普通apply同BEGIN IMMEDIATE读implementation当前与test state后调用唯一pure reducer并原子写state/history。source当前资格撤销不应阻实际观察落盘；旧implementation/test/command依纯路由仅进history。普通观察不要求旧taskH仍相等，不把CAS失败当丢弃actual exit/stop的理由；授权reserve与事实观察明确分开。task_test_ready单独不验证完整原TaskInput/registry/history实际文件，未来消费必须额外做boundary+store事务，不能从本卡得到缓存pass许可。"
+    },
+    {
+      "name": "explicit codec and no legacy rewriting",
+      "definition": "新task_test_codec显式encode/decode TaskTestInput、TaskTestAttempt、TaskTestEnvelope，可按现task_codec复用精确旧TaskCandidateFrozen/NamedCommand构造，不修改旧codec函数或编码形状。version/source_kind是实际字段，required字段缺失直接抛错不默认；未知kind/enum拒绝，不bool(...)把None/False变成同一值。commands/events/problems解为tuple，完整candidate含execution anchor，TaskTestInput input_hash/task_execution_hash往返一致。不引入运行时字段默认、requested替actual，不改旧TaskInput/Snapshot/TestEvidence hash。"
+    },
+    {
+      "name": "migration 0005 and composite foreign keys",
+      "definition": "新增0005_task_tests.sql，仅新增task_test_stages/task_test_attempts/task_test_history三表。stage PRIMARY KEY(task_run_id,implementation_attempt)，FOREIGN KEY同两列REFERENCES task_attempts(run_id,number)，保存reference_input_payload、current_test_attempt（phase由已持久化attempt事实通过唯一task_test_phase派生，不设SQL phase列）；current三列复合FK到test attempts，DEFERRABLE INITIALLY DEFERRED。attempts PK(task_run_id,implementation_attempt,number)，同两列FK stage、payload TEXT；history PK(task_run_id,implementation_attempt,sequence)，同两列FK stage，envelope TEXT、disposition CHECK。番号>=1、引用与disposition约束齐全。不重写0001..0004，不迁移或重新序列化14张旧业务表。现ReviewStore自动加载全部SQL，因此所有store打开后latest=5；TaskStore._write_task既有UPSERT保留旧实现attempt，足以支持FK，不改该函数。"
+    },
+    {
+      "name": "narrow existing migration assertion updates",
+      "definition": "明确允许仅四个旧测试各一处字面最新版本4→5：tests/unit/test_store_review.py当前:53；test_store_inputs.py:132；test_task_store.py:589；test_planning_store.py:564。原因是0005由全局ReviewStore自动加载，原断言所指是当前latest而非固定旧快照。保留这些测试名称、旧版本0/1/3断言、old_version=[1,2]等全部原输入与其它assert，不改成动态max/放宽范围，不改旧case ID（含test_planning_v4...）。交付单列这四条机械变化原因。"
+    },
+    {
+      "name": "migration and concurrency evidence",
+      "definition": "新test_task_test_store.py构造真实仅0001..0004的v4 SQLite，填充14旧表合法关联行及具有特殊空白/Unicode的原TEXT和实际BLOB值（可利用SQLite动态类型，不修改旧schema），记录sqlite_master原表定义与原SQL读取到的列值/typeof。升级后逐值保持、原schema定义不变、user_version=5、foreign_key_check为空、reopen保持；不是整个SQLite文件hash，也不是仅比较decode对象。注入0005中途SQL失败，验证user_version仍4、旧schema/原行未变且无部分新表。另做两个独立连接Barrier同预期reserve attempt/command只能一赢，及每一步写故障全事务回滚；原implementation task历史不会被测试事件写入。 已核实际store/database.py的ReviewStore._migrate：在with connection和BEGIN IMMEDIATE中逐statement connection.execute，不用executescript，user_version也在同一事务写入，现有执行器已满足此原子性，不扩其scope。失败注入沿现test_store_review的monkeypatch database.files资源目录模式，在临时复制的0001..0004和中途故障0005上执行；不改仓库迁移文件。"
+    },
+    {
+      "name": "replay namespace and baseline red",
+      "definition": "新增独立test_task_test_replay.py，仅加载scenarios/test-stages/task_test_*.json，避免旧root glob误收。必须显式固定required场景名集合防零收集，所有旧38回放名/旧JSON/旧driver保持。每个场景纯fold与SQLite各重复两次，逐步断言state、完整events及完整history disposition，错误步骤不产生行；core driver的controller操作只有全部CAS/纯fold成功才赋新state/append history。缺接口collection red须如实标behavioral_red=false，正式可执行场景应保留基线red和after日志，不伪称执行到行为断言。"
+    },
+    {
+      "name": "named replay scenarios",
+      "definition": "至少六份：task_test_named_order（不同name同argv，非零后继续，全覆盖但failed）；task_test_unknown_stop_retry（失败/Finished但stop未知拒retry，实际stoptrue且fresh相同语义input后全套retry）；task_test_cancel_late_exit（accepted cancel、Finished、late0且未知stop仍cancelling，实际stoptrue才cancelled且真实exit保留）；task_test_late_observations（旧impl/旧test/旧command H_ONLY，旧Started/未来号拒）；task_test_fresh_checkpoint（仅taskH变化可新input，缩减/换序/来源/candidateanchor变化拒）；task_test_reconcile_revoked（完整成功→当前negative receipt撤销→合格恢复，旧seq positive不能恢复，Failed/Canceled不可复活）。只有本卡synthetic trusted host事实，不声称真实test执行、sandbox或full-tree stop验证。"
+    }
+  ],
+  "deliverables": [
+    "独立测试阶段、尝试、顺序命令与资格推导的唯一纯状态机。",
+    "TaskTestStore专用授权入口、三层current/history/source CAS、显式codec和0005迁移。",
+    "六组新离线回放、迁移字节兼容与并发/回滚证据，明确未来实际执行与archive仍未实现。"
+  ],
+  "acceptance_criteria": [
+    "test_task_test_stage_reservation_is_atomic_and_unique：首次一事务建stage/attempt/current/history，两连接相同taskH/空testH只一方成功，失败无半stage。",
+    "test_task_test_command_reservation_cannot_bypass_current_cas：两个Started普通apply拒绝；专用wrongtype TypeError，旧/重复/future/zero拒；actualcurrent/TestH/commandseq任何CAS不同都无写。",
+    "test_task_test_attempt_input_preserves_semantics_and_refreshes_only_checkpoint：每attempt保留新T48input与原H；仅checkpoint允许不同，完整语义任一字段改变拒，不能只比commit。",
+    "test_task_test_reservation_rechecks_task_input_registry_and_candidate：current实现、candidate_ready/fullcandidate、完整TaskInputhash、每个NamedCommand name+argv、原taskH事务内重核，错误不新增历史。",
+    "test_task_test_named_commands_preserve_order_and_nonzero_facts：同argv不同名各有sequence；非零/负signal保留且可依stoptrue继续；未运行与缺exit不能pass。",
+    "test_task_test_finished_never_invents_exit_or_stop：Finished只逻辑结束；无命令/缺actualexit/未知stop/坏evidence分别不得成功；未知stop不能授权next/retry。",
+    "test_task_test_cancel_latch_survives_late_zero：cancel后Finished/actual0且stop未知仍CANCELLING，实际stoptrue才CANCELLED；late0/正向receipt不能恢复成功，真实事实完整。Finished但AWAITING_EVIDENCE仍可接受cancel；已成功/失败后的latecancel不反改完成结果。",
+    "test_task_test_reconciliation_revokes_and_restores_only_current_success：SUCCEEDED current negative转AWAITING_EVIDENCE，合格latest可恢复；FAILED/CANCELLED不复活；旧seq只history。",
+    "test_task_test_old_observations_cannot_advance_state：旧impl/test/已advancecommand观察H_ONLY，尚未开始future/zero拒；current candidate撤销仍保存actualexit/stop且ready false。",
+    "test_task_test_retry_requires_finished_and_actual_settlement：仅失败/取消/证据不完整且逻辑Finished+当前epoch实际stoptrue可显式全套retry；成功不自动retry，不复用成功前缀。",
+    "test_task_test_codec_preserves_unknown_receipts_and_input_hash：None/False/True原样，tuple冻结，completecandidate/inputhash正确，缺required/unknownkind直接错，旧codec8份golden及legacySnapshot字节保持。",
+    "test_task_test_v4_to_v5_preserves_all_original_schema_and_values：真实v4十四旧表schema与原TEXT/BLOB/typeof逐值不变、latest5/FK/reopen；0005中途失败完全回滚。",
+    "test_task_test_transaction_failures_leave_no_partial_state：reserve/apply事务提交前多处写失败保留原异常，state/current/history整体回滚，不改implementation历史。 提交后外层错误不被宣称回滚，不自动启动或补偿。",
+    "test_task_test_replays：六指定场景core/sqlite各重复两遍，逐步state+完整history disposition精确断言，旧38collect IDs/JSON不变。",
+    "test_task_test_phase_rebuild_uses_one_derivation：SQL无phase副本，逐步纯fold与load/reopen均按同一task_test_phase得到相同phase；preflight None错误不会被当作运行中全局错误，推进后旧不合格receipt不能补pass。",
+    "完整lint/format/typecheck/unit/replay及正常hook通过；旧test只四处latest4→5且单列原因，无checkconfig/旧caseID削弱；无实际模型、测试执行或实机停止/权限验收声明。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

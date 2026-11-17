@@ -1,0 +1,1353 @@
+{
+  "name": "task_test_unknown_stop_retry",
+  "evidence": "synthetic trusted host facts; no commands executed",
+  "steps": [
+    {
+      "occurred_at": "task_test_unknown_stop_retry:00",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:01",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              1
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:02",
+      "event": {
+        "type": "task_test_command_exited",
+        "sequence": 1,
+        "exit_code": 3
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              0,
+              1,
+              2
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:03",
+      "event": {
+        "type": "task_test_attempt_finished"
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": null,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:04",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": null,
+            "events": [
+              0,
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:05",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": null,
+        "detail": "Synthetic host receipt",
+        "receipt_path": "/synthetic/test-receipt.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 5,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 5,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:06",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "error": "ValueError",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 5,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 5,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:07",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": true,
+        "detail": "Synthetic host receipt",
+        "receipt_path": null,
+        "receipt_sha256": null,
+        "evidence_qualified": false
+      },
+      "test_attempt": 1,
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:08",
+      "implementation": "append-history",
+      "expect": {
+        "phase": "failed",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:09",
+      "event": {
+        "type": "task_test_attempt_started"
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              9
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:10",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 1
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              9,
+              10
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:11",
+      "event": {
+        "type": "task_test_command_exited",
+        "sequence": 1,
+        "exit_code": 0
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              9,
+              10,
+              11
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 11,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:12",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 1,
+        "process_stopped": true,
+        "detail": "Synthetic host receipt",
+        "receipt_path": "/synthetic/test-receipt.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 12,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": 12,
+            "events": [
+              9,
+              10,
+              11,
+              12
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 11,
+            "disposition": "applied"
+          },
+          {
+            "step": 12,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:13",
+      "event": {
+        "type": "task_test_command_started",
+        "sequence": 2
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 12,
+                "problems": []
+              },
+              {
+                "sequence": 2,
+                "exit_code": null,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              9,
+              10,
+              11,
+              12,
+              13
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 11,
+            "disposition": "applied"
+          },
+          {
+            "step": 12,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:14",
+      "event": {
+        "type": "task_test_command_exited",
+        "sequence": 2,
+        "exit_code": 0
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 12,
+                "problems": []
+              },
+              {
+                "sequence": 2,
+                "exit_code": 0,
+                "reconciliation": null,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": null,
+            "events": [
+              9,
+              10,
+              11,
+              12,
+              13,
+              14
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 11,
+            "disposition": "applied"
+          },
+          {
+            "step": 12,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:15",
+      "event": {
+        "type": "task_test_reconciled",
+        "sequence": 2,
+        "process_stopped": true,
+        "detail": "Synthetic host receipt",
+        "receipt_path": "/synthetic/test-receipt.json",
+        "receipt_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "evidence_qualified": true
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "running",
+        "ready": false,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 12,
+                "problems": []
+              },
+              {
+                "sequence": 2,
+                "exit_code": 0,
+                "reconciliation": 15,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": false,
+            "reconciliation": 15,
+            "events": [
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 11,
+            "disposition": "applied"
+          },
+          {
+            "step": 12,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          },
+          {
+            "step": 15,
+            "disposition": "applied"
+          }
+        ]
+      }
+    },
+    {
+      "occurred_at": "task_test_unknown_stop_retry:16",
+      "event": {
+        "type": "task_test_attempt_finished"
+      },
+      "test_attempt": 2,
+      "expect": {
+        "phase": "succeeded",
+        "ready": true,
+        "attempts": [
+          {
+            "number": 1,
+            "input_step": 0,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 3,
+                "reconciliation": 7,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 7,
+            "events": [
+              0,
+              1,
+              2,
+              3,
+              5,
+              7
+            ]
+          },
+          {
+            "number": 2,
+            "input_step": 9,
+            "commands": [
+              {
+                "sequence": 1,
+                "exit_code": 0,
+                "reconciliation": 12,
+                "problems": []
+              },
+              {
+                "sequence": 2,
+                "exit_code": 0,
+                "reconciliation": 15,
+                "problems": []
+              }
+            ],
+            "problems": [],
+            "cancel_requested": false,
+            "finished": true,
+            "reconciliation": 15,
+            "events": [
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ]
+          }
+        ],
+        "history": [
+          {
+            "step": 0,
+            "disposition": "applied"
+          },
+          {
+            "step": 1,
+            "disposition": "applied"
+          },
+          {
+            "step": 2,
+            "disposition": "applied"
+          },
+          {
+            "step": 3,
+            "disposition": "applied"
+          },
+          {
+            "step": 5,
+            "disposition": "applied"
+          },
+          {
+            "step": 7,
+            "disposition": "applied"
+          },
+          {
+            "step": 9,
+            "disposition": "applied"
+          },
+          {
+            "step": 10,
+            "disposition": "applied"
+          },
+          {
+            "step": 11,
+            "disposition": "applied"
+          },
+          {
+            "step": 12,
+            "disposition": "applied"
+          },
+          {
+            "step": 13,
+            "disposition": "applied"
+          },
+          {
+            "step": 14,
+            "disposition": "applied"
+          },
+          {
+            "step": 15,
+            "disposition": "applied"
+          },
+          {
+            "step": 16,
+            "disposition": "applied"
+          }
+        ]
+      }
+    }
+  ]
+}
