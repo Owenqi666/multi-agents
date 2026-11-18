@@ -1,6 +1,6 @@
 # 阶段 3 开发路线
 
-阶段 2 已由用户正式接收。阶段 3 的并行执行 [T-0058](../tasks/T-0058-parallel-task-execution.json)、候选集成 [T-0059](../tasks/T-0059-integrate-candidates.json) 和最终验证及显式接受 [T-0060](../tasks/T-0060-verify-accept-integration.json) 已由主窗口验收。最后一项集成返工见 [T-0061](../tasks/T-0061-integrated-review-rework.json)。
+阶段 3 已通过主窗口技术验收。四张功能卡依次交付并行执行、按依赖集成、最终验证及显式接受、集成审核后的单轮返工。[T-0058](../tasks/T-0058-parallel-task-execution.json) · [T-0059](../tasks/T-0059-integrate-candidates.json) · [T-0060](../tasks/T-0060-verify-accept-integration.json) · [T-0061](../tasks/T-0061-integrated-review-rework.json)
 
 主窗口的 GPT-6.2 Astra 负责规划、定接口、分配任务和审核交付。独立开发窗口配置 GPT-6.2 Sol、`ultra` 推理档位，负责实现和验证。工作台的运行角色由使用者按项目配置。
 
@@ -13,7 +13,7 @@
 | 1 | 同仓独立任务并行执行，各自产出候选（T-0058 已验收） | 从现有 CLI 发起一个批次，两个已就绪的独立任务在各自工作区重叠执行，并能通过既有任务入口核对各自的候选提交。 |
 | 2 | 按依赖顺序集成候选，记录冲突归属并固定集成候选（T-0059 已验收） | 可追溯应用顺序和发生冲突的任务，集成产物有固定提交供最终验证。 |
 | 3 | 对最终候选跑完整测试、审核及显式接受（T-0060 已验收） | 测试和审核证据均绑定最终候选提交。接受时核对候选引用和目标基线，目标分支推进后用新 ID 重新验证。 |
-| 4 | 在固定集成候选上完成一轮有明确归属的返工（T-0061 待主窗口验收） | 使用经核对的阻塞项和原任务约定，从审核过的 SHA 启动返工，生成新候选后按原配置完整重测复审。 |
+| 4 | 在固定集成候选上完成一轮有明确归属的返工（T-0061 已验收） | 使用经核对的阻塞项和原任务约定，从审核过的 SHA 启动返工，生成新候选后按原配置完整重测复审。 |
 
 ## 并行执行入口
 
@@ -75,4 +75,9 @@ uv run python -m multi_agent integration accept INTEGRATION_ID --review ROUND_ID
 
 返工以初审的固定集成提交 I 独立检出，通过 I 到 I′ 的实际路径差异核对原卡、目标规则和其他成员已交付路径。一个集成交付谱系只允许预约一次，重复审核、返工子版本和显式重建沿用该谱系。I′ 发行后单独使用原完整命令及原审核席位复验。已有修订的谱系重建时保留经核对的修订增量，遇冲突直接显示原因。最终回执依然从明确的 `integration accept` 操作获得。
 
-T61 的隔离验收使用可重复生成的初始缺陷，实际初审、返工、受限测试和复审分别记录原件及运行时报告值。提交、结果和覆盖范围见阶段 3 的 T61 交付回执。
+## 阶段 3 技术验收
+
+2026 年 11 月 18 日，Astra 主窗口验收产品提交 `d27e69fbb2f4863165ee8316736ef366f3622a2b`。完整 `verify` 五步通过，包括 3,375 项单元测试和 72 项离线回放。[完整检查日志](../../Multi-agent-acceptance/phase-three/T61/commit-verify.log)
+
+- **并行与集成。** T60 实机样例中的两次 Claude 实施重叠 6.299899 秒。一个基于上游候选的后继任务采用合成实施，三个成员集成为 `029b40e`。工作台从固定候选执行 `build` 和 `test`，经真实 Claude 单审后签发样例接受回执。目标前移后，旧版本再次申请接受被拒绝，重建生成了新集成 ID。新基线上的完整重测、复审和接受另由真实 Git 配合假审核 CLI 的回归验证。[实机原件](../../Multi-agent-acceptance/phase-three/T60-native-4e305362dbd1/result.json) · [新基线回归](../tests/unit/test_integration_verification_cli.py)
+- **返工与复审。** T61 用合成初始实施稳定生成了 `draft` 缺陷。真实 Claude 初审在 `frontend/status.js:1` 报告 P0，工作台从 `5dc3045` 调用 Claude 返工一次。新候选 `599f4a8` 是它的直接子提交，仅将该文件改为 `ready`。原有序 `build`、`test` 在修订前后均由真实 Codex 命令运行时执行，四次均退出 0。原 Claude 审核席在新快照上复审通过，旧审核签发新候选接受回执的请求被拒绝。实际报告模型为 `claude-sonnet-5-5`，生效推理档位未确认。[实机原件](../../Multi-agent-acceptance/phase-three/T61-native-d27e69fbb2f4/result.json) · [主窗口独立核验](../../Multi-agent-acceptance/phase-three/astra/t61-independent-readbacks.json)
