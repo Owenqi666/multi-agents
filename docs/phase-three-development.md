@@ -1,6 +1,6 @@
 # 阶段 3 开发路线
 
-阶段 2 已由用户正式接收。阶段 3 的首张任务卡 [T-0058](../tasks/T-0058-parallel-task-execution.json) 已实现，交主窗口验收。
+阶段 2 已由用户正式接收。阶段 3 的首张任务卡 [T-0058](../tasks/T-0058-parallel-task-execution.json) 已由主窗口验收。候选集成见 [T-0059](../tasks/T-0059-integrate-candidates.json)。
 
 主窗口的 GPT-6.2 Astra 负责规划、定接口、分配任务和审核交付。独立开发窗口配置 GPT-6.2 Sol、`ultra` 推理档位，负责实现和验证。工作台的运行角色由使用者按项目配置。
 
@@ -10,8 +10,8 @@
 
 | 顺序 | 可验收功能 | 验收依据 |
 | --- | --- | --- |
-| 1 | 同仓独立任务并行执行，各自产出候选（T-0058 待验收） | 从现有 CLI 发起一个批次，两个已就绪的独立任务在各自工作区重叠执行，并能通过既有任务入口核对各自的候选提交。 |
-| 2 | 按依赖顺序集成候选，记录冲突归属并固定集成候选 | 可追溯应用顺序和发生冲突的任务，集成产物有固定提交供最终验证。 |
+| 1 | 同仓独立任务并行执行，各自产出候选（T-0058 已验收） | 从现有 CLI 发起一个批次，两个已就绪的独立任务在各自工作区重叠执行，并能通过既有任务入口核对各自的候选提交。 |
+| 2 | 按依赖顺序集成候选，记录冲突归属并固定集成候选（T-0059） | 可追溯应用顺序和发生冲突的任务，集成产物有固定提交供最终验证。 |
 | 3 | 对最终候选跑完整测试并按所选模式审核 | 测试和审核证据均绑定最终候选提交。用户接受前核对候选提交与目标基线，目标分支推进时重新验证。最终接受或合并由用户触发。 |
 
 ## 并行执行入口
@@ -26,3 +26,19 @@ uv run python -m multi_agent task run-batch PLAN_RUN_ID_1 PLAN_RUN_ID_2 \
 批次使用同一 Git 仓库、数据库和基线提交。计划须通过审核，卡片之间的写入范围须互不相交，且没有互相依赖。工作台按卡片的冻结规则选择执行者。示例中的任务目录为数据库旁的 `batch-任务卡ID`，每个任务使用其中独立的 `workspace`。
 
 输出的 `tasks` 按输入顺序列出各自的 `task_run_id`、阶段、候选 SHA 和验证状态。用 `task show --task TASK_RUN_ID --database /path/to/runs/workbench.db` 可重新核对。全部候选通过核对时退出码为 0，成员有未验证结果时为 1，批次拒绝时为 2，中断时为 130。
+
+## 候选集成入口
+
+```sh
+uv run python -m multi_agent integration create TASK_RUN_ID_1 TASK_RUN_ID_2 \
+  --database /path/to/runs/workbench.db \
+  --repository /path/to/project \
+  --target main
+
+uv run python -m multi_agent integration show INTEGRATION_ID \
+  --database /path/to/runs/workbench.db
+```
+
+`create` 核对每个任务的当前候选和原卡基线，以输入顺序挑选依赖已满足的任务。具名上游换版后，后继必须基于包含该确切候选的提交重新规划。外部依赖在成员中显示规划时的用户声明。
+
+成功记录包含目标分支的当次基线、成员来源及 Git 候选的提交、树和私有 ref。冲突时退出 1，保留集成 ID、已应用成员及冲突任务和路径。输入或 Git 操作失败时退出 2。可用 `show` 读回固定记录并检查 `target_is_current`。目标分支前进后，重新 `create` 会按新基线生成新 ID。

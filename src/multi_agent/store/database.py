@@ -3,6 +3,7 @@
 import json
 import sqlite3
 from importlib.resources import files
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import TracebackType
 from typing import Self, cast
@@ -26,6 +27,15 @@ from .codec import (
     encode_result,
     encode_source,
 )
+
+
+def _migration_scripts() -> list[tuple[int, Traversable]]:
+    scripts = [
+        (int(path.name.split("_", 1)[0]), path)
+        for path in files("multi_agent.store").joinpath("migrations").iterdir()
+        if path.name.endswith(".sql")
+    ]
+    return sorted(scripts, key=lambda script: script[0])
 
 
 class ReviewStore:
@@ -56,15 +66,7 @@ class ReviewStore:
         self._connection.close()
 
     def _migrate(self) -> None:
-        migrations = sorted(
-            files("multi_agent.store").joinpath("migrations").iterdir(),
-            key=lambda path: path.name,
-        )
-        scripts = [
-            (int(path.name.split("_", 1)[0]), path)
-            for path in migrations
-            if path.name.endswith(".sql")
-        ]
+        scripts = _migration_scripts()
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             version = self._connection.execute("PRAGMA user_version").fetchone()[0]

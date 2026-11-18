@@ -586,5 +586,5 @@ def test_task_migration_preserves_existing_reviews(
         assert store.load_round("review") == original
         assert store.load_history("review") == history
     with sqlite3.connect(path) as connection:
-        assert connection.execute("PRAGMA user_version").fetchone() == (5,)
+        assert connection.execute("PRAGMA user_version").fetchone() == (6,)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []

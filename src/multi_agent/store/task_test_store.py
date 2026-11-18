@@ -24,6 +24,7 @@ from multi_agent.core.task_test_execution import reserve_task_test_execution
 from multi_agent.core.task_test_input import TaskTestInput
 from multi_agent.core.task_test_state import TaskTestState
 
+from .database import _migration_scripts
 from .planning_store import PlanningStore
 from .task_codec import decode_task_input
 from .task_test_codec import (
@@ -52,7 +53,7 @@ class TaskTestStore(PlanningStore):
 
     @classmethod
     def open_readonly(cls, path: str | Path, *, timeout: float = 5.0) -> Self:
-        """Read an existing current database, including its committed WAL."""
+        """Read a supported database with task-test tables and its committed WAL."""
         location = Path(path)
         before = location.lstat()
         if (
@@ -73,8 +74,14 @@ class TaskTestStore(PlanningStore):
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only = ON")
             connection.execute("PRAGMA foreign_keys = ON")
-            if connection.execute("PRAGMA user_version").fetchone()[0] != 5:
-                raise ValueError("read-only test database requires schema version 5")
+            version = connection.execute("PRAGMA user_version").fetchone()[0]
+            if version < 5 or version not in {
+                number for number, _ in _migration_scripts()
+            }:
+                raise ValueError(
+                    "read-only test database requires schema version 5 or newer "
+                    f"supported by this build (found {version})"
+                )
             after = location.lstat()
             if not stat.S_ISREG(after.st_mode) or (before.st_dev, before.st_ino) != (
                 after.st_dev,

@@ -1,0 +1,42 @@
+[
+  {
+    "name": "integration_success_retains_order",
+    "members": ["T-0100", "T-0102"],
+    "events": [
+      {"kind": "applied", "index": 1, "error": "must address the next member"},
+      {"kind": "applied", "index": 0},
+      {
+        "kind": "candidate",
+        "ref": "refs/multi-agent/integrations/synthetic",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "error": "has unapplied members"
+      },
+      {"kind": "applied", "index": 1},
+      {
+        "kind": "candidate",
+        "ref": "refs/multi-agent/integrations/synthetic",
+        "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    ],
+    "applied": ["T-0100", "T-0102"],
+    "result": {
+      "ref": "refs/multi-agent/integrations/synthetic",
+      "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+  },
+  {
+    "name": "integration_conflict_retains_failed_member",
+    "members": ["T-0100", "T-0102", "T-0104"],
+    "events": [
+      {"kind": "applied", "index": 0},
+      {"kind": "conflicted", "index": 1, "paths": ["src/preview.py"]},
+      {"kind": "applied", "index": 2, "error": "is already settled"}
+    ],
+    "applied": ["T-0100"],
+    "conflicted": "T-0102",
+    "result": {"paths": ["src/preview.py"]}
+  }
+]

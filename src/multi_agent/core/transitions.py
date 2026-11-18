@@ -18,6 +18,12 @@ from .events import (
     Usage,
     thaw_json,
 )
+from .integration import (
+    IntegrationCandidate,
+    IntegrationEvent,
+    IntegrationMemberApplied,
+    IntegrationProgress,
+)
 from .planning import (
     PlanningAttempt,
     PlanningPhase,
@@ -1745,3 +1751,20 @@ def _apply_task_test(
             updated, replace(attempt, events=attempt.events + (event,))
         )
     return updated, disposition
+
+
+def apply_integration(
+    state: IntegrationProgress, event: IntegrationEvent
+) -> IntegrationProgress:
+    """Apply exactly the next member, or settle the ordered integration."""
+    if state.result is not None:
+        raise ValueError("integration is already settled")
+    if isinstance(event, IntegrationCandidate):
+        if state.applied_count != state.member_count:
+            raise ValueError("integration has unapplied members")
+        return replace(state, result=event)
+    if event.index != state.applied_count or event.index >= state.member_count:
+        raise ValueError("integration event must address the next member")
+    if isinstance(event, IntegrationMemberApplied):
+        return replace(state, applied_count=state.applied_count + 1)
+    return replace(state, result=event.conflict)

@@ -20,6 +20,7 @@ from multi_agent.core.task_test_events import (
     TaskTestEnvelope,
 )
 from multi_agent.core.task_test_execution import prepared_for_test
+from multi_agent.store.database import _migration_scripts
 from multi_agent.store.task_test_codec import (
     decode_task_test_attempt,
     decode_task_test_envelope,
@@ -298,21 +299,36 @@ def test_task_test_execution_readonly_observes_wal_without_migration(
     assert legacy.raw_tables(store) == before
 
 
-def test_task_test_execution_readonly_refuses_missing_old_and_symlink_database(
+def test_task_test_execution_readonly_refuses_missing_incompatible_and_symlink_database(
     tmp_path,
 ):
     missing = tmp_path / "missing.sqlite"
     with pytest.raises(FileNotFoundError):
         TaskTestStore.open_readonly(missing)
     assert not missing.exists()
-    old = tmp_path / "old.sqlite"
-    with sqlite3.connect(old) as connection:
-        connection.execute("PRAGMA user_version=4")
-    before = old.read_bytes()
-    with pytest.raises(ValueError, match="version 5"):
-        TaskTestStore.open_readonly(old)
-    assert old.read_bytes() == before
+    for version in (4, 999):
+        database = tmp_path / f"v{version}.sqlite"
+        with sqlite3.connect(database) as connection:
+            connection.execute(f"PRAGMA user_version={version}")
+        before = database.read_bytes()
+        with pytest.raises(ValueError, match=f"found {version}"):
+            TaskTestStore.open_readonly(database)
+        assert database.read_bytes() == before
     alias = tmp_path / "alias.sqlite"
-    alias.symlink_to(old)
+    alias.symlink_to(database)
     with pytest.raises(ValueError, match="canonical"):
         TaskTestStore.open_readonly(alias)
+
+
+def test_task_test_execution_readonly_keeps_v5_database_at_v5(tmp_path):
+    database = tmp_path / "v5.sqlite"
+    with sqlite3.connect(database) as connection:
+        for version, script in _migration_scripts():
+            if version <= 5:
+                connection.executescript(script.read_text(encoding="utf-8"))
+        connection.execute("PRAGMA user_version=5")
+    before = database.read_bytes()
+    with TaskTestStore.open_readonly(database) as reader:
+        assert reader.list_task_test_stages() == ()
+        assert reader._connection.execute("PRAGMA user_version").fetchone()[0] == 5
+    assert database.read_bytes() == before
