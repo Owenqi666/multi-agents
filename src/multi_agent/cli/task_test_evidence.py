@@ -14,10 +14,16 @@ from multi_agent.adapters.test_isolation import PROFILE, test_policy_config
 from multi_agent.adapters.test_runtime import TestCommandResult
 from multi_agent.core import Disposition
 from multi_agent.core.events import JSONValue, freeze_json, thaw_json
+from multi_agent.core.integration_testing import IntegrationTestCheckout
 from multi_agent.core.task_execution import task_execution_hash, task_execution_value
 from multi_agent.core.task_test_events import (
     TaskTestCommandReported,
     TaskTestExecutionPrepared,
+)
+from multi_agent.core.task_test_execution import (
+    TaskTestCheckout,
+    TaskTestPolicy,
+    TaskTestScratch,
 )
 from multi_agent.core.task_test_state import TaskTestAttempt
 from multi_agent.store.task_test_store import TaskTestHistory, TaskTestStore
@@ -181,8 +187,10 @@ def _stopped(value: dict[str, Any], receipt: RuntimeOwnershipReceipt) -> bool | 
 
 def _logs(
     directory: Path,
-    prepared: TaskTestExecutionPrepared,
+    policy: TaskTestPolicy,
     receipt: RuntimeOwnershipReceipt,
+    *,
+    outputs: dict[str, bytes] | None = None,
 ) -> list[dict[str, Any]]:
     if {Path(item.path).name for item in receipt.logs} != {
         "stdout.bin",
@@ -200,41 +208,32 @@ def _logs(
             or log.byte_count is None
         ):
             raise ValueError("test log is outside the owned directory or is not sealed")
+        name = Path(log.path).name
         budget = (
-            prepared.policy.output_bytes_limit * 4 + 8 * 1024 * 1024
-            if Path(log.path).name == "wire.jsonl"
-            else prepared.policy.output_bytes_limit
+            policy.output_bytes_limit * 4 + 8 * 1024 * 1024
+            if name == "wire.jsonl"
+            else policy.output_bytes_limit
         )
-        metadata, _ = _read(Path(log.path), budget, expected_size=log.byte_count)
+        metadata, raw = _read(Path(log.path), budget, expected_size=log.byte_count)
         if metadata["identity"] != log.identity or metadata["sha256"] != log.sha256:
             raise ValueError(
                 "test log identity or bytes differ from the actual receipt"
             )
         output.append({"path": log.path, **metadata})
+        if outputs is not None and name != "wire.jsonl":
+            outputs[name] = raw
     return output
 
 
-def _qualified(
+def _runtime_qualified(
     value: dict[str, Any],
     receipt: RuntimeOwnershipReceipt,
-    selected: TaskTestAttempt,
-    sequence: int,
 ) -> bool:
-    command = next(
-        (item for item in selected.commands if item.sequence == sequence), None
-    )
-    reports = [
-        event
-        for event in selected.events
-        if isinstance(event, TaskTestCommandReported) and event.sequence == sequence
-    ]
-    report = reports[-1] if reports else None
     code = value["reported_exit_code"]
     environment = value["environment"]
     counts = {Path(item.path).name: item.byte_count for item in receipt.logs}
     return bool(
-        value["sequence"] == sequence
-        and value["request_attempted"]
+        value["request_attempted"]
         and value["request_settled"]
         and _stopped(value, receipt) is True
         and receipt.resources_released
@@ -257,6 +256,28 @@ def _qualified(
         and value["stdout_cap_reached"] is not True
         and value["stderr_cap_reached"] is not True
         and not value["problems"]
+    )
+
+
+def _qualified(
+    value: dict[str, Any],
+    receipt: RuntimeOwnershipReceipt,
+    selected: TaskTestAttempt,
+    sequence: int,
+) -> bool:
+    command = next(
+        (item for item in selected.commands if item.sequence == sequence), None
+    )
+    reports = [
+        event
+        for event in selected.events
+        if isinstance(event, TaskTestCommandReported) and event.sequence == sequence
+    ]
+    report = reports[-1] if reports else None
+    code = value["reported_exit_code"]
+    return bool(
+        value["sequence"] == sequence
+        and _runtime_qualified(value, receipt)
         and not selected.cancel_requested
         and not selected.problems
         and not any(item.problems for item in selected.commands)
@@ -271,7 +292,9 @@ def _qualified(
 
 def _audit_matches(
     value: dict[str, Any],
-    prepared: TaskTestExecutionPrepared,
+    checkout: TaskTestCheckout | IntegrationTestCheckout,
+    scratch: TaskTestScratch,
+    policy: TaskTestPolicy,
     receipt: RuntimeOwnershipReceipt,
 ) -> bool:
     observed = value["observations"]
@@ -287,7 +310,7 @@ def _audit_matches(
     root = receipt.isolations[0].root
     if observed.get("isolation_root") != root:
         return False
-    expected = test_policy_config(prepared.checkout, prepared.scratch, prepared.policy)
+    expected = test_policy_config(checkout, scratch, policy)
     expected["permissions"][PROFILE]["filesystem"][root] = "deny"
 
     def same(actual: Any, requested: Any) -> bool:
@@ -468,10 +491,12 @@ def seal_task_test_command(
     _write_control(directory / ".seal.json", _json_bytes(marker))
     logs, error = [], None
     try:
-        logs = _logs(directory, prepared, receipt)
+        logs = _logs(directory, prepared.policy, receipt)
         if stopped is True:
             _current_source(launch.store, prepared, launch.lease)
-            if not _audit_matches(actual, prepared, receipt):
+            if not _audit_matches(
+                actual, prepared.checkout, prepared.scratch, prepared.policy, receipt
+            ):
                 raise ValueError("test command has no matching actual permission audit")
     except (OSError, ValueError) as failure:
         error = str(failure)
@@ -586,14 +611,16 @@ def inspect_task_test_command(
         raise ValueError("test command seal does not bind its actual result")
     error = None
     try:
-        logs = _logs(directory, prepared, receipt)
+        logs = _logs(directory, prepared.policy, receipt)
         if task_execution_hash(logs) != task_execution_hash(payload["logs"]):
             raise ValueError("test command log metadata changed")
         if payload["process_stopped"] is not reconciliation.process_stopped:
             raise ValueError("test command stopping differs from its reconciliation")
         if payload["process_stopped"] is True:
             _current_source(store, prepared, lease)
-            if not _audit_matches(result, prepared, receipt):
+            if not _audit_matches(
+                result, prepared.checkout, prepared.scratch, prepared.policy, receipt
+            ):
                 raise ValueError("test command has no matching actual permission audit")
     except (OSError, ValueError) as failure:
         error = str(failure)

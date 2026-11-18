@@ -1,6 +1,6 @@
 # 阶段 3 开发路线
 
-阶段 2 已由用户正式接收。阶段 3 的首张任务卡 [T-0058](../tasks/T-0058-parallel-task-execution.json) 已由主窗口验收。候选集成见 [T-0059](../tasks/T-0059-integrate-candidates.json)。
+阶段 2 已由用户正式接收。阶段 3 的并行执行 [T-0058](../tasks/T-0058-parallel-task-execution.json) 和候选集成 [T-0059](../tasks/T-0059-integrate-candidates.json) 已由主窗口验收。最终验证和显式接受见 [T-0060](../tasks/T-0060-verify-accept-integration.json)。
 
 主窗口的 GPT-6.2 Astra 负责规划、定接口、分配任务和审核交付。独立开发窗口配置 GPT-6.2 Sol、`ultra` 推理档位，负责实现和验证。工作台的运行角色由使用者按项目配置。
 
@@ -11,8 +11,9 @@
 | 顺序 | 可验收功能 | 验收依据 |
 | --- | --- | --- |
 | 1 | 同仓独立任务并行执行，各自产出候选（T-0058 已验收） | 从现有 CLI 发起一个批次，两个已就绪的独立任务在各自工作区重叠执行，并能通过既有任务入口核对各自的候选提交。 |
-| 2 | 按依赖顺序集成候选，记录冲突归属并固定集成候选（T-0059） | 可追溯应用顺序和发生冲突的任务，集成产物有固定提交供最终验证。 |
-| 3 | 对最终候选跑完整测试并按所选模式审核 | 测试和审核证据均绑定最终候选提交。用户接受前核对候选提交与目标基线，目标分支推进时重新验证。最终接受或合并由用户触发。 |
+| 2 | 按依赖顺序集成候选，记录冲突归属并固定集成候选（T-0059 已验收） | 可追溯应用顺序和发生冲突的任务，集成产物有固定提交供最终验证。 |
+| 3 | 对最终候选跑完整测试、审核及显式接受（T-0060） | 测试和审核证据均绑定最终候选提交。接受时核对候选引用和目标基线，目标分支推进后用新 ID 重新验证。 |
+| 4 | 在固定集成候选上完成一轮有明确归属的返工 | 使用经核对的阻塞项和原任务约定，生成新候选后完整重测复审。 |
 
 ## 并行执行入口
 
@@ -42,3 +43,24 @@ uv run python -m multi_agent integration show INTEGRATION_ID \
 `create` 核对每个任务的当前候选和原卡基线，以输入顺序挑选依赖已满足的任务。具名上游换版后，后继必须基于包含该确切候选的提交重新规划。外部依赖在成员中显示规划时的用户声明。
 
 成功记录包含目标分支的当次基线、成员来源及 Git 候选的提交、树和私有 ref。冲突时退出 1，保留集成 ID、已应用成员及冲突任务和路径。输入或 Git 操作失败时退出 2。可用 `show` 读回固定记录并检查 `target_is_current`。目标分支前进后，重新 `create` 会按新基线生成新 ID。
+
+## 完整测试、审核及显式接受
+
+```sh
+uv run python -m multi_agent integration test INTEGRATION_ID \
+  --database /path/to/runs/workbench.db --repository /path/to/project \
+  --directory /path/to/runs/integration-tests
+
+uv run python -m multi_agent integration review INTEGRATION_ID \
+  --database /path/to/runs/workbench.db --repository /path/to/project \
+  --directory /path/to/runs/integration-review --seat claude MODEL EFFORT
+
+uv run python -m multi_agent integration accept INTEGRATION_ID --review ROUND_ID \
+  --database /path/to/runs/workbench.db --repository /path/to/project
+```
+
+测试按目标冻结基线的项目规则，运行全部注册命令。独立检出保留同一轮的构建产物，并归档原始日志、命令请求和退出事实。通过后才能发起审核。可指定一个席位，或重复 `--seat` 选择两个不同模型。两席共享固定差异、所有成员原卡和测试档案。`integration retry-review INTEGRATION_ID --review ROUND_ID` 默认在原快照补跑失败席位，接受相同的数据库和仓库选项。
+
+`integration show INTEGRATION_ID --database … --history` 提供测试、审核、已签发回执和当前可接受资格。用户显式调用 `accept` 才签发固定 SHA 的历史回执。若目标推进，使用 `integration rebase INTEGRATION_ID --database … --repository …` 创建附原 ID 的新记录，再完整测试、审核和显式接受新 ID。后续返工流程通过固定审核快照、测试证据与可归属的阻塞项取得输入。
+
+隔离样例的真机验收范围与原件记录在阶段 3 的 T60 回执。双席补跑、目标推进后按新规则重验及旧证据保留由定向离线回归覆盖。

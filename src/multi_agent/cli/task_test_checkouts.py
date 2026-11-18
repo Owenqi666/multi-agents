@@ -4,6 +4,7 @@ import os
 import stat
 from pathlib import Path
 
+from multi_agent.core.integration_testing import TestCheckoutLayout
 from multi_agent.core.task_execution import task_execution_hash
 from multi_agent.core.task_test_execution import TaskTestCheckout
 from multi_agent.core.task_test_input import TaskTestInput
@@ -52,7 +53,7 @@ def _closure(
     )
 
 
-def _git_layout(record: TaskTestCheckout) -> None:
+def _git_layout(record: TaskTestCheckout | TestCheckoutLayout) -> None:
     """Reject Git routing or executable metadata before invoking Git."""
     root = Path(record.git_directory)
     expected_files = set(_CONTROLS) | {
@@ -87,7 +88,7 @@ def _git_layout(record: TaskTestCheckout) -> None:
 
 
 def inspect_task_test_checkout_controls(
-    lease: ExecutorLease, record: TaskTestCheckout
+    lease: ExecutorLease, record: TaskTestCheckout | TestCheckoutLayout
 ) -> None:
     """Inspect fixed controls after a stopped command; generated files are allowed."""
     _check_lease(lease)
@@ -110,7 +111,7 @@ def inspect_task_test_checkout_controls(
     _check_lease(lease)
 
 
-def _files(record: TaskTestCheckout) -> tuple[WorkspaceFile, ...]:
+def _files(record: TaskTestCheckout | TestCheckoutLayout) -> tuple[WorkspaceFile, ...]:
     files: list[WorkspaceFile] = []
     visited = total = 0
 
@@ -188,12 +189,12 @@ def _files(record: TaskTestCheckout) -> tuple[WorkspaceFile, ...]:
 
 
 def inspect_initial_task_test_checkout(
-    lease: ExecutorLease, record: TaskTestCheckout
+    lease: ExecutorLease, record: TaskTestCheckout | TestCheckoutLayout
 ) -> WorkspaceInspection:
     inspect_task_test_checkout_controls(lease, record)
     tree, _, expected = _revision(
         Path(record.root),
-        record.input.candidate.delivery.candidate,
+        record.commit,
         record.object_format,
     )
     index = b"".join(
@@ -203,13 +204,85 @@ def inspect_initial_task_test_checkout(
         raise ValueError("test checkout index differs from candidate files")
     actual = _inspection(_files(record))
     if (
-        tree != record.input.candidate.delivery.tree
+        tree != record.tree
         or actual.files != expected
         or actual.digest != record.initial_digest
     ):
         raise ValueError("test checkout is not the exact initial candidate")
     inspect_task_test_checkout_controls(lease, record)
     return actual
+
+
+def create_test_checkout_layout(
+    lease: ExecutorLease,
+    *,
+    candidate: str,
+    expected_tree: str,
+    object_format: str,
+    root: Path,
+    owner: str,
+) -> TestCheckoutLayout:
+    """Copy and verify only the pinned candidate's bytes and Git objects."""
+    _check_lease(lease)
+    tree, _, files = _revision(lease.repository, candidate, object_format)
+    if tree != expected_tree:
+        raise ValueError("test candidate tree changed")
+    objects = _closure(lease.repository, candidate, object_format)
+    root.mkdir(mode=0o700)
+    _git(root, "init", "--quiet", "--template=", f"--object-format={object_format}")
+    git = root / ".git"
+    git.chmod(0o700)
+    config = (
+        "[core]\n\trepositoryformatversion = "
+        + ("1" if object_format == "sha256" else "0")
+        + "\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = false\n"
+    )
+    if object_format == "sha256":
+        config += "[extensions]\n\tobjectformat = sha256\n"
+    (git / "config").write_text(config)
+    for kind in ("commit", "tree", "blob"):
+        ids = tuple(oid for item_kind, oid in objects if item_kind == kind)
+        for oid, body in zip(
+            ids, _objects(lease.repository, ids, kind, object_format), strict=True
+        ):
+            actual = (
+                _git(
+                    root,
+                    "hash-object",
+                    "-w",
+                    "--no-filters",
+                    "-t",
+                    kind,
+                    "--stdin",
+                    input_bytes=body,
+                )
+                .decode("ascii")
+                .strip()
+            )
+            if actual != oid:
+                raise ValueError("test object copy changed its content address")
+    (git / "HEAD").write_text(candidate + "\n")
+    (git / "shallow").write_text(candidate + "\n")
+    (git / "multi-agent-owner").write_text(owner + "\n")
+    _materialize(root, files)
+    _git(root, "read-tree", tree)
+    record = TestCheckoutLayout(
+        repository=str(lease.repository),
+        root=str(root),
+        root_identity=_identity(_directory(root)),
+        git_directory=str(git),
+        git_identity=_identity(_directory(git)),
+        owner_token=owner,
+        object_format=object_format,
+        initial_digest=_inspection(files).digest,
+        controls=tuple(_control(git / name) for name in _CONTROLS),
+        objects=objects,
+        commit=candidate,
+        tree=tree,
+    )
+    inspect_initial_task_test_checkout(lease, record)
+    _sync_directory(root)
+    return record
 
 
 def create_task_test_checkout(
@@ -261,71 +334,33 @@ def create_task_test_checkout(
         != value.candidate
     ):
         raise ValueError("test input candidate changed")
-    object_format = guard.prepared.workspace.object_format
-    candidate = value.candidate.delivery.candidate
-    tree, _, files = _revision(lease.repository, candidate, object_format)
-    if tree != value.candidate.delivery.tree:
-        raise ValueError("test candidate tree changed")
-    objects = _closure(lease.repository, candidate, object_format)
-    root.mkdir(mode=0o700)
-    _git(root, "init", "--quiet", "--template=", f"--object-format={object_format}")
-    git = root / ".git"
-    git.chmod(0o700)
-    config = (
-        "[core]\n\trepositoryformatversion = "
-        + ("1" if object_format == "sha256" else "0")
-        + "\n\tbare = false\n\tfilemode = true\n\tlogallrefupdates = false\n"
+    layout = create_test_checkout_layout(
+        lease,
+        candidate=value.candidate.delivery.candidate,
+        expected_tree=value.candidate.delivery.tree,
+        object_format=guard.prepared.workspace.object_format,
+        root=root,
+        owner=owner,
     )
-    if object_format == "sha256":
-        config += "[extensions]\n\tobjectformat = sha256\n"
-    (git / "config").write_text(config)
-    for kind in ("commit", "tree", "blob"):
-        ids = tuple(oid for item_kind, oid in objects if item_kind == kind)
-        for oid, body in zip(
-            ids, _objects(lease.repository, ids, kind, object_format), strict=True
-        ):
-            actual = (
-                _git(
-                    root,
-                    "hash-object",
-                    "-w",
-                    "--no-filters",
-                    "-t",
-                    kind,
-                    "--stdin",
-                    input_bytes=body,
-                )
-                .decode("ascii")
-                .strip()
-            )
-            if actual != oid:
-                raise ValueError("test object copy changed its content address")
-    (git / "HEAD").write_text(candidate + "\n")
-    (git / "shallow").write_text(candidate + "\n")
-    (git / "multi-agent-owner").write_text(owner + "\n")
-    _materialize(root, files)
-    _git(root, "read-tree", tree)
     record = TaskTestCheckout(
         input=value,
-        repository=str(lease.repository),
+        repository=layout.repository,
         database_path=str(database.path),
         database_identity=database.identity,
         database_parent_identity=database.parent_identity,
-        root=str(root),
-        root_identity=_identity(_directory(root)),
-        git_directory=str(git),
-        git_identity=_identity(_directory(git)),
-        owner_token=owner,
-        object_format=object_format,
-        initial_digest=_inspection(files).digest,
-        controls=tuple(_control(git / name) for name in _CONTROLS),
-        objects=objects,
+        root=layout.root,
+        root_identity=layout.root_identity,
+        git_directory=layout.git_directory,
+        git_identity=layout.git_identity,
+        owner_token=layout.owner_token,
+        object_format=layout.object_format,
+        initial_digest=layout.initial_digest,
+        controls=layout.controls,
+        objects=layout.objects,
         observed_test_attempt=observed,
         test_history_length=len(history),
         test_history_hash=task_execution_hash(history),
     )
-    inspect_initial_task_test_checkout(lease, record)
-    _sync_directory(root)
     if store.load_task_test_checkpoint(
         value.task_run_id, value.implementation_attempt
     ) != (checkpoint, history):

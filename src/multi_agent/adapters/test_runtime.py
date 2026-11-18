@@ -16,6 +16,7 @@ from typing import Any, cast
 from uuid import uuid4
 
 from multi_agent.core.events import Error, FailureCategory, JSONValue, freeze_json
+from multi_agent.core.integration_testing import IntegrationTestCheckout
 from multi_agent.core.task_test_execution import (
     TaskTestCheckout,
     TaskTestPolicy,
@@ -156,7 +157,7 @@ class TaskTestRuntimeAdapter:
     def __init__(
         self,
         *,
-        checkout: TaskTestCheckout,
+        checkout: TaskTestCheckout | IntegrationTestCheckout,
         scratch: TaskTestScratch,
         policy: TaskTestPolicy,
         log_dir: Path,
@@ -254,10 +255,10 @@ class TaskTestRuntimeAdapter:
         if self._worker is not None:
             raise ValueError("test runtime is single use")
         if type(sequence) is not int or not 1 <= sequence <= len(
-            self.checkout.input.commands
+            self.checkout.commands
         ):
             raise ValueError("test command sequence is outside the declared suite")
-        if command != self.checkout.input.commands[sequence - 1]:
+        if command != self.checkout.commands[sequence - 1]:
             raise ValueError("test command differs from the frozen declaration")
         self._result = replace(self._result, sequence=sequence)
         self._deadline = (

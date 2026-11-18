@@ -13,17 +13,24 @@ from multi_agent.core.review_input import (
     ExecutedLog,
     ExecutedReviewInput,
     ExecutedSuite,
+    IntegrationReviewInput,
     ReviewInput,
 )
 from multi_agent.core.snapshot import FrozenSnapshot
 from multi_agent.core.task_execution import task_execution_hash, task_execution_json
 from multi_agent.core.task_test_events import TaskTestExecutionPrepared
 from multi_agent.store import ReviewStore
+from multi_agent.store.integration_store import _decode_member
 from multi_agent.store.task_codec import decode_task_input
 from multi_agent.store.task_test_codec import _prepared
 
-from .snapshot import _check_paths, _requirements, _string
-from .task_test_evidence import TaskTestCommandManifest, _result, _stopped
+from .snapshot import _check_paths, _path, _requirements, _string
+from .task_test_evidence import (
+    TaskTestCommandManifest,
+    _result,
+    _runtime_qualified,
+    _stopped,
+)
 
 MAX_REVIEW_INPUT_BYTES = 128 * 1024 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
@@ -271,6 +278,102 @@ def _command(
     return result
 
 
+def _integration_command(
+    value: object,
+    integration_id: str,
+    candidate: str | None,
+    test_attempt: int,
+    sequence: int,
+) -> ExecutedCommand:
+    raw = _object(value, {"manifest", "stdout", "stderr"})
+    manifest = _object(raw["manifest"])
+    if (
+        manifest["integration_id"] != integration_id
+        or manifest["candidate"] != candidate
+        or _number(manifest["test_attempt"]) != test_attempt
+        or _number(manifest["sequence"]) != sequence
+        or manifest["qualified"] is not True
+        or manifest["process_stopped"] is not True
+    ):
+        raise ValueError("executed command differs from the frozen integration suite")
+    declared = _object(manifest["command"], {"name", "executable", "args"})
+    _string(declared["name"], "executed command name", nonempty=True)
+    _string(declared["executable"], "executed command executable", nonempty=True)
+    for argument in _array(declared["args"]):
+        _string(argument, "executed command argument")
+    actual, receipt = _result(manifest["actual_result"])
+    if actual["sequence"] != sequence or not _runtime_qualified(actual, receipt):
+        raise ValueError("integration command lacks complete qualified runtime facts")
+    result = ExecutedCommand(
+        manifest=manifest, stdout=_log(raw["stdout"]), stderr=_log(raw["stderr"])
+    )
+    logs = {PurePath(log.path).name: log for log in receipt.logs}
+    for name, content in (("stdout", result.stdout), ("stderr", result.stderr)):
+        log = logs[f"{name}.bin"]
+        if log.byte_count != content.byte_count or log.sha256 != content.sha256:
+            raise ValueError(
+                "frozen integration log bytes differ from the actual receipt"
+            )
+    return result
+
+
+def _decode_integration_review(
+    raw: dict[str, Any], expected_id: str | None
+) -> IntegrationReviewInput:
+    _object(
+        raw,
+        {
+            "version",
+            "kind",
+            "source",
+            "integration_id",
+            "test_attempt",
+            "test_evidence_hash",
+            "commands",
+            "members",
+            "test_change_paths",
+        },
+    )
+    if type(raw["version"]) is not int or raw["version"] != 1:
+        raise ValueError("unknown integration review input version")
+    if len(task_execution_json(raw).encode("utf-8")) > MAX_REVIEW_INPUT_BYTES:
+        raise ValueError(
+            "executed integration review input exceeds the canonical byte budget"
+        )
+    source = _source(raw["source"])
+    integration_id = _string(raw["integration_id"], "integration ID", nonempty=True)
+    test_attempt = _number(raw["test_attempt"])
+    commands = tuple(
+        _integration_command(
+            command, integration_id, source.candidate, test_attempt, index
+        )
+        for index, command in enumerate(_array(raw["commands"]), 1)
+    )
+    if not commands:
+        raise ValueError("integration review requires a complete executed test suite")
+    members = tuple(
+        _decode_member(_object(member)) for member in _array(raw["members"])
+    )
+    if not members:
+        raise ValueError("integration review requires the original member cards")
+    # Hints name paths from both trees, which are materialized separately.
+    paths = tuple(_path(path) for path in _array(raw["test_change_paths"]))
+    result = IntegrationReviewInput(
+        source=source,
+        integration_id=integration_id,
+        test_attempt=test_attempt,
+        test_evidence_hash=_hash(raw["test_evidence_hash"]),
+        commands=commands,
+        members=members,
+        test_change_paths=paths,
+    )
+    if task_execution_json(result.to_dict()) != task_execution_json(raw) or (
+        expected_id is not None and result.snapshot_id != expected_id
+    ):
+        raise ValueError("integration review does not match its complete frozen hash")
+    return result
+
+
 def decode_review_input(
     value: object, *, expected_id: str | None = None
 ) -> ReviewInput:
@@ -278,6 +381,19 @@ def decode_review_input(
     raw = _object(value)
     if "version" not in raw and "kind" not in raw:
         return FrozenSnapshot.from_dict(raw)
+    if raw.get("kind") == "executed_integration_review":
+        try:
+            return _decode_integration_review(raw, expected_id)
+        except (
+            KeyError,
+            IndexError,
+            TypeError,
+            AttributeError,
+            RecursionError,
+        ) as error:
+            raise ValueError(
+                "integration review input has an invalid nested shape"
+            ) from error
     if (
         type(raw.get("version")) is not int
         or raw["version"] != 2

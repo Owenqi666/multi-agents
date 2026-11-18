@@ -8,6 +8,7 @@ from pathlib import Path
 from tempfile import mkdtemp
 from typing import Any
 
+from multi_agent.core.integration_testing import IntegrationTestCheckout
 from multi_agent.core.task_test_execution import (
     TaskTestCheckout,
     TaskTestPolicy,
@@ -129,7 +130,9 @@ def test_command_environment(
 
 
 def test_policy_config(
-    checkout: TaskTestCheckout, scratch: TaskTestScratch, policy: TaskTestPolicy
+    checkout: TaskTestCheckout | IntegrationTestCheckout,
+    scratch: TaskTestScratch,
+    policy: TaskTestPolicy,
 ) -> dict[str, Any]:
     root = _directory(checkout.root, checkout.root_identity)
     git = _directory(checkout.git_directory, checkout.git_identity)
@@ -197,7 +200,7 @@ def test_policy_config(
 
 
 def create_test_isolation(
-    checkout: TaskTestCheckout,
+    checkout: TaskTestCheckout | IntegrationTestCheckout,
     scratch: TaskTestScratch,
     policy: TaskTestPolicy,
     recorder: Recorder,

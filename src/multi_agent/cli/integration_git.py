@@ -1,20 +1,21 @@
 """Apply verified candidate trees through isolated Git plumbing."""
 
 import os
+import socket
 import subprocess
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, TemporaryFile
 from typing import Self
 
 from .snapshot import _OID, GIT_TIMEOUT, _check_paths, _path, _string
 
 
-def _git(
-    repository: Path,
-    *args: str,
-    statuses: tuple[int, ...] = (0,),
-    objects: Path | None = None,
-) -> subprocess.CompletedProcess[bytes]:
+def _git_invocation(
+    repository: Path, args: tuple[str, ...], objects: Path | None
+) -> tuple[list[str], dict[str, str]]:
     environment = {
         key: value for key, value in os.environ.items() if not key.startswith("GIT_")
     }
@@ -41,6 +42,16 @@ def _git(
         str(repository),
         *args,
     ]
+    return argv, environment
+
+
+def _git(
+    repository: Path,
+    *args: str,
+    statuses: tuple[int, ...] = (0,),
+    objects: Path | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    argv, environment = _git_invocation(repository, args, objects)
     try:
         result = subprocess.run(
             argv, capture_output=True, check=False, env=environment, timeout=GIT_TIMEOUT
@@ -63,7 +74,7 @@ def _full_ref(repository: Path, ref: str) -> None:
     if not _string(ref, "Git reference").startswith("refs/"):
         raise ValueError("integration requires an exact full Git reference")
     _git(repository, "check-ref-format", ref)
-    if ref.startswith("refs/multi-agent/"):
+    if ref.startswith(("refs/heads/", "refs/multi-agent/")):
         common = _git(
             repository, "rev-parse", "--path-format=absolute", "--git-common-dir"
         ).stdout
@@ -71,7 +82,7 @@ def _full_ref(repository: Path, ref: str) -> None:
         for part in ref.split("/"):
             path /= part
             if path.is_symlink():
-                raise ValueError(f"private Git reference path is a symlink: {path}")
+                raise ValueError(f"Git reference path is a symlink: {path}")
 
 
 def _commit_object(repository: Path, commit: str) -> None:
@@ -105,6 +116,110 @@ def read_tree(repository: Path, commit: str) -> str:
         f"{_oid(commit)}^{{commit}}^{{tree}}",
     ).stdout
     return _oid(raw.decode("ascii").removesuffix("\n"))
+
+
+def _prepare_ref_verification(channel: socket.socket, commands: bytes) -> None:
+    expected = b"start: ok\nprepare: ok\n"
+    deadline = time.monotonic() + GIT_TIMEOUT
+    channel.settimeout(GIT_TIMEOUT)
+    channel.sendall(commands)
+    reply = bytearray()
+    while len(reply) < len(expected):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("timed out preparing Git reference verification")
+        channel.settimeout(remaining)
+        part = channel.recv(len(expected) - len(reply))
+        if not part:
+            break
+        reply.extend(part)
+    if reply != expected:
+        raise ValueError("Git did not confirm both reference locks")
+
+
+def _close_ref_verification(
+    process: subprocess.Popen[bytes], channel: socket.socket
+) -> None:
+    # EOF aborts a prepared transaction without updating or logging any refs.
+    channel.close()
+    try:
+        process.wait(timeout=GIT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        process.terminate()
+        try:
+            process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=1)
+
+
+@contextmanager
+def verify_integration_refs(
+    repository: Path,
+    target_ref: str,
+    target_baseline: str,
+    candidate_ref: str,
+    candidate_commit: str,
+) -> Iterator[None]:
+    """Hold Git's verify-only locks for the caller's acceptance transaction."""
+    if not target_ref.startswith("refs/heads/") or not candidate_ref.startswith(
+        "refs/multi-agent/"
+    ):
+        raise ValueError(
+            "acceptance requires a local target and a private candidate ref"
+        )
+    refs = ((target_ref, target_baseline), (candidate_ref, candidate_commit))
+    for ref, commit in refs:
+        _full_ref(repository, ref)
+        _oid(commit)
+    commands = (
+        "start\0"
+        + "".join(f"option no-deref\0verify {ref}\0{commit}\0" for ref, commit in refs)
+        + "prepare\0"
+    ).encode("utf-8")
+    argv, environment = _git_invocation(
+        repository, ("update-ref", "--stdin", "-z"), None
+    )
+    channel, child = socket.socketpair()
+    with channel, child, TemporaryFile() as diagnostics:
+        try:
+            process = subprocess.Popen(
+                argv,
+                stdin=child.fileno(),
+                stdout=child.fileno(),
+                stderr=diagnostics,
+                env=environment,
+                start_new_session=True,
+            )
+        except OSError as error:
+            raise ValueError(
+                f"cannot start Git reference verification: {error}"
+            ) from error
+        child.close()
+        try:
+            try:
+                _prepare_ref_verification(channel, commands)
+            except (OSError, ValueError) as error:
+                _close_ref_verification(process, channel)
+                diagnostics.seek(0)
+                detail = (
+                    diagnostics.read(4096).decode("utf-8", errors="replace").strip()
+                )
+                raise ValueError(
+                    f"Git reference verification failed: {detail or error}"
+                ) from error
+            # Git's no-deref verify may accept a symbolic ref with a matching
+            # resolved OID. Check the exact direct refs while both are locked.
+            for ref, expected in refs:
+                if read_ref(repository, ref) != expected:
+                    raise ValueError(
+                        f"Git reference changed during verification: {ref}"
+                    )
+            if process.poll() is not None:
+                raise ValueError("Git reference locks were lost before acceptance")
+            yield
+        finally:
+            _close_ref_verification(process, channel)
 
 
 class IntegrationGit:

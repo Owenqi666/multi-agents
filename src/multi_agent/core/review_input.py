@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any, cast
 
 from .events import JSONValue, freeze_json
+from .integration import IntegrationMember
 from .snapshot import FrozenSnapshot
 from .task_execution import task_execution_hash, task_execution_value
 from .task_state import TaskInput
@@ -59,8 +60,28 @@ class ExecutedReviewInput:
         return task_execution_hash(self.to_dict())
 
 
-type ReviewInput = FrozenSnapshot | ExecutedReviewInput
+@dataclass(frozen=True, slots=True, kw_only=True)
+class IntegrationReviewInput:
+    source: FrozenSnapshot
+    integration_id: str
+    test_attempt: int
+    test_evidence_hash: str
+    commands: tuple[ExecutedCommand, ...]
+    members: tuple[IntegrationMember, ...]
+    test_change_paths: tuple[str, ...] = ()
+    version: int = 1
+    kind: str = "executed_integration_review"
+
+    def to_dict(self) -> dict[str, Any]:
+        return cast(dict[str, Any], task_execution_value(self))
+
+    @property
+    def snapshot_id(self) -> str:
+        return task_execution_hash(self.to_dict())
+
+
+type ReviewInput = FrozenSnapshot | ExecutedReviewInput | IntegrationReviewInput
 
 
 def review_source(value: ReviewInput) -> FrozenSnapshot:
-    return value.source if isinstance(value, ExecutedReviewInput) else value
+    return value if isinstance(value, FrozenSnapshot) else value.source

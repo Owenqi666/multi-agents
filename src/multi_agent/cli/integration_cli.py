@@ -31,6 +31,8 @@ from .workspaces import ExecutorLease, _check_lease, executor_lock
 
 
 def add_parser(commands: Any) -> None:
+    from .integration_verification import add_verification_parsers
+
     integration = commands.add_parser(
         "integration", help="integrate and inspect verified task candidates"
     )
@@ -43,6 +45,8 @@ def add_parser(commands: Any) -> None:
     show = operations.add_parser("show")
     show.add_argument("integration_id")
     show.add_argument("--database", type=Path, required=True)
+    show.add_argument("--history", action="store_true")
+    add_verification_parsers(operations)
 
 
 def _candidate_ref(integration_id: str) -> str:
@@ -184,7 +188,12 @@ def _assemble(
 
 
 def create_integration(
-    database_path: Path, repository: Path, target: str, task_run_ids: list[str]
+    database_path: Path,
+    repository: Path,
+    target: str,
+    task_run_ids: list[str],
+    *,
+    rebased_from: str | None = None,
 ) -> IntegrationRecord:
     database = _database(database_path)
     with (
@@ -197,6 +206,20 @@ def create_integration(
         if baseline is None:
             raise ValueError(f"local branch {target_ref} does not exist")
         members = _ordered_members(store, lease, task_run_ids)
+        if rebased_from is not None:
+            source = store.load_integration(rebased_from)
+            if (
+                source.repository != str(lease.repository)
+                or source.target_ref != target_ref
+                or baseline == source.target_baseline
+            ):
+                raise ValueError(
+                    "rebase requires a changed target from the original integration"
+                )
+            if source.members != members:
+                raise ValueError(
+                    "member candidates changed; use integration create with current task IDs"
+                )
         _validate_lineage(store, git, str(lease.repository), members)
         integration_id = uuid4().hex
         progress = _assemble(git, integration_id, baseline, members)
@@ -215,7 +238,7 @@ def create_integration(
         if isinstance(record.result, IntegrationCandidate):
             git.pin(record.result.ref, record.result.commit)
         try:
-            store.create_integration(record)
+            store.create_integration(record, rebased_from=rebased_from)
         except Exception as error:
             if isinstance(record.result, IntegrationCandidate):
                 error.add_note(f"Integration ref retained: {record.result.ref}")
@@ -273,17 +296,33 @@ def _view(record: IntegrationRecord, operation: str) -> dict[str, Any]:
 
 
 def main(args: argparse.Namespace) -> int:
+    from .integration_verification import run_operation, verification_view
+
     operation = args.integration_operation
     try:
         if operation == "create":
             record = create_integration(
                 args.database, args.repository, args.target, args.task_run_ids
             )
-        else:
+            result = _view(record, operation)
+            code = 0 if result["verification"] == "verified" else 1
+        elif operation == "show":
             database = _database(args.database)
             with IntegrationStore.open_readonly(database.path) as store:
                 record = store.load_integration(args.integration_id)
-        result = _view(record, operation)
+                result = _view(record, operation)
+                if store.has_integration_verification():
+                    result.update(
+                        verification_view(
+                            store,
+                            record,
+                            target_current=result["target_is_current"],
+                            history=args.history,
+                        )
+                    )
+            code = 0
+        else:
+            result, code = run_operation(args)
     except (
         OSError,
         UnicodeError,
@@ -299,4 +338,4 @@ def main(args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         return 130
     print(json.dumps(result, ensure_ascii=False))
-    return 1 if operation == "create" and result["verification"] != "verified" else 0
+    return code

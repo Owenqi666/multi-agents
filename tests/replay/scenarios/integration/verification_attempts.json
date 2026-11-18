@@ -1,0 +1,12 @@
+{
+  "events": [
+    {"event": "reserve", "attempt": 1},
+    {"event": "reserve", "error": "no confirmed stopping facts"},
+    {"event": "finish", "attempt": 1, "status": "failed", "disposition": "applied"},
+    {"event": "reserve", "attempt": 2},
+    {"event": "finish", "attempt": 1, "status": "succeeded", "disposition": "history_only"},
+    {"event": "finish", "attempt": 2, "status": "cancelled", "disposition": "applied"}
+  ],
+  "current": {"attempt": 2, "status": "cancelled"},
+  "late": [{"attempt": 1, "status": "succeeded"}]
+}

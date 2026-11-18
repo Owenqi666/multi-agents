@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "T-0060",
+  "goal": "在 T59 固定的集成候选上运行原项目的完整测试和所选单审/双审，提供可核验的最终结论及由用户显式触发的接受，并在目标分支变化后重新验证。",
+  "baseline_commit": "46bde671221f631ea17c0550c58b90c8a4ae98b2",
+  "write_scope": [
+    "src/multi_agent/cli/integration*.py",
+    "src/multi_agent/cli/main.py",
+    "src/multi_agent/cli/task_test_checkouts.py",
+    "src/multi_agent/cli/task_test_context.py",
+    "src/multi_agent/cli/task_test_evidence.py",
+    "src/multi_agent/cli/runner.py",
+    "src/multi_agent/cli/review_inputs.py",
+    "src/multi_agent/cli/snapshot.py",
+    "src/multi_agent/cli/prompt.py",
+    "src/multi_agent/core/integration*.py",
+    "src/multi_agent/core/review_input.py",
+    "src/multi_agent/core/reports.py",
+    "src/multi_agent/adapters/test_runtime.py",
+    "src/multi_agent/adapters/test_isolation.py",
+    "src/multi_agent/store/integration*.py",
+    "src/multi_agent/store/migrations/0007_integration*.sql",
+    "tests/unit/test_integration*.py",
+    "tests/replay/scenarios/integration/*.json",
+    "tests/replay/test_integration*.py",
+    "docs/phase-three-development.md",
+    "tasks/T-0060-verify-accept-integration.json",
+    "src/multi_agent/core/transitions.py",
+    "tests/unit/test_planning_store.py",
+    "tests/unit/test_store_inputs.py",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_task_store.py",
+    "tests/unit/test_task_test_store.py",
+    "src/multi_agent/cli/task_test_runner.py",
+    "src/multi_agent/core/snapshot.py",
+    "src/multi_agent/store/task_review_store.py",
+    "src/multi_agent/cli/task_inputs.py"
+  ],
+  "depends_on": [
+    "T-0059"
+  ],
+  "interface_contracts": [
+    {
+      "name": "集成验证",
+      "definition": "从已固定的真实集成记录建立最终验证入口，固定目标基线和候选、项目注册的完整有序命令及参数、实际测试退出/停止与原始日志、汇总的成员需求和验收条件。用独立检出和既有受限测试运行时执行；可提取通用基础，但不能把集成候选伪装成单任务或把人工提供的 TestEvidence 改称实际执行。不重造模型或沙箱。 冻结审核输入保留基线至最终 SHA 的实际 diff，并按现有方式标出测试文件及配置的修改。 沿用现有有序套件语义：失败、超时或取消时可在首项异常停止，记录已执行、未执行及退出原因；每条都实际成功才可宣告通过。 最终完整套件取目标冻结基线的已采纳项目规则（可用 freeze_project_rules），按注册顺序执行全部 NamedCommand，保留规则摘要；不能取首个成员 test_refs 子集或运行候选自行改写的命令表。若目标变化而新基线规则也变，新的集成按该新基线重新冻结。"
+    },
+    {
+      "name": "审核、追溯和接受",
+      "definition": "由用户显式发起一席或两席审核同一冻结 diff、任务约定和实际测试档案；仅信任各当前尝试，失败席可按原快照补跑。沿用项目整体评估：测试完整通过、所选席位齐全且无待处置阻塞才可接受；有效单方阻塞同样处理，未决实质分歧转用户，无隐式覆盖。accept 仅签发永久的历史接受回执，不移动用户分支；签发时原子核对目标分支基线、固定集成引用及当前审核候选。回执只对当时的确切基线/候选有效；本版本不提供自动合并。独立样例由测试操作者显式调用 accept，真实开发分支由用户决定。"
+    },
+    {
+      "name": "基线移动及重验",
+      "definition": "目标分支已前进时拒绝使用旧验证；沿 T59 正常产品入口基于新基线生成候选、完整重测并重新审核后才能显式接受。旧输入、轮次和失败尝试保留。集成冲突、范围不明及须人工处置的发现可追溯到来源；已明确归属的审核阻塞保留结构化位置、绑定的候选和原任务卡，以供现有或后续有界返工流程消费。 接受时遇目标变化，正常 CLI 明示重建入口；重建产生新的不可变 ID 和新候选，保留被重建 ID 的显式关联（如从已有 ID 发起 rebase），旧新两条记录均可回查。重建产生冲突或测试失败则显示该状态并拒绝接受。"
+    },
+    {
+      "name": "协作与质量",
+      "definition": "Sol 开发窗口实现，本窗口验收。只做达到阶段3可操作闭环所需的接口和回归。若状态、事件/表变化用 state-change skill，职责不变的代码尽量复用。用户已授权在隔离样例使用真实模型测试。"
+    }
+  ],
+  "deliverables": [
+    "按集成 ID 发起真实测试、单/双审、读回证据及显式接受的 CLI 和简洁用法。",
+    "完整 verify 和正常提交，在隔离样例留下绑定最终产品 SHA 的验收凭据；产品目标分支由实际用户决定是否接受/合并。"
+  ],
+  "acceptance_criteria": [
+    "通过正常 CLI，将至少两项已验证任务的实际集成候选独立检出，执行项目注册完整测试，固定命令、退出、原始日志及来源。选择的审核席位接收的候选、actual 执行证据、快照 ID 可一致读回；当前通过与超时、失败、取消及补跑分开，旧尝试不可推进当前状态。",
+    "基于有证据的审核签发显式接受，拒绝未通过测试/未完成审核。真实 Git 用例验证目标分支推进时旧证据失效，重新集成并对新候选重测复审后方可接受；用户当前工作区和原有分支不在后台被改动。 接受回执供用户日后决定是否合并。",
+    "用一个真实临时仓库证明从并行候选、依赖集成、冻结提交到完整测试和审核、显式接受。实机尽量复用已有并行成员的真实交付、在新目录实际执行完整测试与至少一组真实审核（单/双审均支持，另一模式可由离线回归验证），独立保留旧 SHA 证据与本次实际报告。",
+    "完整 verify 五步、正常提交，交回 SHA、临时仓库与数据库、各任务/候选/测试/审核/接受坐标及失败和补跑原件。在路线中列出达到及未达到的真实范围。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

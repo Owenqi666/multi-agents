@@ -419,7 +419,7 @@ def materialize_review_input(value: ReviewInput, destination: Path) -> None:
         raise ValueError("review materialization requires a new or empty directory")
     destination.mkdir(parents=True, exist_ok=True)
     source = review_source(value)
-    if isinstance(value, ExecutedReviewInput):
+    if not isinstance(value, FrozenSnapshot):
         _materialize(
             source,
             destination / "source",
@@ -435,10 +435,16 @@ def materialize_review_input(value: ReviewInput, destination: Path) -> None:
         review_input["snapshot_id"] = value.snapshot_id
         review_input["source"].pop("files")
         review_input["source"].pop("diff")
-        for index, command in enumerate(value.executed_suite.commands, 1):
+        if isinstance(value, ExecutedReviewInput):
+            commands = value.executed_suite.commands
+            rows = review_input["executed_suite"]["commands"]
+        else:
+            commands = value.commands
+            rows = review_input["commands"]
+        for index, command in enumerate(commands, 1):
             directory = destination / "logs" / str(index)
             directory.mkdir(parents=True)
-            row = review_input["executed_suite"]["commands"][index - 1]
+            row = rows[index - 1]
             for name, log in (("stdout", command.stdout), ("stderr", command.stderr)):
                 relative = f"logs/{index}/{name}.bin"
                 path = destination / relative

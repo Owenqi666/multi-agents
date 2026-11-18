@@ -561,7 +561,7 @@ def test_planning_v4_migration_preserves_a_real_v3_task(tmp_path, monkeypatch):
             original_input = store.load_task_input("legacy")
             assert store._connection.execute("PRAGMA user_version").fetchone()[0] == 3
     with PlanningStore(path) as store:
-        assert store._connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert store._connection.execute("PRAGMA user_version").fetchone()[0] == 7
         assert store.load_task("legacy") == original_state
         assert store.load_task_input("legacy") == original_input
         assert store.load_task_history("legacy") == ()

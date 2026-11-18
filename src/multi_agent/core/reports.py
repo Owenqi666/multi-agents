@@ -12,7 +12,12 @@ from copy import deepcopy
 from typing import Any, cast
 
 from .events import thaw_json
-from .review_input import ExecutedReviewInput, ReviewInput, review_source
+from .review_input import (
+    ExecutedReviewInput,
+    IntegrationReviewInput,
+    ReviewInput,
+    review_source,
+)
 from .snapshot import FrozenSnapshot
 
 _LOCATION_FIELDS = ("side", "path", "line_start", "line_end", "category")
@@ -170,6 +175,56 @@ def _executed_test_evidence(value: ExecutedReviewInput) -> dict[str, Any]:
     }
 
 
+def _integration_test_evidence(value: IntegrationReviewInput) -> dict[str, Any]:
+    required = []
+    records = []
+    failed = []
+    for index, command in enumerate(value.commands, 1):
+        manifest = cast(dict[str, Any], thaw_json(command.manifest))
+        declared = manifest["command"]
+        actual = manifest["actual_result"]
+        required.append(
+            {
+                "sequence": index,
+                "name": declared["name"],
+                "argv": [declared["executable"], *declared["args"]],
+            }
+        )
+        if actual["exit_code"] != 0:
+            failed.append(index - 1)
+        records.append(
+            {
+                "sequence": index,
+                "name": declared["name"],
+                "reported_exit_code": actual["reported_exit_code"],
+                "exit_code": actual["exit_code"],
+                "stop_scope": manifest["stop_scope"],
+                "output_scope": manifest["output_scope"],
+                "stdout": {
+                    "byte_count": command.stdout.byte_count,
+                    "sha256": command.stdout.sha256,
+                },
+                "stderr": {
+                    "byte_count": command.stderr.byte_count,
+                    "sha256": command.stderr.sha256,
+                },
+            }
+        )
+    return {
+        "source": "workbench_executed",
+        "executed_by_workbench": True,
+        "status": "incomplete" if not required else "failed" if failed else "passed",
+        "integration_id": value.integration_id,
+        "test_attempt": value.test_attempt,
+        "test_evidence_hash": value.test_evidence_hash,
+        "required_commands": required,
+        "commands": records,
+        "missing_commands": [],
+        "mismatched_records": [],
+        "failed_records": failed,
+    }
+
+
 def _groups(
     reports: dict[str, dict[str, Any]],
     expected_seats: tuple[str, ...],
@@ -226,11 +281,12 @@ def assess(
         if seat in reports
     }
     missing = [seat for seat in expected_seats if seat not in checked]
-    tests = (
-        _executed_test_evidence(snapshot)
-        if isinstance(snapshot, ExecutedReviewInput)
-        else _test_evidence(snapshot)
-    )
+    if isinstance(snapshot, IntegrationReviewInput):
+        tests = _integration_test_evidence(snapshot)
+    elif isinstance(snapshot, ExecutedReviewInput):
+        tests = _executed_test_evidence(snapshot)
+    else:
+        tests = _test_evidence(snapshot)
     result: dict[str, Any] = {
         "status": "incomplete",
         "reasons": [],

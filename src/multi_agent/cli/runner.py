@@ -45,6 +45,7 @@ from multi_agent.core.events import (
 from multi_agent.core.reports import assess
 from multi_agent.core.review_input import (
     ExecutedReviewInput,
+    IntegrationReviewInput,
     ReviewInput,
     review_source,
 )
@@ -59,6 +60,10 @@ from .prompt import (
     EXECUTED_CONFIRM_VERSION,
     EXECUTED_REVIEW_PROMPT,
     EXECUTED_REVIEW_VERSION,
+    INTEGRATION_CONFIRM_PROMPT,
+    INTEGRATION_CONFIRM_VERSION,
+    INTEGRATION_REVIEW_PROMPT,
+    INTEGRATION_REVIEW_VERSION,
     REVIEW_PROMPT,
     REVIEW_VERSION,
     targets_for,
@@ -125,6 +130,28 @@ def validate_review_settings(
         raise ValueError("timeout and grace must be positive finite durations")
 
 
+def _review_protocol(
+    snapshot: ReviewInput, *, confirmation: bool = False
+) -> tuple[str, str]:
+    if isinstance(snapshot, IntegrationReviewInput):
+        return (
+            (INTEGRATION_CONFIRM_VERSION, INTEGRATION_CONFIRM_PROMPT)
+            if confirmation
+            else (INTEGRATION_REVIEW_VERSION, INTEGRATION_REVIEW_PROMPT)
+        )
+    if isinstance(snapshot, ExecutedReviewInput):
+        return (
+            (EXECUTED_CONFIRM_VERSION, EXECUTED_CONFIRM_PROMPT)
+            if confirmation
+            else (EXECUTED_REVIEW_VERSION, EXECUTED_REVIEW_PROMPT)
+        )
+    return (
+        (CONFIRM_VERSION, CONFIRM_PROMPT)
+        if confirmation
+        else (REVIEW_VERSION, REVIEW_PROMPT)
+    )
+
+
 def new_review(
     store: ReviewStore,
     snapshot_id: str,
@@ -141,9 +168,7 @@ def new_review(
         identifier,
         RoundState(
             snapshot_id,
-            EXECUTED_REVIEW_VERSION
-            if isinstance(snapshot, ExecutedReviewInput)
-            else REVIEW_VERSION,
+            _review_protocol(snapshot)[0],
             tuple(SeatState(seat) for seat in seats),
         ),
         {
@@ -188,13 +213,14 @@ def new_confirmation(store: ReviewStore, parent_id: str) -> str:
     if not selected:
         raise ValueError("there are no P0/P1 findings to cross-confirm")
     identifier = uuid4().hex
+    template_version, _ = _review_protocol(
+        snapshot_for(store, parent.snapshot_id), confirmation=True
+    )
     store.create_review(
         identifier,
         RoundState(
             parent.snapshot_id,
-            EXECUTED_CONFIRM_VERSION
-            if isinstance(snapshot_for(store, parent.snapshot_id), ExecutedReviewInput)
-            else CONFIRM_VERSION,
+            template_version,
             selected,
         ),
         {
@@ -359,12 +385,8 @@ async def execute_round(
     snapshot = snapshot_for(store, state.snapshot_id)
     ensure_external(directory, snapshot)
     confirmation = metadata["kind"] == "confirmation"
-    executed = isinstance(snapshot, ExecutedReviewInput)
-    review_version = EXECUTED_REVIEW_VERSION if executed else REVIEW_VERSION
-    confirm_version = EXECUTED_CONFIRM_VERSION if executed else CONFIRM_VERSION
-    if state.prompt_template_version != (
-        confirm_version if confirmation else review_version
-    ):
+    template_version, prompt = _review_protocol(snapshot, confirmation=confirmation)
+    if state.prompt_template_version != template_version:
         raise ValueError("unsupported frozen prompt template version")
     parent_reports = (
         current_reports(store.load_round(metadata["parent_round_id"]))
@@ -517,11 +539,7 @@ async def execute_round(
                         seat.config.model, seat.config.effort, Permission.READ_ONLY, cwd
                     )
                 )
-                review_prompt = EXECUTED_REVIEW_PROMPT if executed else REVIEW_PROMPT
-                confirm_prompt = EXECUTED_CONFIRM_PROMPT if executed else CONFIRM_PROMPT
-                turn = await adapter.submit_turn(
-                    session, confirm_prompt if confirmation else review_prompt
-                )
+                turn = await adapter.submit_turn(session, prompt)
                 terminal: Completed | Error | None = None
                 process_exit: ProcessExited | None = None
 
@@ -734,6 +752,8 @@ def view_round(
     if state.prompt_template_version in (
         EXECUTED_REVIEW_VERSION,
         EXECUTED_CONFIRM_VERSION,
+        INTEGRATION_REVIEW_VERSION,
+        INTEGRATION_CONFIRM_VERSION,
     ):
         result.update(
             assessment_scope="historical_frozen_input",

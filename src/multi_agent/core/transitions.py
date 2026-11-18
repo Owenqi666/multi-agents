@@ -24,6 +24,8 @@ from .integration import (
     IntegrationMemberApplied,
     IntegrationProgress,
 )
+from .integration_testing import IntegrationTestResult
+from .integration_verification import IntegrationTestAttempt, IntegrationTestRequest
 from .planning import (
     PlanningAttempt,
     PlanningPhase,
@@ -1768,3 +1770,23 @@ def apply_integration(
     if isinstance(event, IntegrationMemberApplied):
         return replace(state, applied_count=state.applied_count + 1)
     return replace(state, result=event.conflict)
+
+
+def reserve_integration_test(
+    current: IntegrationTestAttempt | None, request: IntegrationTestRequest
+) -> IntegrationTestAttempt:
+    if current is None:
+        return IntegrationTestAttempt(1, request)
+    if current.result is None or current.result.process_stopped is not True:
+        raise ValueError("previous integration test has no confirmed stopping facts")
+    return IntegrationTestAttempt(current.number + 1, request)
+
+
+def finish_integration_test(
+    current: IntegrationTestAttempt, number: int, result: IntegrationTestResult
+) -> tuple[IntegrationTestAttempt, Disposition]:
+    if number < 1 or number > current.number:
+        raise ValueError("integration test attempt was not reserved")
+    if number < current.number or current.result is not None:
+        return current, Disposition.HISTORY_ONLY
+    return replace(current, result=result), Disposition.APPLIED

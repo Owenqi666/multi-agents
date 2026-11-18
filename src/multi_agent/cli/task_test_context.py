@@ -206,6 +206,33 @@ def _scratch(value: TaskTestScratch, root: Path) -> None:
         _directory(path, identity=identity)
 
 
+def create_test_scratch(root: Path) -> TaskTestScratch:
+    for name in ("scratch", "scratch/home", "scratch/tmp", "scratch/cache"):
+        (root / name).mkdir(mode=0o700)
+    return TaskTestScratch(
+        path=str(root / "scratch"),
+        identity=_identity(_directory(root / "scratch")),
+        home_identity=_identity(_directory(root / "scratch/home")),
+        tmp_identity=_identity(_directory(root / "scratch/tmp")),
+        cache_identity=_identity(_directory(root / "scratch/cache")),
+    )
+
+
+def check_test_runtime_paths(
+    policy: TaskTestPolicy, root: Path, database: Path, lease: ExecutorLease
+) -> None:
+    for item in (*policy.tool_directories, *policy.runtime_read_paths):
+        path = Path(item)
+        _outside(path, lease)
+        if any(
+            forbidden.is_relative_to(path) or path.is_relative_to(forbidden)
+            for forbidden in (root, database, lease.source, lease.repository)
+        ):
+            raise ValueError(
+                "test runtime path exposes protected source or host storage"
+            )
+
+
 def _pair(
     store: TaskTestStore, run_id: str, implementation_attempt: int, number: int
 ) -> tuple[TaskTestAttempt, TaskTestEnvelope, TaskTestEnvelope, TaskTestHistory]:
@@ -416,6 +443,9 @@ def inspect_task_test_context(
 
 
 def check_task_test_launch_owners(store: TaskTestStore, lease: ExecutorLease) -> None:
+    from multi_agent.store.integration_store import check_integration_test_launch_owners
+
+    check_integration_test_launch_owners(store, str(lease.repository))
     database = _store_database(store)
     registry = _registry(lease, create=True)
     visited: set[tuple[str, int, int]] = set()
@@ -575,16 +605,7 @@ def prepare_task_test_launch(
     database = _database(database_path)
     with TaskTestStore(database.path) as store, executor_lock(repository) as lease:
         root = _new_root(directory, database, lease)
-        for item in (*policy.tool_directories, *policy.runtime_read_paths):
-            path = Path(item)
-            _outside(path, lease)
-            if any(
-                forbidden.is_relative_to(path) or path.is_relative_to(forbidden)
-                for forbidden in (root, database.path, lease.source, lease.repository)
-            ):
-                raise ValueError(
-                    "test runtime path exposes protected source or host storage"
-                )
+        check_test_runtime_paths(policy, root, database.path, lease)
         value = prepare_task_test_input(
             store,
             task_run_id,
@@ -642,22 +663,9 @@ def prepare_task_test_launch(
             checkout = create_task_test_checkout(store, value, lease, root / "checkout")
             marker["checkout"] = task_execution_value(checkout)
             _write_marker(fd, path, marker)
-            for name in (
-                "context",
-                "logs",
-                "scratch",
-                "scratch/home",
-                "scratch/tmp",
-                "scratch/cache",
-            ):
+            for name in ("context", "logs"):
                 (root / name).mkdir(mode=0o700)
-            scratch = TaskTestScratch(
-                path=str(root / "scratch"),
-                identity=_identity(_directory(root / "scratch")),
-                home_identity=_identity(_directory(root / "scratch/home")),
-                tmp_identity=_identity(_directory(root / "scratch/tmp")),
-                cache_identity=_identity(_directory(root / "scratch/cache")),
-            )
+            scratch = create_test_scratch(root)
             context = TaskTestContext(
                 path=str(root / "context"),
                 identity=_identity(_directory(root / "context")),
