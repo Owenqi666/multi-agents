@@ -16,6 +16,13 @@ case = os.environ.get("FAKE_PLANNING_CASE", "success")
 if source.is_file():
     frozen = json.loads(source.read_text())
     if provider == "claude":
+        if case == "claude-schema-compatibility" and "-p" in sys.argv:
+            schema = json.loads(sys.argv[sys.argv.index("--json-schema") + 1])
+            if schema.get("$schema") == "https://json-schema.org/draft/2020-12/schema":
+                sys.exit(
+                    "Error: --json-schema is not a valid JSON Schema: no schema "
+                    'with key or ref "https://json-schema.org/draft/2020-12/schema"'
+                )
         report = {
             "schema_version": 1,
             "id": "T-0100",

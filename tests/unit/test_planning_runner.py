@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import pytest
 import test_planning_context as contexts
 import test_runtime as runtime_helpers
+from jsonschema import Draft7Validator
 
 from multi_agent.adapters.base import EnvironmentInfo, Permission
 from multi_agent.adapters.codex_isolation import CodexIsolation
@@ -31,6 +32,7 @@ from multi_agent.cli.planning_evidence import (
     bind_planning_task,
     inspect_planning_execution,
 )
+from multi_agent.cli.planning_inputs import parse_planning_draft
 from multi_agent.cli.planning_runner import execute_planning_attempt
 from multi_agent.cli.task_inputs import freeze_project_rules
 from multi_agent.core import Disposition
@@ -648,6 +650,62 @@ def test_planning_runner_checks_environment_before_turn(setup, monkeypatch, fail
             await clean_resources(setup)
 
     asyncio.run(run())
+
+
+def test_claude_planning_schema_on_first_draft_and_revision(setup, monkeypatch):
+    monkeypatch.setenv("FAKE_PLANNING_CASE", "claude-schema-compatibility")
+
+    async def run():
+        first = await execute(setup)
+        assert first.phase == PlanningPhase.AWAITING_REVIEW
+        monkeypatch.setenv("FAKE_PLANNING_DECISION", "needs_revision")
+        assert (await execute(setup, "review")).phase == PlanningPhase.REVISION_REQUIRED
+        revised = await execute(setup)
+        assert revised.phase == PlanningPhase.AWAITING_REVIEW
+        return revised
+
+    revised = asyncio.run(run())
+    spawns = [r for r in records(setup) if r.get("argv", [])[:1] == ["-p"]]
+    assert len(spawns) == len(revised.draft_attempts) == 2
+    for attempt, spawn in zip(revised.draft_attempts, spawns, strict=True):
+        context = Path(prepared_for(attempt).attempt_context.path)
+        frozen = json.loads((context / "output-schema.json").read_text())
+        assert frozen["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+        argv = spawn["argv"]
+        wire = json.loads(argv[argv.index("--json-schema") + 1])
+        assert wire == {key: value for key, value in frozen.items() if key != "$schema"}
+        validator = Draft7Validator(wire)
+        card = planning_value(
+            next(e.result for e in attempt.events if isinstance(e, Completed))
+        )
+        validator.validate(card)
+        assert parse_planning_draft(json.dumps(card), setup.value) == revised.card
+        for changes in (
+            {"unknown": True},
+            {"write_scope": ["../other"]},
+            {"test_refs": ["unit", "unit"]},
+            {"interface_contracts": [{"name": "contract", "definition": 3}]},
+            {"open_questions": [{"question": "text", "blocks_dispatch": 1}]},
+            {"proposed_tests": [{"name": "unit"}]},
+        ):
+            invalid = card | changes
+            assert not validator.is_valid(invalid)
+            with pytest.raises(ValueError):
+                parse_planning_draft(json.dumps(invalid), setup.value)
+        wrong_baseline = card | {"baseline_commit": "0" * 40}
+        validator.validate(wrong_baseline)
+        with pytest.raises(ValueError, match="baseline"):
+            parse_planning_draft(json.dumps(wrong_baseline), setup.value)
+    assert_released(setup)
+    (review_request,) = [
+        r["message"]
+        for r in records(setup)
+        if r.get("message", {}).get("method") == "turn/start"
+    ]
+    review_context = Path(prepared_for(revised.current("review")).attempt_context.path)
+    assert review_request["params"]["outputSchema"] == json.loads(
+        (review_context / "output-schema.json").read_text()
+    )
 
 
 def test_planning_runner_uses_frozen_output_schema(setup, monkeypatch):

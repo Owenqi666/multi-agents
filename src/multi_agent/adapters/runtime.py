@@ -374,6 +374,7 @@ class RuntimeAdapter(Adapter):
         grace: float = 2,
         log_dir: Path,
         output_schema: dict[str, Any] | None = None,
+        claude_planning_draft: bool = False,
     ) -> None:
         if provider not in ("codex", "claude"):
             raise ValueError("provider must be codex or claude")
@@ -401,6 +402,7 @@ class RuntimeAdapter(Adapter):
         self.deadline_at = deadline_at
         self.grace = grace
         self.log_dir = log_dir.resolve()
+        self._claude_planning_draft = claude_planning_draft
         self.output_schema = (
             json.loads(json.dumps(output_schema, allow_nan=False))
             if output_schema is not None
@@ -892,7 +894,18 @@ class RuntimeAdapter(Adapter):
             "--no-session-persistence",
         ]
         if self.output_schema is not None:
-            argv += ["--json-schema", json.dumps(self.output_schema)]
+            schema = self.output_schema
+            if (
+                self._claude_planning_draft
+                and schema.get("$schema")
+                == "https://json-schema.org/draft/2020-12/schema"
+            ):
+                # Claude Code 2.1.325 compiles the task card's local refs and
+                # constraints but has no registered 2020-12 meta-schema.
+                schema = {
+                    key: value for key, value in schema.items() if key != "$schema"
+                }
+            argv += ["--json-schema", json.dumps(schema)]
         return argv
 
     def _validate_claude_message(

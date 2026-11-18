@@ -89,7 +89,7 @@ def setup(tmp_path, monkeypatch, provider, mode="success", **options):
         provider,
         executable=fake(tmp_path, provider),
         log_dir=tmp_path / "logs",
-        output_schema={"type": "object"},
+        output_schema=options.pop("output_schema", {"type": "object"}),
         timeout=options.pop("timeout", 3),
         grace=0.05,
         **options,
@@ -139,6 +139,20 @@ def test_real_transport_success_and_request_evidence(tmp_path, monkeypatch, prov
     if provider == "codex":
         assert "model/rerouted" in log
     assert "do-not-inherit" not in log
+
+
+def test_nonplanning_claude_preserves_declared_schema_on_wire(tmp_path, monkeypatch):
+    schema = {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+    }
+    adapter, config, capture = setup(
+        tmp_path, monkeypatch, "claude", output_schema=schema
+    )
+    _, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Completed)
+    argv = json.loads(capture.read_text().splitlines()[0])["argv"]
+    assert argv[argv.index("--json-schema") + 1] == json.dumps(schema)
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])

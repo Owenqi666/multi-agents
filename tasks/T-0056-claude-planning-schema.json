@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "id": "T-0056",
+  "goal": "让真实 Claude 规划草拟能提交可由仓库原规则校验的任务卡，并在修复提交上用原打印预览样例验收自动返工、完整复测和复审。",
+  "baseline_commit": "2de19ed49eff2c30eaaa6937c9571c438462acf4",
+  "write_scope": [
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/claude_planning_schema.py",
+    "src/multi_agent/cli/planning_runner.py",
+    "tests/unit/test_planning_runner.py",
+    "tests/unit/test_planning_inputs.py",
+    "tests/unit/test_runtime.py",
+    "tests/unit/runtime_fakes/planning_cli.py",
+    "docs/deliveries/T-0056.md",
+    "tasks/T-0056-claude-planning-schema.json"
+  ],
+  "depends_on": ["T-0055"],
+  "interface_contracts": [
+    {
+      "name": "用户需求与已复现故障",
+      "definition": "用户原文：把 Claude 规划适配器的 JSON Schema 兼容问题建卡发给阶段2窗口修复，保留原任务卡校验，补齐回归测试，完整运行 verify 后提交。再在新提交上用同一打印预览样例重跑实机验收，验证初审发现阻塞后自动返工一次、新候选重跑原完整测试并复审，把结果和证据交回本窗口审核。基线 Claude Code 2.1.325 在首次草拟解析 --json-schema 时拒绝仓库的 Draft 2020-12 元模式，产品、冻结文件和实际 argv 中的 schema 相同。原件在仓库外 phase-two/T55-native-2de19ed49eff/。"
+    },
+    {
+      "name": "传给模型的结构化输出约束与宿主校验",
+      "definition": "在 Claude 规划草拟的调用边界产生 CLI 可接受的 JSON Schema，以结构化输出模式运行。首次、规划修订及重试使用相同处理。保留规范文件 schemas/task-card.schema.json、准备和冻结来源、parse_planning_draft / parse_task_card 的 Draft 2020-12 原校验及语义检查。仅从冻结的 schema 派生，不维护第二份手写任务卡 schema。保留适用的字段、有效的本地引用和约束；若运行时确实不能表达某约束，列明差异并证明宿主仍会拒绝反例。其他 Claude 调用和 Codex 的 wire 契约保持原状。"
+    },
+    {
+      "name": "实机验收与证据绑定",
+      "definition": "用干净的新提交，通过正式产品入口、已登录本机 CLI 和隔离的样例副本，复用原样例 Git 基线 695cfcdea1f50395312f0421aad9966dda2f46fb、原始需求、规则、build/test 及审核和执行配置。保留原失败目录，另存新数据库、CLI 回执、配置、模型实际报告、命令及日志。按实际运行结果结算；失败保留首次失败点和未到达阶段。用户已授权阶段2窗口直接运行同一样例所需的实际请求并向主窗口回传。"
+    }
+  ],
+  "deliverables": [
+    "局部适配修复、命名离线回归及交付说明。",
+    "完整 verify 和正常提交回执，绑定提交 SHA 的同样例实机报告及可复核原件。"
+  ],
+  "acceptance_criteria": [
+    "命名回归经规划真实调用路径及假 Claude CLI 重现旧 argv 的方言错误；修复后核对实际传出的 schema 可用、引用可解析、有效任务卡可进入原宿主校验。覆盖首次及共用的修订或重试路径。记录基线失败和修复后通过的用例。",
+    "正反例证明宿主以同一份原 schema 与既有语义校验接收或拒绝输出；至少覆盖非法字段或嵌套值，以及一个结构合法但语义错误的样例。保留 test_planning_runner_uses_frozen_output_schema 中 RuntimeAdapter 构造入参与冻结原件相等的断言。转换限于实际发送给 Claude 规划执行的参数；由 diff 和原调用路径测试核对 Codex 的规划、实施、审核以及非规划 Claude 调用沿用原契约。",
+    "完整 scripts/verify.sh 五步通过并正常提交。保留既有检查；交付报告列出基线、候选、实际改动路径、命名回归、既有断言有改动时的理由。",
+    "在该候选上重新从同一打印预览基线运行。真实 Claude 成功产出通过原校验的规划卡，并获得规划复核；真实实施得到初始候选，原 build/test 实际执行。核对运行提交、样例输入和产品入口回执。",
+    "同一次默认 task-review run 中实机初审确实报告符合准入的阻塞，系统自动预留且执行一次返工，生成直接基于首候选的新提交，以原完整有序测试的名称、argv 和策略实际复测，再按原配置建立基于新候选与复测证据的新审核。用两候选、审核轮次、实际测试退出、任务历史和正常调用回执交叉判定。报告最终质量结论及退出码，二审仍阻塞则如实记录并停下。",
+    "新证据存入 /Users/owen/Desktop/Multi-agent-acceptance/phase-two/T56-native-<新提交短SHA>/，与原目录并存。回传新提交、工作区状态、通过项、未通过项和可复核路径。样例保持原实现总预算 2，以一次默认初审观察自动分支；初审未报合格阻塞则记该分支未触发，若复审仍阻塞则报告实际结论，不反复抽取模型结果。可恢复的宿主故障可按产品既有预算显式重试，另存各次回执。实际模型、档位和用量缺失时按未确认记录。没有到达的阶段不能以离线回归、手动分步或旧实机记录代替。"
+  ],
+  "test_refs": ["lint", "format", "typecheck", "unit", "replay"],
+  "open_questions": []
+}

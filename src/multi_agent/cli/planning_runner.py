@@ -642,6 +642,7 @@ class _AttemptExecution:
                 grace=policy.grace,
                 log_dir=Path(self.logs.path),
                 output_schema=schema,
+                claude_planning_draft=self.stage == "draft",
             )
             if await self.preflight(stop_waiter):
                 await self.model(stop_waiter)
