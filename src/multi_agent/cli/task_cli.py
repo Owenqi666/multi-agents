@@ -953,14 +953,13 @@ def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             try:
                 if isinstance(outcome, BaseException):
                     raise outcome
-                if not interrupted:
-                    _freeze(
-                        database.path,
-                        member.task_run_id,
-                        lease.source,
-                        outcome,
-                        held_lease=lease,
-                    )
+                _freeze(
+                    database.path,
+                    member.task_run_id,
+                    lease.source,
+                    outcome,
+                    held_lease=lease,
+                )
             except (*_ERRORS, RuntimeFailure) as error:
                 failures[member.task_run_id] = [
                     str(error),

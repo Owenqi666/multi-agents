@@ -1,6 +1,10 @@
 """Run independently planned tasks through the batch module CLI."""
 
 import json
+import signal
+import subprocess
+import sys
+import time
 
 import pytest
 import test_task_workflow_cli as helpers
@@ -8,7 +12,9 @@ import test_task_workflow_cli as helpers
 from multi_agent.cli.planning_evidence import bind_planning_task
 from multi_agent.cli.task_context import capture_task_policy, prepare_task_launch
 from multi_agent.core.task_execution import TaskDispatchPolicy, task_execution_hash
+from multi_agent.core.task_state import TaskPhase
 from multi_agent.store.planning_store import PlanningStore
+from multi_agent.store.task_review_store import TaskReviewStore
 
 workflow = helpers.workflow
 
@@ -103,6 +109,83 @@ def test_run_batch_implements_ready_plans_concurrently(workflow):
             contents.decode().rstrip("\n")
         )
     assert helpers.git(workflow.repository, "rev-parse", "HEAD") == workflow.baseline
+
+
+def test_run_batch_interrupt_preserves_the_settled_candidate(workflow):
+    fast = plan(workflow, "T-0200", "frontend/status.js")
+    slow = plan(workflow, "T-0201", "frontend/other.js")
+    fast_hash, slow_hash = (
+        task_execution_hash(planned["card"]) for planned in (fast, slow)
+    )
+    barrier = workflow.base / "barrier"
+    barrier.mkdir()
+    implementation = helpers.executable(
+        workflow,
+        "claude",
+        "implementation",
+        dispatches={
+            fast_hash: {"frontend/status.js": b"status\n".hex()},
+            slow_hash: {"frontend/other.js": b"other\n".hex()},
+        },
+        barrier=str(barrier),
+        wait_task_hash=slow_hash,
+    )
+    args = batch_arguments(workflow, fast, slow, implementation)
+    args[args.index("--timeout") + 1] = "90"
+    child = subprocess.Popen(
+        [sys.executable, "-m", "multi_agent", *map(str, args)],
+        cwd=helpers.REPOSITORY,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        deadline = time.monotonic() + 60
+        with TaskReviewStore.open_readonly(workflow.database) as store:
+            while child.poll() is None and time.monotonic() < deadline:
+                fast_id = store.load_planning(fast["planning_run_id"]).bound_task_run_id
+                slow_id = store.load_planning(slow["planning_run_id"]).bound_task_run_id
+                if fast_id is not None and slow_id is not None:
+                    slow_state = store.load_task(slow_id)
+                    slow_attempt = slow_state.current_attempt
+                    if (
+                        store.load_task(fast_id).delivery_ready
+                        and slow_state.phase == TaskPhase.IMPLEMENTING
+                        and slow_attempt is not None
+                        and slow_attempt.runtime.session_id is not None
+                    ):
+                        break
+                time.sleep(0.01)
+            else:
+                pytest.fail("fast task did not settle while the slow task was running")
+        child.send_signal(signal.SIGINT)
+        stdout, stderr = child.communicate(timeout=30)
+        assert child.returncode == 130, (stdout, stderr)
+    finally:
+        if child.poll() is None:
+            child.send_signal(signal.SIGINT)
+            try:
+                child.communicate(timeout=10)
+            except subprocess.TimeoutExpired:
+                child.kill()
+                child.communicate(timeout=10)
+
+    by_id = {task["task_run_id"]: task for task in json.loads(stdout)["tasks"]}
+    for task_id in (slow_id, fast_id):
+        shown = helpers.successful(
+            "task", "show", "--task", task_id, "--database", workflow.database
+        )
+        task = by_id[task_id]
+        assert task["candidate"] == shown["candidate"]
+        assert task["verification"] == shown["verification"]
+        assert shown["attempts"][-1]["reconciliation"]["process_stopped"]
+        if task_id == slow_id:
+            assert task["phase"] == shown["phase"] == "cancelled"
+            assert shown["candidate"] is None
+            assert shown["verification"] == "unverified"
+        else:
+            assert shown["candidate"] is not None
+            assert shown["verification"] == "verified"
 
 
 @pytest.mark.parametrize("conflict", ["overlap", "dependency"])

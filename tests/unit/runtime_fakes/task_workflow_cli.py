@@ -39,6 +39,8 @@ def implement(prompt):
         report = json.loads(os.environ["FAKE_RUNTIME_REPORT"])
         report["task_hash"] = task_hash
         os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(report)
+        if task_hash == settings.get("wait_task_hash"):
+            os.environ["FAKE_RUNTIME_MODE"] = "wait"
     before = {}
     for name, encoded in writes.items():
         path = Path(name)
