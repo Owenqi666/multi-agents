@@ -155,6 +155,29 @@ def test_nonplanning_claude_preserves_declared_schema_on_wire(tmp_path, monkeypa
     assert argv[argv.index("--json-schema") + 1] == json.dumps(schema)
 
 
+def test_nonplanning_codex_preserves_array_constraints_on_wire(tmp_path, monkeypatch):
+    schema = {
+        "type": "object",
+        "properties": {
+            "blocking_issues": {
+                "type": "array",
+                "items": {"type": "string"},
+                "uniqueItems": True,
+            }
+        },
+    }
+    adapter, config, capture = setup(
+        tmp_path, monkeypatch, "codex", output_schema=schema
+    )
+    _, result = asyncio.run(collect(adapter, config))
+    assert isinstance(result.terminal, Completed)
+    messages = [
+        json.loads(line).get("message", {}) for line in capture.read_text().splitlines()
+    ]
+    (request,) = [m for m in messages if m.get("method") == "turn/start"]
+    assert request["params"]["outputSchema"] == schema
+
+
 @pytest.mark.parametrize("provider", ["codex", "claude"])
 def test_environment_is_explicit_and_preserves_catalog(tmp_path, monkeypatch, provider):
     adapter, config, capture = setup(tmp_path, monkeypatch, provider)

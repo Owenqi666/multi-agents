@@ -13,6 +13,55 @@ provider = "claude" if "claude" in Path(sys.argv[0]).name else "codex"
 context = Path.cwd()
 source = context / "planning-input.json"
 case = os.environ.get("FAKE_PLANNING_CASE", "success")
+
+
+def send(message):
+    print(json.dumps(message), flush=True)
+
+
+def codex_strict_requests(lines):
+    for line in lines:
+        message = json.loads(line)
+        params = message.get("params", {})
+        if message.get("method") != "turn/start" or (
+            "uniqueItems" not in params["outputSchema"]["properties"]["blocking_issues"]
+        ):
+            yield line
+            continue
+
+        # Like the native failure, acknowledge the turn before failing it.
+        thread_id = params["threadId"]
+        turn = {"id": "schema-check", "status": "inProgress", "items": []}
+        send({"id": message["id"], "result": {"turn": turn}})
+        notification = {"threadId": thread_id, "turn": turn}
+        send({"method": "turn/started", "params": notification})
+        reason = {
+            "message": "Invalid schema for response_format 'codex_output_schema': "
+            "'schema.properties.blocking_issues.uniqueItems' is not permitted when strict is true.",
+            "type": "invalid_request_error",
+            "param": "text.format.schema",
+            "code": "invalid_json_schema",
+        }
+        error = {
+            "message": json.dumps({"type": "error", "error": reason, "status": 400}),
+            "codexErrorInfo": "other",
+        }
+        send(
+            {
+                "method": "error",
+                "params": {
+                    "threadId": thread_id,
+                    "turnId": turn["id"],
+                    "error": error,
+                    "willRetry": False,
+                },
+            }
+        )
+        turn.update(status="failed", error=error)
+        send({"method": "turn/completed", "params": notification})
+        return
+
+
 if source.is_file():
     frozen = json.loads(source.read_text())
     if provider == "claude":
@@ -43,6 +92,8 @@ if source.is_file():
                 question["resolution"] = "Model-decided production"
             report["open_questions"] = [question]
     else:
+        if case == "codex-strict-review-schema":
+            sys.stdin = codex_strict_requests(sys.stdin)
         card = json.loads((context / "task-card.json").read_text())
         task_hash = hashlib.sha256(
             json.dumps(

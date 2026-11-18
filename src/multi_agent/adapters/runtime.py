@@ -22,6 +22,7 @@ variables to retain the user's subscription login.
 """
 
 import asyncio
+import copy
 import json
 import math
 import os
@@ -375,6 +376,7 @@ class RuntimeAdapter(Adapter):
         log_dir: Path,
         output_schema: dict[str, Any] | None = None,
         claude_planning_draft: bool = False,
+        codex_planning_review: bool = False,
     ) -> None:
         if provider not in ("codex", "claude"):
             raise ValueError("provider must be codex or claude")
@@ -403,6 +405,7 @@ class RuntimeAdapter(Adapter):
         self.grace = grace
         self.log_dir = log_dir.resolve()
         self._claude_planning_draft = claude_planning_draft
+        self._codex_planning_review = codex_planning_review
         self.output_schema = (
             json.loads(json.dumps(output_schema, allow_nan=False))
             if output_schema is not None
@@ -846,7 +849,13 @@ class RuntimeAdapter(Adapter):
             "cwd": str(state.config.cwd),
         }
         if self.output_schema is not None:
-            params["outputSchema"] = self.output_schema
+            schema = self.output_schema
+            if self._codex_planning_review:
+                # Strict response formats reject uniqueItems. The frozen
+                # planning schema still enforces it on the returned decision.
+                schema = copy.deepcopy(schema)
+                schema["properties"]["blocking_issues"].pop("uniqueItems", None)
+            params["outputSchema"] = schema
         self._validate_turn_workspace(state)
         self._check_execution_deadline()
         response = await rpc.request("turn/start", params)

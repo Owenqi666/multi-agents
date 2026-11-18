@@ -32,7 +32,11 @@ from multi_agent.cli.planning_evidence import (
     bind_planning_task,
     inspect_planning_execution,
 )
-from multi_agent.cli.planning_inputs import parse_planning_draft
+from multi_agent.cli.planning_inputs import (
+    REVIEW_SCHEMA,
+    parse_planning_draft,
+    parse_planning_review,
+)
 from multi_agent.cli.planning_runner import execute_planning_attempt
 from multi_agent.cli.task_inputs import freeze_project_rules
 from multi_agent.core import Disposition
@@ -703,9 +707,53 @@ def test_claude_planning_schema_on_first_draft_and_revision(setup, monkeypatch):
         if r.get("message", {}).get("method") == "turn/start"
     ]
     review_context = Path(prepared_for(revised.current("review")).attempt_context.path)
-    assert review_request["params"]["outputSchema"] == json.loads(
+    expected_review_schema = json.loads(
         (review_context / "output-schema.json").read_text()
     )
+    assert (
+        expected_review_schema["properties"]["blocking_issues"].pop("uniqueItems")
+        is True
+    )
+    assert review_request["params"]["outputSchema"] == expected_review_schema
+
+
+def test_codex_planning_review_strict_wire_preserves_host_constraints(
+    setup, monkeypatch
+):
+    monkeypatch.setenv("FAKE_PLANNING_CASE", "codex-strict-review-schema")
+
+    async def run():
+        assert (await execute(setup)).phase == PlanningPhase.AWAITING_REVIEW
+        return await execute(setup, "review")
+
+    reviewed = asyncio.run(run())
+    attempt = reviewed.current("review")
+    assert reviewed.can_bind, [e.detail for e in attempt.events if isinstance(e, Error)]
+    context = Path(prepared_for(attempt).attempt_context.path)
+    frozen = json.loads((context / "output-schema.json").read_text())
+    assert frozen == REVIEW_SCHEMA
+    (request,) = [
+        row["message"]
+        for row in records(setup)
+        if row.get("message", {}).get("method") == "turn/start"
+    ]
+    wire = request["params"]["outputSchema"]
+    assert frozen["properties"]["blocking_issues"].pop("uniqueItems") is True
+    assert wire == frozen
+    decision = planning_value(reviewed.review_artifact)
+    assert (
+        parse_planning_review(json.dumps(decision), reviewed.card)
+        == reviewed.review_artifact
+    )
+    for invalid in (
+        decision | {"decision": "needs_revision", "blocking_issues": ["same", "same"]},
+        decision | {"task_hash": "0" * 64},
+        decision | {"blocking_issues": ["real blocker"]},
+    ):
+        Draft7Validator(wire).validate(invalid)
+        with pytest.raises(ValueError):
+            parse_planning_review(json.dumps(invalid), reviewed.card)
+    assert_released(setup)
 
 
 def test_planning_runner_uses_frozen_output_schema(setup, monkeypatch):

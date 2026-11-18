@@ -643,6 +643,7 @@ class _AttemptExecution:
                 log_dir=Path(self.logs.path),
                 output_schema=schema,
                 claude_planning_draft=self.stage == "draft",
+                codex_planning_review=self.stage == "review",
             )
             if await self.preflight(stop_waiter):
                 await self.model(stop_waiter)
