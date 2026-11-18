@@ -60,6 +60,7 @@ from multi_agent.store.planning_store import PlanningStore
 
 from .task_context import (
     TaskLaunch,
+    TaskLaunchBatch,
     _database,
     prepare_task_launch,
     prepare_task_rework_launch,
@@ -839,6 +840,7 @@ async def _execute(
     stop: asyncio.Event | None,
     *,
     rework_from: str | None = None,
+    batch: TaskLaunchBatch | None = None,
 ) -> _Outcome:
     execution: _Execution | None = None
     state: TaskState | None = None
@@ -857,6 +859,7 @@ async def _execute(
                 policy=policy,
                 dispatch_policy=dispatch_policy,
                 unavailable=unavailable,
+                batch=batch,
             )
         else:
             if policy is not None or dispatch_policy is not None:
@@ -906,10 +909,13 @@ async def execute_task_attempt(
     unavailable: frozenset[tuple[str, str]] = frozenset(),
     stop: asyncio.Event | None = None,
     rework_from: str | None = None,
+    batch: TaskLaunchBatch | None = None,
 ) -> TaskState:
     """Run one fresh attempt; caller cancellation waits for the owned worker."""
     if rework_from is not None and (policy is not None or dispatch_policy is not None):
         raise ValueError("rework cannot override execution or dispatch policy")
+    if rework_from is not None and batch is not None:
+        raise ValueError("rework requires an individual launch")
     intent = asyncio.Event()
     worker = _task(
         _execute(
@@ -924,6 +930,7 @@ async def execute_task_attempt(
             intent,
             stop,
             rework_from=rework_from,
+            batch=batch,
         )
     )
     cancelled: asyncio.CancelledError | None = None

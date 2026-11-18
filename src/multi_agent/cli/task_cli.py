@@ -8,13 +8,18 @@ import signal
 import sqlite3
 import sys
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
+from dataclasses import dataclass
 from datetime import UTC, datetime
+from itertools import combinations
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
 
+from multi_agent.adapters.runtime_decode import RuntimeFailure
 from multi_agent.core.dispatch import ImplementationChoice, resolve_dispatch
 from multi_agent.core.events import FailureCategory, thaw_json
+from multi_agent.core.path_patterns import patterns_intersect
 from multi_agent.core.planning import (
     DependencyReceipt,
     PlanningInput,
@@ -27,10 +32,12 @@ from multi_agent.core.planning_execution import prepared_attempts
 from multi_agent.core.task_events import TaskReworkStarted
 from multi_agent.core.task_execution import (
     TaskDispatchPolicy,
+    TaskExecutionPolicy,
     prepared_for_task,
     task_execution_value,
 )
 from multi_agent.core.task_state import TaskPhase, TaskState
+from multi_agent.core.tasks import TaskCard
 from multi_agent.store.task_review_store import TaskReviewStore
 
 from .planning_context import capture_planning_policy
@@ -47,13 +54,19 @@ from .task_context import (
     _new_root,
     _outside,
     capture_task_policy,
+    prepare_task_batch,
 )
-from .task_inputs import _input_text, _unique_json, freeze_project_rules
+from .task_inputs import (
+    _input_text,
+    _unique_json,
+    freeze_project_rules,
+    validate_task_graph,
+)
 from .task_review_cli import _preserve_interruption, view_task_review
 from .task_rework import ReworkRefused
 from .task_runner import execute_task_attempt
 from .task_test_cli import _existing_lease, view_task_test
-from .workspaces import executor_lock
+from .workspaces import ExecutorLease, executor_lock
 
 _STRATEGY = (
     "implementation",
@@ -90,6 +103,20 @@ def _settings(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--claude-bin")
 
 
+def _implementation_settings(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--database", type=Path, required=True)
+    parser.add_argument("--repository", type=Path, required=True)
+    parser.add_argument("--directory", type=Path, required=True)
+    parser.add_argument(
+        "--implementation", nargs=3, metavar=("PROVIDER", "MODEL", "EFFORT")
+    )
+    parser.add_argument(
+        "--fallback", nargs=3, action="append", metavar=("PROVIDER", "MODEL", "EFFORT")
+    )
+    parser.add_argument("--task-type")
+    _settings(parser)
+
+
 def add_parser(commands: Any) -> None:
     command = commands.add_parser("task", help="plan, implement and rework a task")
     operations = command.add_subparsers(dest="task_operation", required=True)
@@ -106,18 +133,19 @@ def add_parser(commands: Any) -> None:
     _settings(plan)
     run = operations.add_parser("run")
     run.add_argument("planning_run_id")
-    run.add_argument("--database", type=Path, required=True)
-    run.add_argument("--repository", type=Path, required=True)
-    run.add_argument("--directory", type=Path, required=True)
-    run.add_argument(
-        "--implementation", nargs=3, metavar=("PROVIDER", "MODEL", "EFFORT")
-    )
-    run.add_argument(
-        "--fallback", nargs=3, action="append", metavar=("PROVIDER", "MODEL", "EFFORT")
-    )
-    run.add_argument("--task-type")
+    _implementation_settings(run)
     run.add_argument("--retry", action="store_true")
-    _settings(run)
+    batch = operations.add_parser(
+        "run-batch",
+        help="run independent ready plans together",
+        description=(
+            "Run two or more ready plans from the same baseline. "
+            "Each task gets a fresh path of the form DIRECTORY-TASK_ID "
+            "next to the database."
+        ),
+    )
+    batch.add_argument("planning_run_ids", nargs="+", metavar="PLAN_RUN_ID")
+    _implementation_settings(batch)
     rework = operations.add_parser("rework")
     rework.add_argument("review_round_id")
     rework.add_argument("--database", type=Path, required=True)
@@ -643,12 +671,18 @@ def _unavailable(state: TaskState) -> frozenset[tuple[str, str]]:
 
 
 def _freeze(
-    database: Path, identifier: str, repository: Path, state: TaskState
+    database: Path,
+    identifier: str,
+    repository: Path,
+    state: TaskState,
+    *,
+    held_lease: ExecutorLease | None = None,
 ) -> None:
     if not state.delivery_ready:
         return
     assert state.current_attempt is not None
-    with TaskReviewStore(database) as store, executor_lock(repository) as lease:
+    owner = executor_lock(repository) if held_lease is None else nullcontext(held_lease)
+    with TaskReviewStore(database) as store, owner as lease:
         if store.load_task(identifier).current_candidate is None:
             freeze_task_candidate(
                 store, identifier, state.current_attempt.number, lease
@@ -657,6 +691,37 @@ def _freeze(
             inspect_task_candidate(
                 store, identifier, state.current_attempt.number, lease
             )
+
+
+def _new_dispatch(args: argparse.Namespace) -> TaskDispatchPolicy:
+    dispatch = TaskDispatchPolicy(
+        args.task_type,
+        ImplementationChoice(*args.implementation) if args.implementation else None,
+        tuple(ImplementationChoice(*item) for item in (args.fallback or ())),
+    )
+    _dispatch(dispatch, frozenset())
+    return dispatch
+
+
+def _execution_policy(
+    args: argparse.Namespace, planning: PlanningState, dispatch: TaskDispatchPolicy
+) -> TaskExecutionPolicy:
+    assert planning.card is not None
+    decision = resolve_dispatch(
+        planning.card,
+        planning.planning_input.frozen_rules,
+        task_type=dispatch.task_type,
+        requested=dispatch.requested,
+        fallbacks=dispatch.fallbacks,
+    )
+    provider = {"codex": "codex", "claude-code": "claude"}[decision.choice.provider]
+    return capture_task_policy(
+        provider,
+        _program(getattr(args, provider + "_bin"), provider),
+        max_attempts=2 if args.max_attempts is None else args.max_attempts,
+        timeout=180 if args.timeout is None else args.timeout,
+        grace=2 if args.grace is None else args.grace,
+    )
 
 
 def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -722,32 +787,8 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 raise ValueError(
                     "existing implementation requires explicit retry or inspection"
                 )
-            dispatch = TaskDispatchPolicy(
-                args.task_type,
-                ImplementationChoice(*args.implementation)
-                if args.implementation
-                else None,
-                tuple(ImplementationChoice(*item) for item in (args.fallback or ())),
-            )
-            _dispatch(dispatch, unavailable)
-            decision = resolve_dispatch(
-                planning.card,
-                planning.planning_input.frozen_rules,
-                task_type=dispatch.task_type,
-                requested=dispatch.requested,
-                fallbacks=dispatch.fallbacks,
-                unavailable=unavailable,
-            )
-            provider = {"codex": "codex", "claude-code": "claude"}[
-                decision.choice.provider
-            ]
-            policy = capture_task_policy(
-                provider,
-                _program(getattr(args, provider + "_bin"), provider),
-                max_attempts=2 if args.max_attempts is None else args.max_attempts,
-                timeout=180 if args.timeout is None else args.timeout,
-                grace=2 if args.grace is None else args.grace,
-            )
+            dispatch = _new_dispatch(args)
+            policy = _execution_policy(args, planning, dispatch)
             with executor_lock(args.repository) as lease:
                 _new_root(args.directory, _database(database), lease)
             if identifier is None:
@@ -787,6 +828,155 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     return result, 130 if interrupted else 0 if result[
         "verification"
     ] == "verified" else 1
+
+
+def _batch_plans(
+    store: TaskReviewStore, identifiers: list[str], lease: ExecutorLease
+) -> list[tuple[str, PlanningState, TaskCard]]:
+    selections = []
+    for identifier in identifiers:
+        planning = store.load_planning(identifier)
+        card = planning.card
+        if (
+            planning.phase not in (PlanningPhase.READY, PlanningPhase.BOUND)
+            or not planning.evidence_ready
+            or card is None
+        ):
+            raise ValueError(f"{identifier} requires a verified ready plan")
+        if planning.bound_task_run_id is not None:
+            state = store.load_task(planning.bound_task_run_id)
+            if state.phase != TaskPhase.READY or state.attempts:
+                raise ValueError(f"{card.id} already has an implementation attempt")
+        if planning.planning_input.frozen_rules.repository != str(lease.repository):
+            raise ValueError(f"{card.id} belongs to a different repository")
+        selections.append((identifier, planning, card))
+
+    cards = tuple(card for _, _, card in selections)
+    for left, right in combinations(cards, 2):
+        pair = f"{left.id} and {right.id}"
+        if left.baseline_commit != right.baseline_commit:
+            raise ValueError(f"{pair} have different baselines")
+        if left.id in right.depends_on or right.id in left.depends_on:
+            raise ValueError(f"{pair} have an implementation dependency")
+        for a in left.write_scope:
+            for b in right.write_scope:
+                if patterns_intersect(a, b):
+                    raise ValueError(
+                        f"{pair} have overlapping write scopes: {a!r}, {b!r}"
+                    )
+    validate_task_graph(
+        cards,
+        frozenset(
+            receipt.task_id
+            for _, planning, _ in selections
+            for receipt in planning.planning_input.dependencies
+        ),
+    )
+    return selections
+
+
+@dataclass(frozen=True, slots=True)
+class _BatchMember:
+    planning_id: str
+    task_run_id: str
+    directory: Path
+    policy: TaskExecutionPolicy
+
+
+def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    identifiers = args.planning_run_ids
+    if len(identifiers) < 2 or len(set(identifiers)) != len(identifiers):
+        raise ValueError("run-batch requires at least two distinct planning run IDs")
+    database = _database(args.database)
+    dispatch = _new_dispatch(args)
+    with (
+        TaskReviewStore(database.path) as store,
+        executor_lock(args.repository) as lease,
+    ):
+        selections = _batch_plans(store, identifiers, lease)
+        members = [
+            _BatchMember(
+                identifier,
+                planning.bound_task_run_id or uuid4().hex,
+                _new_root(
+                    args.directory.with_name(f"{args.directory.name}-{card.id}"),
+                    database,
+                    lease,
+                ),
+                _execution_policy(args, planning, dispatch),
+            )
+            for identifier, planning, card in selections
+        ]
+        batch = prepare_task_batch(
+            store, lease, frozenset(member.task_run_id for member in members)
+        )
+        for member, (_, planning, _) in zip(members, selections, strict=True):
+            if planning.bound_task_run_id is None:
+                bind_planning_task(
+                    store,
+                    member.planning_id,
+                    member.task_run_id,
+                    datetime.now(UTC).isoformat(),
+                )
+            else:
+                provenance = planning.provenance()
+                for stage, attempt in (
+                    ("draft", provenance.draft),
+                    ("review", provenance.review),
+                ):
+                    inspect_planning_execution(
+                        store, member.planning_id, stage, attempt.number
+                    )
+
+        async def execute(stop: asyncio.Event) -> list[TaskState | BaseException]:
+            return await asyncio.gather(
+                *(
+                    execute_task_attempt(
+                        database.path,
+                        member.task_run_id,
+                        member.planning_id,
+                        repository=lease.source,
+                        directory=member.directory,
+                        policy=member.policy,
+                        dispatch_policy=dispatch,
+                        stop=stop,
+                        batch=batch,
+                    )
+                    for member in members
+                ),
+                return_exceptions=True,
+            )
+
+        outcomes, interrupted = asyncio.run(_interruptible(execute))
+        failures: dict[str, list[str]] = {}
+        for member, outcome in zip(members, outcomes, strict=True):
+            try:
+                if isinstance(outcome, BaseException):
+                    raise outcome
+                if not interrupted:
+                    _freeze(
+                        database.path,
+                        member.task_run_id,
+                        lease.source,
+                        outcome,
+                        held_lease=lease,
+                    )
+            except (*_ERRORS, RuntimeFailure) as error:
+                failures[member.task_run_id] = [
+                    str(error),
+                    *getattr(error, "__notes__", ()),
+                ]
+
+    tasks = []
+    for member in members:
+        task = view_task(database.path, task_run_id=member.task_run_id)
+        task["details"]["source_errors"].extend(failures.get(member.task_run_id, ()))
+        tasks.append(task)
+    verified = all(task["verification"] == "verified" for task in tasks)
+    return {
+        "operation": "run-batch",
+        "tasks": tasks,
+    }, 130 if interrupted else 0 if verified else 1
 
 
 def _rework(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -868,9 +1058,12 @@ def main(args: argparse.Namespace) -> int:
             )
             code = 0
         else:
-            value, code = {"plan": _plan, "run": _run, "rework": _rework}[
-                args.task_operation
-            ](args)
+            value, code = {
+                "plan": _plan,
+                "run": _run,
+                "run-batch": _run_batch,
+                "rework": _rework,
+            }[args.task_operation](args)
         print(json.dumps(value, ensure_ascii=False))
         return code
     except ReworkRefused as error:

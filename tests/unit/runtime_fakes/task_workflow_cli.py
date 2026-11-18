@@ -5,6 +5,7 @@ import json
 import os
 import runpy
 import sys
+import time
 from pathlib import Path
 
 executable = Path(sys.argv[0])
@@ -22,8 +23,24 @@ def capture(kind, **values):
 
 
 def implement(prompt):
+    dispatches = settings.get("dispatches")
+    if dispatches is None:
+        writes = settings["writes"]
+    else:
+        (task_hash,) = (key for key in dispatches if key in prompt)
+        writes = dispatches[task_hash]
+        barrier = Path(settings["barrier"])
+        (barrier / task_hash).write_text(str(Path.cwd()))
+        deadline = time.monotonic() + 15
+        while not all((barrier / key).is_file() for key in dispatches):
+            if time.monotonic() >= deadline:
+                raise TimeoutError("peer implementation never reached the barrier")
+            time.sleep(0.01)
+        report = json.loads(os.environ["FAKE_RUNTIME_REPORT"])
+        report["task_hash"] = task_hash
+        os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(report)
     before = {}
-    for name, encoded in settings["writes"].items():
+    for name, encoded in writes.items():
         path = Path(name)
         before[name] = path.read_bytes().hex() if path.exists() else None
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -34,7 +51,7 @@ def implement(prompt):
         pid=os.getpid(),
         prompt=prompt,
         before=before,
-        after=settings["writes"],
+        after=writes,
     )
     if settings.get("ready"):
         Path(settings["ready"]).touch()
@@ -46,10 +63,10 @@ if settings["role"] == "planning" and source.is_file():
     if provider == "claude":
         report = {
             "schema_version": 1,
-            "id": "T-0200",
+            "id": settings.get("task_id", "T-0200"),
             "goal": "Implement the original frontend requirement",
             "baseline_commit": frozen["frozen_rules"]["baseline_commit"],
-            "write_scope": ["frontend/**"],
+            "write_scope": settings.get("write_scope", ["frontend/**"]),
             "depends_on": [item["task_id"] for item in frozen["dependencies"]],
             "interface_contracts": [],
             "deliverables": ["The requested frontend status"],
@@ -82,7 +99,7 @@ if settings["role"] == "implementation":
     os.environ["FAKE_IMPLEMENTATION"] = "1"
     os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(
         {
-            "task_hash": settings["task_hash"],
+            "task_hash": settings.get("task_hash"),
             "outcome": settings.get("outcome", "completed"),
             "summary": "Synthetic implementation of the exact task",
             "required_paths": settings.get("required_paths", []),

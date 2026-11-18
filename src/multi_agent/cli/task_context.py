@@ -13,7 +13,7 @@ import os
 import re
 import stat
 from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -842,6 +842,36 @@ def check_task_launch_owners(store: PlanningStore, lease: ExecutorLease) -> None
     _scan_registry(store, lease, _store_database(store))
 
 
+def _check_launch_owners(
+    store: PlanningStore, lease: ExecutorLease, database: _Database
+) -> Path:
+    from multi_agent.store.task_test_store import TaskTestStore
+
+    from .task_test_context import check_task_test_launch_owners
+
+    registry = _scan_registry(store, lease, database)
+    with TaskTestStore.open_readonly(database.path) as test_store:
+        check_task_test_launch_owners(test_store, lease)
+    return registry
+
+
+@dataclass(frozen=True, slots=True)
+class TaskLaunchBatch:
+    database: _Database
+    lease: ExecutorLease
+    registry: Path
+    task_run_ids: frozenset[str]
+
+
+def prepare_task_batch(
+    store: PlanningStore, lease: ExecutorLease, task_run_ids: frozenset[str]
+) -> TaskLaunchBatch:
+    """Check prior owners before any of the batch's fresh attempts are reserved."""
+    database = _store_database(store)
+    registry = _check_launch_owners(store, lease, database)
+    return TaskLaunchBatch(database, lease, registry, task_run_ids)
+
+
 def _policies(
     state: TaskState,
     policy: TaskExecutionPolicy | None,
@@ -1159,16 +1189,19 @@ def prepare_task_launch(
     policy: TaskExecutionPolicy | None = None,
     dispatch_policy: TaskDispatchPolicy | None = None,
     unavailable: frozenset[tuple[str, str]] = frozenset(),
+    batch: TaskLaunchBatch | None = None,
 ) -> Iterator[TaskLaunch]:
     """Reserve and yield one new launch while retaining its store and executor lease."""
-    from multi_agent.store.task_test_store import TaskTestStore
-
-    from .task_test_context import check_task_test_launch_owners
-
     database = _database(database_path)
     _text(task_run_id, "task run id")
     _text(planning_run_id, "planning run id")
-    with PlanningStore(database.path) as store, executor_lock(repository) as lease:
+    owner = executor_lock(repository) if batch is None else nullcontext(batch.lease)
+    with PlanningStore(database.path) as store, owner as lease:
+        if batch is not None and (
+            database != batch.database or task_run_id not in batch.task_run_ids
+        ):
+            raise ValueError("task is outside the admitted execution batch")
+        _check_lease(lease)
         database.check()
         if _store_database(store) != database:
             raise ValueError("task database connection identity differs")
@@ -1210,12 +1243,12 @@ def prepare_task_launch(
         _, disposition = apply_task(state, started)
         if disposition != Disposition.APPLIED:
             raise ValueError("task launch must reserve a new current attempt")
-        registry = _scan_registry(store, lease, database)
-        # Keep the implementation controller's existing database entry point.
-        # Test ownership is read from this same validated local database while
-        # the common executor lease excludes another launch.
-        with TaskTestStore.open_readonly(database.path) as test_store:
-            check_task_test_launch_owners(test_store, lease)
+        # The batch checked prior owners under this same continuously held lease.
+        registry = (
+            _check_launch_owners(store, lease, database)
+            if batch is None
+            else batch.registry
+        )
         database.check()
         prepared = _create_preparation(
             store,
