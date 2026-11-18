@@ -1790,3 +1790,12 @@ def finish_integration_test(
     if number < current.number or current.result is not None:
         return current, Disposition.HISTORY_ONLY
     return replace(current, result=result), Disposition.APPLIED
+
+
+def reserve_integration_rework(previous_id: str | None) -> None:
+    if previous_id is not None:
+        raise ValueError("one integration rework was already reserved for this lineage")
+
+
+def finish_integration_rework(has_result: bool) -> Disposition:
+    return Disposition.HISTORY_ONLY if has_result else Disposition.APPLIED

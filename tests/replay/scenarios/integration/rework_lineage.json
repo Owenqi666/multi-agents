@@ -1,0 +1,15 @@
+{
+  "roots": {"initial": "initial", "revised": "initial", "rebased": "initial", "independent": "independent"},
+  "events": [
+    {"kind": "reserve", "integration": "initial", "request": "repair-1"},
+    {"kind": "reserve", "integration": "initial", "request": "duplicate", "error": "already reserved"},
+    {"kind": "finish", "integration": "initial", "result": "succeeded", "disposition": "applied"},
+    {"kind": "finish", "integration": "initial", "result": "failed", "disposition": "history_only"},
+    {"kind": "reserve", "integration": "revised", "request": "revision-duplicate", "error": "already reserved"},
+    {"kind": "reserve", "integration": "rebased", "request": "rebase-duplicate", "error": "already reserved"},
+    {"kind": "reserve", "integration": "independent", "request": "repair-2"}
+  ],
+  "reservations": {"initial": "repair-1", "independent": "repair-2"},
+  "terminal": {"initial": "succeeded"},
+  "late": ["failed"]
+}

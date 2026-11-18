@@ -35,6 +35,7 @@ class IntegrationReviewLink:
     snapshot_id: str
     directory: str
     directory_identity: tuple[int, int]
+    auto_rework: bool = False
 
 
 @dataclass(frozen=True, slots=True)

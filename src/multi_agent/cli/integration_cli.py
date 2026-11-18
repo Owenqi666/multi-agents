@@ -19,6 +19,8 @@ from multi_agent.core.integration import (
     IntegrationProgress,
     IntegrationRecord,
 )
+from multi_agent.core.integration_rework import IntegrationRepairDelta
+from multi_agent.core.path_patterns import path_matches
 from multi_agent.core.task_execution import task_execution_value
 from multi_agent.core.transitions import apply_integration
 from multi_agent.store.integration_store import IntegrationStore
@@ -26,8 +28,12 @@ from multi_agent.store.integration_store import IntegrationStore
 from .integration_git import IntegrationGit, read_ref, read_tree
 from .task_candidates import inspect_task_candidate
 from .task_context import _database
-from .task_inputs import validate_task_graph
+from .task_inputs import freeze_project_rules, validate_task_graph
 from .workspaces import ExecutorLease, _check_lease, executor_lock
+
+type _RepairLineage = tuple[
+    IntegrationRecord, IntegrationRecord, IntegrationMember, IntegrationRepairDelta
+]
 
 
 def add_parser(commands: Any) -> None:
@@ -187,6 +193,74 @@ def _assemble(
     return apply_integration(progress, candidate)
 
 
+def _carry_repair(
+    git: IntegrationGit,
+    rebuilt: IntegrationCandidate,
+    target_baseline: str,
+    source: IntegrationRecord,
+    lineage: _RepairLineage,
+) -> IntegrationCandidate:
+    original, repaired, owner, delta = lineage
+    card = owner.task_input.card
+    if (
+        original.repository != source.repository
+        or repaired.repository != source.repository
+        or original.target_ref != source.target_ref
+        or repaired.target_ref != source.target_ref
+        or original.target_baseline != repaired.target_baseline
+        or original.members != source.members
+        or repaired.members != source.members
+        or owner not in original.members
+    ):
+        raise ValueError(f"repair lineage differs from the source for {card.id}")
+    original_candidate = inspect_integration_candidate(original)
+    repaired_candidate = inspect_integration_candidate(repaired)
+    if source != repaired:
+        inspect_integration_candidate(source)
+    if (
+        original_candidate.commit != delta.base
+        or repaired_candidate.commit != delta.commit
+        or repaired_candidate.tree != delta.tree
+        or git.parents(delta.commit) != (delta.base,)
+        or not delta.paths
+        or git.changed_paths(delta.base, delta.commit) != delta.paths
+    ):
+        raise ValueError(
+            f"fixed repair delta differs from the approved source for {card.id}"
+        )
+
+    target = freeze_project_rules(Path(source.repository), target_baseline)
+    protected = (
+        owner.task_input.frozen_rules.rules.protected_paths
+        + target.rules.protected_paths
+    )
+    forbidden = tuple(
+        path
+        for path in delta.paths
+        if not any(path_matches(path, pattern) for pattern in card.write_scope)
+        or any(path_matches(path, pattern) for pattern in protected)
+    )
+    if forbidden:
+        raise ValueError(
+            f"repair for {card.id} is outside the allowed scope at {target_baseline}: {forbidden}"
+        )
+    tip, conflicts = git.merge(
+        delta.base, rebuilt.commit, delta.commit, f"{card.id} repair"
+    )
+    if conflicts is not None:
+        detail = repr(conflicts) if conflicts else "Git provided no path entries"
+        raise ValueError(
+            f"cannot rebase repair for {card.id} due to Git conflict: {detail}"
+        )
+    changed = git.changed_paths(rebuilt.commit, tip)
+    unexpected = tuple(path for path in changed if path not in delta.paths)
+    if unexpected:
+        raise ValueError(
+            f"rebased repair for {card.id} changes unapproved paths: {unexpected}"
+        )
+    return replace(rebuilt, commit=tip, tree=git.tree(tip))
+
+
 def create_integration(
     database_path: Path,
     repository: Path,
@@ -206,6 +280,8 @@ def create_integration(
         if baseline is None:
             raise ValueError(f"local branch {target_ref} does not exist")
         members = _ordered_members(store, lease, task_run_ids)
+        source = None
+        repair = None
         if rebased_from is not None:
             source = store.load_integration(rebased_from)
             if (
@@ -220,10 +296,21 @@ def create_integration(
                 raise ValueError(
                     "member candidates changed; use integration create with current task IDs"
                 )
+            repair = store.integration_repair_for_rebase(rebased_from)
         _validate_lineage(store, git, str(lease.repository), members)
         integration_id = uuid4().hex
         progress = _assemble(git, integration_id, baseline, members)
-        assert progress.result is not None
+        result = progress.result
+        assert result is not None
+        if repair is not None:
+            assert source is not None
+            if isinstance(result, IntegrationConflict):
+                blocked = members[progress.applied_count].task_input.card.id
+                owner = repair[2].task_input.card.id
+                raise ValueError(
+                    f"cannot carry repair for {owner}: rebuilding {blocked} conflicts at {result.paths}"
+                )
+            result = _carry_repair(git, result, baseline, source, repair)
         record = IntegrationRecord(
             integration_id,
             str(lease.repository),
@@ -231,7 +318,7 @@ def create_integration(
             baseline,
             members,
             progress.applied_count,
-            progress.result,
+            result,
         )
         _check_lease(lease)
         database.check()

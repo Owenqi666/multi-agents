@@ -286,6 +286,33 @@ class IntegrationGit:
     def tree(self, commit: str) -> str:
         return read_tree(self.repository, commit)
 
+    def parents(self, commit: str) -> tuple[str, ...]:
+        record = (
+            self._run("rev-list", "--parents", "-n", "1", _oid(commit))
+            .stdout.decode("ascii")
+            .split()
+        )
+        if not record or record[0] != commit:
+            raise ValueError("Git did not return the requested commit and its parents")
+        return tuple(_oid(parent) for parent in record[1:])
+
+    def changed_paths(self, base: str, commit: str) -> tuple[str, ...]:
+        paths = self._run(
+            "diff-tree",
+            "--no-commit-id",
+            "--no-renames",
+            "--name-only",
+            "--ignore-submodules=none",
+            "-r",
+            "-z",
+            _oid(base),
+            _oid(commit),
+            "--",
+        ).stdout
+        return tuple(
+            sorted(_path(path.decode("utf-8")) for path in paths.split(b"\0")[:-1])
+        )
+
     def _run(
         self, *args: str, statuses: tuple[int, ...] = (0,)
     ) -> subprocess.CompletedProcess[bytes]:

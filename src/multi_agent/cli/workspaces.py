@@ -20,6 +20,7 @@ from uuid import uuid4
 
 from multi_agent.cli import snapshot
 from multi_agent.core.events import FailureCategory
+from multi_agent.core.integration_rework import IntegrationRepairDelta
 from multi_agent.core.path_patterns import normalize_path, path_matches
 from multi_agent.core.tasks import FrozenProjectRules, TaskCard
 from multi_agent.core.workspaces import (
@@ -604,26 +605,14 @@ def _candidate_ref(lease: ExecutorLease, record: WorkspaceRecord) -> str:
     return f"refs/multi-agent/candidates/{record.owner_token}"
 
 
-@_boundary
-def freeze_delivery(
-    lease: ExecutorLease,
-    record: WorkspaceRecord,
+def _delivery_paths(
+    repository: Path,
+    comparison: str,
+    inspection: WorkspaceInspection,
     card: TaskCard,
     frozen_rules: FrozenProjectRules,
-) -> WorkspaceDelivery:
-    _owned(lease, record)
-    if (
-        card.baseline_commit != record.task_baseline
-        or frozen_rules.baseline_commit != record.task_baseline
-        or frozen_rules.repository != record.repository
-    ):
-        raise ValueError(
-            "delivery inputs do not match the original workspace baseline/repository"
-        )
-    inspection = inspect_workspace(lease, record)
-    baseline = {
-        f.path: f for f in _baseline_files(lease.repository, record.task_baseline)
-    }
+) -> tuple[str, ...]:
+    baseline = {f.path: f for f in _baseline_files(repository, comparison)}
     current = {f.path: f for f in inspection.files}
     changed = tuple(
         sorted(
@@ -643,6 +632,29 @@ def freeze_delivery(
     )
     if rejected:
         raise DeliveryRejected(rejected)
+    return changed
+
+
+@_boundary
+def freeze_delivery(
+    lease: ExecutorLease,
+    record: WorkspaceRecord,
+    card: TaskCard,
+    frozen_rules: FrozenProjectRules,
+) -> WorkspaceDelivery:
+    _owned(lease, record)
+    if (
+        card.baseline_commit != record.task_baseline
+        or frozen_rules.baseline_commit != record.task_baseline
+        or frozen_rules.repository != record.repository
+    ):
+        raise ValueError(
+            "delivery inputs do not match the original workspace baseline/repository"
+        )
+    inspection = inspect_workspace(lease, record)
+    changed = _delivery_paths(
+        lease.repository, record.task_baseline, inspection, card, frozen_rules
+    )
     ref = _candidate_ref(lease, record)
     tree = _write_tree(lease.repository, inspection.files)
     candidate = (
@@ -670,6 +682,51 @@ def freeze_delivery(
     return WorkspaceDelivery(
         record.task_baseline, candidate, changed, inspection.digest, ref, tree
     )
+
+
+@_boundary
+def freeze_integration_repair(
+    lease: ExecutorLease,
+    record: WorkspaceRecord,
+    card: TaskCard,
+    frozen_rules: FrozenProjectRules,
+    final_digest: str,
+) -> IntegrationRepairDelta:
+    """Write an unpublished child of the exact integrated checkout."""
+    _owned(lease, record)
+    if (
+        record.start_commit != record.task_baseline
+        or frozen_rules.baseline_commit != card.baseline_commit
+        or frozen_rules.repository != record.repository
+    ):
+        raise ValueError(
+            "integration repair differs from its checkout or original rules"
+        )
+    inspection = inspect_workspace(lease, record)
+    if inspection.digest != final_digest:
+        raise ValueError("integration repair workspace changed after settlement")
+    paths = _delivery_paths(
+        lease.repository, record.start_commit, inspection, card, frozen_rules
+    )
+    if not paths:
+        raise ValueError("implementation produced no integration repair")
+    tree = _write_tree(lease.repository, inspection.files)
+    commit = _resolve(
+        lease.repository,
+        _git(
+            lease.repository,
+            "commit-tree",
+            tree,
+            "-p",
+            record.start_commit,
+            "-m",
+            f"Repair integrated task {card.id} ({record.owner_token})",
+        )
+        .decode("ascii")
+        .strip(),
+    )
+    _owned(lease, record)
+    return IntegrationRepairDelta(record.start_commit, commit, tree, paths)
 
 
 @_boundary

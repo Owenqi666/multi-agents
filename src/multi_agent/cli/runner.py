@@ -191,6 +191,13 @@ def current_reports(state: RoundState) -> dict[str, dict[str, Any]]:
     }
 
 
+def confirmation_seats(parent: RoundState) -> tuple[SeatConfig, ...]:
+    reports = current_reports(parent)
+    return tuple(
+        seat.config for seat in parent.seats if targets_for(reports, seat.config.key)
+    )
+
+
 def new_confirmation(store: ReviewStore, parent_id: str) -> str:
     parent = store.load_round(parent_id)
     metadata = metadata_for(store, parent_id)
@@ -204,12 +211,7 @@ def new_confirmation(store: ReviewStore, parent_id: str) -> str:
         )
     if store.confirmation_for(parent_id) is not None:
         raise ValueError("a confirmation round already exists; retry its failed seats")
-    reports = current_reports(parent)
-    selected = tuple(
-        SeatState(seat.config)
-        for seat in parent.seats
-        if targets_for(reports, seat.config.key)
-    )
+    selected = tuple(SeatState(config) for config in confirmation_seats(parent))
     if not selected:
         raise ValueError("there are no P0/P1 findings to cross-confirm")
     identifier = uuid4().hex

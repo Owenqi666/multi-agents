@@ -20,12 +20,18 @@ from multi_agent.core.integration_verification import (
 from multi_agent.core.review_input import ExecutedCommand, IntegrationReviewInput
 from multi_agent.core.state import Disposition, SeatConfig
 from multi_agent.core.task_execution import task_execution_value
+from multi_agent.core.task_test_execution import TaskTestPolicy
+from multi_agent.core.tasks import FrozenProjectRules
 from multi_agent.store.integration_store import IntegrationStore
 
 from . import runner
 from .integration_cli import _view, create_integration, inspect_integration_candidate
 from .integration_git import read_ref, verify_integration_refs
-from .integration_review import inspect_integration_review, prepare_integration_review
+from .integration_review import (
+    check_integration_confirmation_link,
+    inspect_integration_review,
+    prepare_integration_review,
+)
 from .integration_tests import (
     execute_integration_tests,
     inspect_integration_test_result,
@@ -49,7 +55,15 @@ _EVIDENCE_ERRORS = (OSError, ValueError, TypeError, KeyError)
 
 
 def add_verification_parsers(operations: Any) -> None:
-    for name in ("test", "review", "retry-review", "accept", "rebase"):
+    for name in (
+        "test",
+        "review",
+        "retry-review",
+        "confirm",
+        "rework",
+        "accept",
+        "rebase",
+    ):
         parser = operations.add_parser(name)
         parser.add_argument("integration_id")
         parser.add_argument("--database", type=Path, required=True)
@@ -75,7 +89,8 @@ def add_verification_parsers(operations: Any) -> None:
             )
             parser.add_argument("--claude-bin", default="claude")
             parser.add_argument("--test-attempt", type=int)
-        if name in ("retry-review", "accept"):
+            parser.add_argument("--no-auto-rework", action="store_true")
+        if name in ("retry-review", "confirm", "rework", "accept"):
             parser.add_argument("--review", required=True, metavar="ROUND_ID")
         if name == "retry-review":
             parser.add_argument("--seat", action="append", metavar="SEAT_KEY")
@@ -102,6 +117,8 @@ def _source(
         if record.repository != str(lease.repository):
             raise ValueError("integration belongs to a different Git common directory")
         _check_target(record)
+        if args.integration_operation != "rework":
+            store.require_current_integration_revision(record.integration_id)
         database.check()
         yield store, lease, record, database
 
@@ -255,7 +272,6 @@ def _test(
     record: IntegrationRecord,
     database: _Database,
 ) -> tuple[dict[str, Any], int]:
-    candidate = inspect_integration_candidate(record)
     rules = freeze_project_rules(lease.source, record.target_baseline)
     if not rules.rules.commands:
         raise ValueError("target baseline registers no test commands")
@@ -268,6 +284,22 @@ def _test(
         tool_directories=tuple(args.tool_directory),
         runtime_read_paths=tuple(args.runtime_read_path),
     )
+    return run_integration_test_cycle(
+        store, lease, record, database, root, rules, policy
+    )
+
+
+def run_integration_test_cycle(
+    store: IntegrationStore,
+    lease: ExecutorLease,
+    record: IntegrationRecord,
+    database: _Database,
+    root: Path,
+    rules: FrozenProjectRules,
+    policy: TaskTestPolicy,
+) -> tuple[dict[str, Any], int]:
+    _check_target(record)
+    candidate = inspect_integration_candidate(record)
     check_task_launch_owners(store, lease)
     check_task_test_launch_owners(store, lease)
     attempt = store.reserve_integration_test(
@@ -319,10 +351,15 @@ def _dispatch_review(
     operation: str,
     source: IntegrationReviewInput,
     seats: tuple[str, ...] | None = None,
+    confirmation_id: str | None = None,
 ) -> tuple[dict[str, Any], int]:
     async def execute(stop: asyncio.Event) -> None:
         await runner.execute_round(
-            store, link.round_id, directory, stop=stop, seat_keys=seats
+            store,
+            confirmation_id or link.round_id,
+            directory,
+            stop=stop,
+            seat_keys=seats,
         )
 
     _, interrupted = asyncio.run(_interruptible(execute))
@@ -332,12 +369,15 @@ def _dispatch_review(
     view = _review_view(
         store, link, source, target_current=target_current, accepted=False
     )
-    return {
+    result = {
         "operation": operation,
         "integration_id": record.integration_id,
         "test_attempt": link.test_attempt,
         "review": view,
-    }, 130 if interrupted else 0 if view["current_eligible"] else 1
+    }
+    if confirmation_id is not None:
+        result["confirmation"] = runner.view_round(store, confirmation_id)
+    return result, 130 if interrupted else 0 if view["current_eligible"] else 1
 
 
 def _review(
@@ -347,8 +387,14 @@ def _review(
     record: IntegrationRecord,
     database: _Database,
 ) -> tuple[dict[str, Any], int]:
+    from .integration_autorework import (
+        check_confirmation_decisions,
+        maybe_rework_integration,
+    )
+
     if store.load_integration_acceptance(record.integration_id) is not None:
         raise ValueError("integration already has an immutable acceptance receipt")
+    check_confirmation_decisions(store, record)
     attempt = _current_test(store, record, args.test_attempt)
     source = _review_input(record, attempt, lease, database)
     seats = tuple(
@@ -361,6 +407,35 @@ def _review(
         for provider in {seat.provider for seat in seats}
     }
     directory = _new_root(args.directory, database, lease)
+    link, result, code = run_integration_review_cycle(
+        store,
+        record,
+        attempt,
+        source,
+        directory,
+        seats=seats,
+        timeout=args.timeout,
+        grace=args.grace,
+        executables=executables,
+        auto_rework=not args.no_auto_rework,
+    )
+    return maybe_rework_integration(store, lease, record, database, link, result, code)
+
+
+def run_integration_review_cycle(
+    store: IntegrationStore,
+    record: IntegrationRecord,
+    attempt: IntegrationTestAttempt,
+    source: IntegrationReviewInput,
+    directory: Path,
+    *,
+    seats: tuple[SeatConfig, ...],
+    timeout: float,
+    grace: float,
+    executables: dict[str, str],
+    auto_rework: bool,
+) -> tuple[IntegrationReviewLink, dict[str, Any], int]:
+    _check_target(record)
     directory.mkdir(mode=0o700)
     with runner.execution_lock(directory):
         store.save_snapshot(source.snapshot_id, freeze_json(source.to_dict()))
@@ -368,8 +443,8 @@ def _review(
             store,
             source.snapshot_id,
             seats,
-            timeout=args.timeout,
-            grace=args.grace,
+            timeout=timeout,
+            grace=grace,
             executables=executables,
         )
         link = IntegrationReviewLink(
@@ -378,11 +453,15 @@ def _review(
             source.snapshot_id,
             str(directory),
             _identity(directory.lstat()),
+            auto_rework,
         )
         store.link_integration_review(
             record.integration_id, link, attempt.evidence_hash
         )
-        return _dispatch_review(store, record, link, directory, "review", source)
+        result, code = _dispatch_review(
+            store, record, link, directory, "review", source
+        )
+    return link, result, code
 
 
 def _retry_review(
@@ -392,19 +471,68 @@ def _retry_review(
     record: IntegrationRecord,
     database: _Database,
 ) -> tuple[dict[str, Any], int]:
-    link = _current_review(store, record, args.review)
+    from .integration_autorework import maybe_rework_integration
+
+    links = store.integration_reviews(record.integration_id)
+    if not links:
+        raise ValueError("integration has no review rounds")
+    link = links[-1]
     attempt = _current_test(store, record, link.test_attempt)
     source = _review_input(record, attempt, lease, database)
     directory = _review_directory(link)
     with runner.execution_lock(directory):
         if runner.snapshot_for(store, link.snapshot_id) != source:
             raise ValueError("review retry differs from the original frozen snapshot")
+        confirmation_id = None
+        if args.review != link.round_id:
+            check_integration_confirmation_link(
+                store, link.round_id, source, args.review
+            )
+            confirmation_id = args.review
         seats = runner.prepare_retry(
-            store, link.round_id, tuple(args.seat) if args.seat else None, recover=False
+            store, args.review, tuple(args.seat) if args.seat else None, recover=False
         )
-        return _dispatch_review(
-            store, record, link, directory, "retry-review", source, seats
+        result, code = _dispatch_review(
+            store,
+            record,
+            link,
+            directory,
+            "retry-review",
+            source,
+            seats,
+            confirmation_id,
         )
+    return maybe_rework_integration(store, lease, record, database, link, result, code)
+
+
+def _confirm(
+    args: argparse.Namespace,
+    store: IntegrationStore,
+    lease: ExecutorLease,
+    record: IntegrationRecord,
+    database: _Database,
+) -> tuple[dict[str, Any], int]:
+    from .integration_autorework import maybe_rework_integration
+
+    link = _current_review(store, record, args.review)
+    if store.load_integration_acceptance(record.integration_id) is not None:
+        raise ValueError("integration already has an immutable acceptance receipt")
+    attempt = _current_test(store, record, link.test_attempt)
+    source = _review_input(record, attempt, lease, database)
+    directory = _review_directory(link)
+    with runner.execution_lock(directory):
+        inspect_integration_review(store, link.round_id, source, require_ready=False)
+        child = runner.new_confirmation(store, link.round_id)
+        result, code = _dispatch_review(
+            store,
+            record,
+            link,
+            directory,
+            "confirm",
+            source,
+            confirmation_id=child,
+        )
+    return maybe_rework_integration(store, lease, record, database, link, result, code)
 
 
 def _accept(
@@ -414,6 +542,9 @@ def _accept(
     record: IntegrationRecord,
     database: _Database,
 ) -> tuple[dict[str, Any], int]:
+    from .integration_autorework import check_confirmation_decisions
+
+    check_confirmation_decisions(store, record)
     link = _current_review(store, record, args.review)
     attempt = _current_test(store, record, link.test_attempt)
     candidate = inspect_integration_candidate(record)
@@ -522,6 +653,16 @@ def verification_view(
     attempt = store.current_integration_test(identifier)
     links = store.integration_reviews(identifier)
     acceptance = store.load_integration_acceptance(identifier)
+    rework = (
+        store.integration_rework(identifier) if store.has_integration_rework() else None
+    )
+    superseded = (
+        rework["child_id"]
+        if rework
+        and rework["child_id"]
+        and rework["child_id"] not in store.integration_ancestry(identifier)
+        else None
+    )
     source = None
     verified = False
     errors = []
@@ -542,7 +683,7 @@ def verification_view(
             store,
             link,
             source if link == links[-1] else None,
-            target_current=target_current,
+            target_current=target_current and superseded is None,
             accepted=acceptance is not None,
             history=history,
         )
@@ -561,6 +702,8 @@ def verification_view(
         if current_review
         else [],
         "acceptance": task_execution_value(acceptance),
+        "rework": rework,
+        "superseded_by": superseded,
     }
     if history:
         value["test_history"] = [
@@ -571,6 +714,8 @@ def verification_view(
 
 
 def run_operation(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
+    from .integration_autorework import manual_rework
+
     operation = args.integration_operation
     if operation == "rebase":
         database_path = _database(args.database).path
@@ -590,5 +735,7 @@ def run_operation(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             "test": _test,
             "review": _review,
             "retry-review": _retry_review,
+            "confirm": _confirm,
+            "rework": manual_rework,
             "accept": _accept,
         }[operation](args, store, lease, record, database)

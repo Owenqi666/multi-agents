@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from typing import Any
+from typing import Any, cast
 
 from multi_agent.core import Disposition, transitions
 from multi_agent.core.events import thaw_json
@@ -12,6 +12,10 @@ from multi_agent.core.integration import (
     IntegrationMember,
     IntegrationRecord,
     IntegrationResult,
+)
+from multi_agent.core.integration_rework import (
+    IntegrationRepairDelta,
+    IntegrationReworkRequest,
 )
 from multi_agent.core.integration_testing import (
     IntegrationTestResult,
@@ -34,13 +38,12 @@ from .task_review_store import TaskReviewStore
 from .task_test_store import TaskTestStore
 
 _VERIFICATION_SCHEMA = 7
+_REWORK_SCHEMA = 8
 
 
 def check_integration_test_launch_owners(store: TaskTestStore, repository: str) -> None:
-    if (
-        store._connection.execute("PRAGMA user_version").fetchone()[0]
-        < _VERIFICATION_SCHEMA
-    ):
+    version = store._connection.execute("PRAGMA user_version").fetchone()[0]
+    if version < _VERIFICATION_SCHEMA:
         return
     running = store._connection.execute(
         """SELECT t.integration_id, t.attempt
@@ -53,6 +56,17 @@ def check_integration_test_launch_owners(store: TaskTestStore, repository: str) 
             f"integration test {running['integration_id']}/{running['attempt']} "
             "has no confirmed stopping facts"
         )
+    if version >= _REWORK_SCHEMA:
+        rework = store._connection.execute(
+            """SELECT w.rework_id FROM integration_reworks w
+               JOIN integrations i ON w.source_id = i.integration_id
+               WHERE i.repository = ? AND w.process_stopped IS NOT 1 LIMIT 1""",
+            (repository,),
+        ).fetchone()
+        if rework is not None:
+            raise ValueError(
+                f"integration rework {rework['rework_id']} has no confirmed stopping facts"
+            )
 
 
 def _attempt(row: sqlite3.Row) -> IntegrationTestAttempt:
@@ -89,6 +103,7 @@ def _link(row: sqlite3.Row) -> IntegrationReviewLink:
         row["snapshot_id"],
         row["directory"],
         (device, inode),
+        bool(dict(row).get("auto_rework", False)),
     )
 
 
@@ -138,6 +153,18 @@ class IntegrationStore(TaskReviewStore):
     def create_integration(
         self, record: IntegrationRecord, *, rebased_from: str | None = None
     ) -> None:
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            for member in record.members:
+                self._check_current_member(member)
+            self._insert_integration(record)
+            if rebased_from is not None:
+                self._connection.execute(
+                    "INSERT INTO integration_rebases VALUES (?, ?)",
+                    (record.integration_id, rebased_from),
+                )
+
+    def _insert_integration(self, record: IntegrationRecord) -> None:
         result = record.result
         candidate = result if isinstance(result, IntegrationCandidate) else None
         conflicts = (
@@ -145,34 +172,25 @@ class IntegrationStore(TaskReviewStore):
             if isinstance(result, IntegrationConflict)
             else None
         )
-        with self._connection:
-            self._connection.execute("BEGIN IMMEDIATE")
-            for member in record.members:
-                self._check_current_member(member)
-            self._connection.execute(
-                """INSERT INTO integrations (
+        self._connection.execute(
+            """INSERT INTO integrations (
                        integration_id, repository, target_ref, target_baseline,
                        members_payload, applied_count, candidate_ref,
                        candidate_commit, candidate_tree, conflict_paths
                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    record.integration_id,
-                    record.repository,
-                    record.target_ref,
-                    record.target_baseline,
-                    task_execution_json(record.members),
-                    record.applied_count,
-                    candidate.ref if candidate else None,
-                    candidate.commit if candidate else None,
-                    candidate.tree if candidate else None,
-                    conflicts,
-                ),
-            )
-            if rebased_from is not None:
-                self._connection.execute(
-                    "INSERT INTO integration_rebases VALUES (?, ?)",
-                    (record.integration_id, rebased_from),
-                )
+            (
+                record.integration_id,
+                record.repository,
+                record.target_ref,
+                record.target_baseline,
+                task_execution_json(record.members),
+                record.applied_count,
+                candidate.ref if candidate else None,
+                candidate.commit if candidate else None,
+                candidate.tree if candidate else None,
+                conflicts,
+            ),
+        )
 
     def _check_current_member(self, member: IntegrationMember) -> None:
         task = self._read_task(member.task_run_id)
@@ -331,13 +349,14 @@ class IntegrationStore(TaskReviewStore):
                     "integration review round has a different frozen snapshot"
                 )
             self._connection.execute(
-                "INSERT INTO integration_review_links VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO integration_review_links VALUES (?, ?, ?, ?, ?, ?)",
                 (
                     link.round_id,
                     integration_id,
                     link.test_attempt,
                     link.directory,
                     task_execution_json(link.directory_identity),
+                    link.auto_rework,
                 ),
             )
 
@@ -400,6 +419,7 @@ class IntegrationStore(TaskReviewStore):
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             self._require_unaccepted(integration_id)
+            self.require_current_integration_revision(integration_id)
             if (
                 self.load_integration(integration_id) != record
                 or receipt.integration_id != integration_id
@@ -438,3 +458,220 @@ class IntegrationStore(TaskReviewStore):
                     task_execution_json(receipt),
                 ),
             )
+
+    def has_integration_rework(self) -> bool:
+        return (
+            int(self._connection.execute("PRAGMA user_version").fetchone()[0])
+            >= _REWORK_SCHEMA
+        )
+
+    def integration_ancestry(self, integration_id: str) -> tuple[str, ...]:
+        ancestors = [integration_id]
+        while True:
+            parent = self.integration_parent(ancestors[-1])
+            if parent is None:
+                row = self._connection.execute(
+                    "SELECT source_id FROM integration_reworks WHERE child_id = ?",
+                    (ancestors[-1],),
+                ).fetchone()
+                if row is None:
+                    return tuple(ancestors)
+                parent = str(row["source_id"])
+            ancestors.append(parent)
+
+    def _lineage_rework(self, integration_id: str) -> sqlite3.Row | None:
+        root = self.integration_ancestry(integration_id)[-1]
+        return cast(
+            sqlite3.Row | None,
+            self._connection.execute(
+                "SELECT * FROM integration_reworks WHERE lineage_id = ?", (root,)
+            ).fetchone(),
+        )
+
+    def require_current_integration_revision(self, integration_id: str) -> None:
+        row = self._lineage_rework(integration_id)
+        if (
+            row is not None
+            and row["child_id"] is not None
+            and row["child_id"] not in self.integration_ancestry(integration_id)
+        ):
+            raise ValueError(
+                f"integration was superseded by revision {row['child_id']}"
+            )
+
+    def integration_rework(self, integration_id: str) -> dict[str, Any] | None:
+        row = self._lineage_rework(integration_id)
+        if row is None:
+            return None
+        result = row["result_payload"]
+        return {
+            "rework_id": row["rework_id"],
+            "lineage_id": row["lineage_id"],
+            "source_id": row["source_id"],
+            "child_id": row["child_id"],
+            "request": json.loads(row["request_payload"]),
+            "result": json.loads(result) if result is not None else None,
+            "late_results": json.loads(row["late_results"]),
+        }
+
+    def integration_repair_for_rebase(
+        self,
+        integration_id: str,
+    ) -> (
+        tuple[
+            IntegrationRecord,
+            IntegrationRecord,
+            IntegrationMember,
+            IntegrationRepairDelta,
+        ]
+        | None
+    ):
+        self.require_current_integration_revision(integration_id)
+        activity = self.integration_rework(integration_id)
+        if activity is None or activity["child_id"] is None:
+            return None
+        data = activity["result"]["delta"]
+        return (
+            self.load_integration(activity["source_id"]),
+            self.load_integration(activity["child_id"]),
+            _decode_member(activity["request"]["member"]),
+            IntegrationRepairDelta(
+                data["base"], data["commit"], data["tree"], tuple(data["paths"])
+            ),
+        )
+
+    def candidate_confirmed_reviews(self, record: IntegrationRecord) -> tuple[str, ...]:
+        if not isinstance(record.result, IntegrationCandidate):
+            return ()
+        root = self.integration_ancestry(record.integration_id)[-1]
+        rows = self._connection.execute(
+            """SELECT i.integration_id, i.round_id FROM integration_review_links i
+               JOIN integrations s USING (integration_id)
+               JOIN round_inputs c ON c.parent_round_id = i.round_id
+               WHERE s.repository = ? AND s.candidate_tree = ?
+               ORDER BY i.rowid""",
+            (record.repository, record.result.tree),
+        )
+        return tuple(
+            str(row["round_id"])
+            for row in rows
+            if self.integration_ancestry(row["integration_id"])[-1] == root
+        )
+
+    def _check_rework_source(
+        self, record: IntegrationRecord, request: IntegrationReworkRequest
+    ) -> None:
+        identifier = record.integration_id
+        self._require_unaccepted(identifier)
+        if (
+            self.load_integration(identifier) != record
+            or request.integration_id != identifier
+        ):
+            raise ValueError("rework does not identify the fixed integration")
+        self._require_current_test(
+            identifier, request.test_attempt, request.test_evidence_hash
+        )
+        links = self.integration_reviews(identifier)
+        if not links or (
+            links[-1].round_id,
+            links[-1].test_attempt,
+            links[-1].snapshot_id,
+        ) != (request.review_round_id, request.test_attempt, request.snapshot_id):
+            raise ValueError("rework requires the current integration review")
+        if (
+            self._integration_review_checkpoint(request.review_round_id)
+            != request.review_checkpoint_hash
+        ):
+            raise ValueError("integration review evidence changed before rework")
+        if request.member not in record.members:
+            raise ValueError("rework owner is outside the fixed integration")
+        self._check_current_member(request.member)
+
+    def reserve_integration_rework(
+        self, record: IntegrationRecord, request: IntegrationReworkRequest
+    ) -> None:
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._check_rework_source(record, request)
+            prior = self._lineage_rework(record.integration_id)
+            transitions.reserve_integration_rework(
+                prior["rework_id"] if prior is not None else None
+            )
+            self._connection.execute(
+                """INSERT INTO integration_reworks (
+                    rework_id, lineage_id, source_id, review_round_id, request_payload
+                ) VALUES (?, ?, ?, ?, ?)""",
+                (
+                    request.rework_id,
+                    self.integration_ancestry(record.integration_id)[-1],
+                    record.integration_id,
+                    request.review_round_id,
+                    task_execution_json(request),
+                ),
+            )
+
+    def finish_integration_rework(
+        self,
+        record: IntegrationRecord,
+        request: IntegrationReworkRequest,
+        outcome: dict[str, Any],
+        child: IntegrationRecord | None = None,
+    ) -> Disposition:
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            row = self._lineage_rework(record.integration_id)
+            if (
+                row is None
+                or row["rework_id"] != request.rework_id
+                or row["request_payload"] != task_execution_json(request)
+            ):
+                raise ValueError("rework completion does not match its reservation")
+            payload = task_execution_json(outcome)
+            disposition = transitions.finish_integration_rework(
+                row["result_payload"] is not None
+            )
+            if disposition == Disposition.HISTORY_ONLY:
+                self._connection.execute(
+                    """UPDATE integration_reworks SET late_results = json_insert(late_results, '$[#]', json(?))
+                       WHERE rework_id = ?""",
+                    (payload, request.rework_id),
+                )
+                return disposition
+            if child is not None:
+                self._check_rework_source(record, request)
+                if (
+                    outcome["status"] != "succeeded"
+                    or outcome["process_stopped"] is not True
+                    or not isinstance(record.result, IntegrationCandidate)
+                    or not isinstance(child.result, IntegrationCandidate)
+                    or outcome["delta"]["base"] != record.result.commit
+                    or outcome["delta"]["commit"] != child.result.commit
+                    or outcome["delta"]["tree"] != child.result.tree
+                    or (
+                        child.repository,
+                        child.target_ref,
+                        child.target_baseline,
+                        child.members,
+                    )
+                    != (
+                        record.repository,
+                        record.target_ref,
+                        record.target_baseline,
+                        record.members,
+                    )
+                ):
+                    raise ValueError(
+                        "rework result does not match its frozen child integration"
+                    )
+                self._insert_integration(child)
+            self._connection.execute(
+                """UPDATE integration_reworks SET result_payload = ?, process_stopped = ?, child_id = ?
+                   WHERE rework_id = ?""",
+                (
+                    payload,
+                    outcome["process_stopped"],
+                    child.integration_id if child else None,
+                    request.rework_id,
+                ),
+            )
+            return disposition
