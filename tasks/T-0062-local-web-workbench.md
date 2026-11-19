@@ -73,12 +73,23 @@ JSON 字段统一使用 snake_case。产品 ID 是不透明字符串；`task_id`
 
 命令中的 `TASK_ID` 均取实施运行的 `task_run_id`；卡号只用于展示、依赖声明和归属定位。草拟默认 `claude-opus-5-5/high`、计划复核默认 `gpt-6.1-sol/high`，均可显式覆盖；实施默认项由目标仓库冻结的规则决定。规则指定 `frontend/**` 由 Claude 写入时，配置页应解释来源，返工沿用其约束，审核席仍可选择 GPT。[规划与实施解析器](../src/multi_agent/cli/task_cli.py) · [单任务测试](../src/multi_agent/cli/task_test_cli.py) · [单任务审核](../src/multi_agent/cli/task_review_cli.py) · [集成操作](../src/multi_agent/cli/integration_verification.py) · [独立审核及快照](../src/multi_agent/cli/main.py)
 
+### 首版模型选择范围
+
+新建规划、实施、审核及备选链时，选择器按角色和项目规则从下列六个家族中展示可选型号。表中是 2026-11-19 本机目录核对的版本，派发时传入选定的具体 ID。
+
+| 提供方 | 家族及版本 |
+| --- | --- |
+| OpenAI | Astra `gpt-6.2-astra`、Sol `gpt-6.2-sol`、Terra `gpt-6.1-terra` |
+| Anthropic | Fable `claude-fable-5-2`、Opus `claude-opus-5-5`、Sonnet `claude-sonnet-5-5` |
+
+即使运行时目录返回 Luna 或 Haiku，网页也不把这些家族加入新任务的选择器或备选列表。推理强度按所选型号的能力单独展示，包括 `low`；旧运行详情和同轮补跑继续使用原记录。
+
 ## 5. 字段与交互判定
 
 | 界面问题 | 使用的真实字段与判定 |
 | --- | --- |
 | 任务能否派发、改了什么？ | plan 取 `phase,verification,next_action,card,questions`。task 取 `details.input.{requirements,card,frozen_rules}`、`attempts[].request.worktree`、`implementation_attempt,candidate,tests,reviews`。task 的 candidate 是 SHA 字符串；integration 的 candidate 是 `{commit,tree,ref}` 或 null。批次响应为 `tasks[]`。 |
-| 用户选了哪个模型，实际跑了哪个？ | 环境投影 `{cli_version,logged_in,models,model_efforts}`，支持 null。Codex 选择器用当前可见模型及其支持档位；Claude 目录缺失时用标明来源的项目预设或手填。项目书的角色建议是预设；登录状态、目录查询、模型连通性分开显示。审核席显示 `requested_model/requested_effort`、当前尝试的 `reported_model/reported_effort` 及来源，缺值显示「未确认」。实施备选记录与实际改派事件分别显示，用量从可获得的 usage 事件读取。更换审核模型需发起新轮。 |
+| 用户选了哪个模型，实际跑了哪个？ | 环境投影 `{cli_version,logged_in,models,model_efforts}`，支持 null。Codex 选择器取入选家族与当前可见目录的交集；Claude 目录缺失时展示入选家族的项目预设，并标明来源。项目书的角色建议是预设；登录状态、目录查询、模型连通性分开显示。审核席显示 `requested_model/requested_effort`、当前尝试的 `reported_model/reported_effort` 及来源，缺值显示「未确认」。实施备选记录与实际改派事件分别显示，用量从可获得的 usage 事件读取。更换审核模型需发起新轮。 |
 | 哪些测试真实运行过？ | 集成 show 的 `test.required_commands,unexecuted_commands,unconfirmed_commands,result.commands,evidence_hash`、`test_evidence_verification`、`test_source_errors`。显示每个 argv、退出码和 stdout/stderr 入口，区分尚未发送与已发未确认。集成成功快照的 `input.commands[].stdout.content.hex` 与 stderr 同形，桥按字节解码；超出预览长度时显示完整长度及摘要。阶段 1 用户上传的测试另列来源。 |
 | 如何定位一条意见？ | 使用 `round_id → snapshot_id → side/path/line_start/line_end`；行号从 1 开始。普通快照读取 `input.diff/files`，task/integration 执行式审核读取 `input.source.diff/files`；文件含 `side,path,text,oid,mode`。意见在 `assessment.groups[].members[].finding` 中，保留 severity、quote、impact、reference_status 和来源席；删除行定位 baseline，引用待核实时照实标记。集成的 `input.members[].task_input.card` 和 `input.test_change_paths` 用来显示成员约定及突出测试修改。 |
 | 是否可以接受？ | 区分集成 `status=ready`（候选就绪）、审核 `assessment.status=ready/needs_rework/user_decision/incomplete`、集成顶层 `current_eligible` 与已签发的 `acceptance`。只在新鲜 show 给出当前资格且无回执时开放接受，提交该集成 ID 和对应当前 round_id；以 CLI 的原子复核为最终结果。接受后显示回执，即便此时 current_eligible 为 false。 |
@@ -114,7 +125,7 @@ JSON 字段统一使用 snake_case。产品 ID 是不透明字符串；`task_id`
     {"name":"工作台命令与证据","definition":"使用第 4、5 节的领域命令、ID、模式及状态；复用原执行、审核、返工与接受逻辑。"}
   ],
   "deliverables": ["可启动的本地网页与桥接服务", "frontend/README.md 内的启动和验证方法", "可复现的离线交互与验收记录"],
-  "acceptance_criteria": ["页面能从规划走到显式接受并在刷新后读回同一回执。", "可从阻塞意见定位冻结行，跟随一次返工读回新候选及新测试和复审。", "双审补跑、目标变化、取消及缺失报告值遵守第 6 节的行为约定。", "给出可复现的启动和检查命令，完整 verify 与网页检查通过。"],
+  "acceptance_criteria": ["页面能从规划走到显式接受并在刷新后读回同一回执。", "可从阻塞意见定位冻结行，跟随一次返工读回新候选及新测试和复审。", "双审补跑、目标变化、取消及缺失报告值遵守第 6 节的行为约定。", "目录含 Luna、Haiku 时，新任务和备选菜单仍只展示约定家族，并保留所选型号支持的 low 档。", "给出可复现的启动和检查命令，完整 verify 与网页检查通过。"],
   "test_refs": ["lint", "format", "typecheck", "unit", "replay"],
   "open_questions": []
 }
