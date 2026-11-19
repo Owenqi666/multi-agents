@@ -221,6 +221,19 @@ _TRANSITIONS[AttemptStatus.SUCCEEDED] = _TERMINAL_TRANSITIONS
 _TRANSITIONS[AttemptStatus.FAILED] = _TERMINAL_TRANSITIONS
 
 
+def project_plan_status(
+    *, finished: bool, document: bool, error: bool, settling: bool = False
+) -> AttemptStatus:
+    """A plan run has one attempt and can settle exactly once."""
+    if settling and finished:
+        raise ValueError("project plan already has a terminal result")
+    if settling or finished:
+        if document == error:
+            raise ValueError("project plan settlement requires a document or an error")
+        return AttemptStatus.SUCCEEDED if document else AttemptStatus.FAILED
+    return AttemptStatus.RUNNING
+
+
 def apply(state: RoundState, envelope: Envelope) -> tuple[RoundState, Disposition]:
     """Route an event and return the updated state and its history disposition."""
     for index, seat in enumerate(state.seats):

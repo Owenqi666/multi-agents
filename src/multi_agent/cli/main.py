@@ -1,4 +1,4 @@
-"""User-input boundary for the phase-one review CLI."""
+"""User-input boundary for the workbench CLI."""
 
 import argparse
 import asyncio
@@ -89,6 +89,7 @@ def load_snapshot(store: ReviewStore, identifier: str) -> FrozenSnapshot:
 
 def parser() -> argparse.ArgumentParser:
     from .integration_cli import add_parser as add_integration_parser
+    from .project_cli import add_parser as add_project_parser
     from .task_cli import add_parser as add_task_parser
     from .task_review_cli import add_parser as add_task_review_parser
     from .task_test_cli import add_parser as add_task_test_parser
@@ -152,6 +153,7 @@ def parser() -> argparse.ArgumentParser:
     add_task_review_parser(commands)
     add_task_parser(commands)
     add_integration_parser(commands)
+    add_project_parser(commands)
     return result
 
 
@@ -193,6 +195,10 @@ def freeze_input(args: argparse.Namespace, store: ReviewStore) -> dict[str, Any]
 
 
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
+    if args.command == "project":
+        from .project_cli import dispatch_project
+
+        return dispatch_project(args)
     repository = getattr(args, "repo", None)
     if repository is not None:
         common = Path(
@@ -304,4 +310,6 @@ def main(argv: list[str] | None = None) -> int:
         print(f"multi-agent: {error}", file=sys.stderr)
         return 2
     print(json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False))
+    if args.command == "project" and args.project_action == "plan":
+        return 0 if output["status"] == "succeeded" else 1
     return 0

@@ -1,0 +1,13 @@
+{
+  "events": [
+    {"action": "start", "plan": "plan-one", "goal": "goal-one"},
+    {"action": "start", "plan": "plan-two", "goal": "goal-two"},
+    {"action": "finish", "plan": "plan-two", "result": "succeeded"},
+    {"action": "finish", "plan": "plan-one", "result": "failed"},
+    {"action": "finish", "plan": "plan-one", "result": "succeeded", "rejected": true}
+  ],
+  "history": [
+    {"plan_id": "plan-one", "goal_id": "goal-one", "status": "failed"},
+    {"plan_id": "plan-two", "goal_id": "goal-two", "status": "succeeded"}
+  ]
+}

@@ -15,14 +15,15 @@
     "schemas/project*.json",
     "tests/unit/test_project*.py",
     "tests/replay/test_project*.py",
-    "tests/replay/scenarios/project*.json",
+    "tests/replay/scenarios/project/*.json",
     "docs/project-workflow.md",
     "src/multi_agent/core/transitions.py",
     "tests/unit/test_store_review.py",
     "tests/unit/test_planning_store.py",
     "tests/unit/test_task_test_store.py",
     "tests/unit/test_task_store.py",
-    "tests/unit/test_store_inputs.py"
+    "tests/unit/test_store_inputs.py",
+    "tasks/T-0063-project-planning.json"
   ],
   "depends_on": [
     "T-0061"
