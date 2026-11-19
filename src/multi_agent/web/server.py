@@ -2,6 +2,7 @@
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from sqlite3 import Error as SQLiteError
 from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -12,6 +13,7 @@ from multi_agent.store.project_store import ProjectStore
 from .actions import ActionConflict, UnknownAction, prepare_action
 from .jobs import ACTION, PROVIDERS, BusyEnvironment, BusyJob, EnvironmentJobs
 from .resources import read_artifact, read_diff, read_resource, read_snapshot_file
+from .static import FrontendResponse, read_frontend
 from .workspace import Workspace
 
 _BODY_LIMIT = 8 * 1024 * 1024
@@ -33,11 +35,15 @@ class WorkspaceServer(ThreadingHTTPServer):
         *,
         tool_directories: tuple[str, ...] = (),
         runtime_read_paths: tuple[str, ...] = (),
+        frontend_dist: Path | None = None,
     ) -> None:
         self.workspace = workspace
         self.executables = executables
         self.tool_directories = tool_directories
         self.runtime_read_paths = runtime_read_paths
+        self.frontend_dist = (
+            frontend_dist.expanduser().resolve() if frontend_dist is not None else None
+        )
         super().__init__(("127.0.0.1", port), WorkspaceHandler)
         self.authority = f"127.0.0.1:{self.server_port}"
         self.origin = f"http://{self.authority}"
@@ -79,10 +85,19 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
 
     def _reply(self, status: int, value: dict[str, Any]) -> None:
         payload = json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
+        self._reply_bytes(status, payload, "application/json; charset=utf-8")
+
+    def _reply_bytes(
+        self,
+        status: int,
+        payload: bytes,
+        content_type: str,
+        cache_control: str = "no-store",
+    ) -> None:
         self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(payload)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache_control)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         if self.command != "HEAD":
@@ -211,7 +226,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 return read_artifact(server.workspace, identifier, query)
         raise KeyError("resource")
 
-    def _dispatch(self, server: WorkspaceServer) -> tuple[int, dict[str, Any]]:
+    def _dispatch(
+        self, server: WorkspaceServer
+    ) -> tuple[int, dict[str, Any]] | FrontendResponse:
         target = urlsplit(self.path)
         if (
             target.scheme
@@ -221,6 +238,12 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         ):
             raise ValueError("Expected a local API path.")
         parts = [unquote(part, errors="strict") for part in target.path[1:].split("/")]
+        if (
+            self.command == "GET"
+            and parts[0] != "api"
+            and server.frontend_dist is not None
+        ):
+            return read_frontend(server.frontend_dist, parts)
         query = parse_qs(
             target.query, keep_blank_values=True, strict_parsing=True, errors="strict"
         )
@@ -240,7 +263,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         server = cast(WorkspaceServer, self.server)
         try:
             self._authorize(server)
-            status, body = self._dispatch(server)
+            response = self._dispatch(server)
         except RequestError as error:
             status = error.status
             body = _error(error.code, str(error))
@@ -267,6 +290,16 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             body = _error(
                 "workspace_unavailable", "The workspace could not be read or updated."
             )
+        else:
+            if isinstance(response, FrontendResponse):
+                self._reply_bytes(
+                    response.status,
+                    response.payload,
+                    response.content_type,
+                    response.cache_control,
+                )
+                return
+            status, body = response
         self._reply(status, body)
 
     do_GET = _serve
