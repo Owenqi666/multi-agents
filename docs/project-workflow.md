@@ -142,11 +142,10 @@ uv run python -m multi_agent task run-batch "$INCOME_PLANNING_RUN_ID" "$EXPENSE_
 
 对单卡立即实施时省略 `--review-only`。批量实施适用于同基线、无内部依赖且写入范围不重叠的已复核卡。批量命令默认使用各叶卡自己的冻结执行者。有关联的叶卡须先交付精确上游候选。下游基线须包含这些候选，或包含已通过完整测试与独立审核的上游集成候选。多个上游无共同候选时，使用 `--baseline` 指定已验证的集成基线。工作台在启动实施时复查该集成的当期测试和审核。已复核但尚未绑定实施的叶卡遇到上游候选变化，使用 `project stage leaf SUMMARY_RUN_ID CARD_ID --refreeze` 重新冻结并复核，可加 `--review-only`。`prior_planning_run_ids` 保留先前版本。已绑定的叶卡遇到相同变化时需要新的项目计划版本。
 
-两张卡都出现当前有效候选后，`can_integrate` 为 true。用 `stage show` 中的任务运行 ID 创建集成。`SUMMARY_TARGET` 是指向该阶段 `execution_baseline` 的本地分支名。选择现有合适分支，或在验收仓库中为该基线创建分支。
+两张卡都出现当前有效候选后，`can_integrate` 为 true。用 `project stage integrate` 按阶段领取的全部叶卡创建集成，保存返回的 `integration_id`、`target_ref` 和 `target_baseline`。工作台会在阶段执行基线准备或复用专用本地分支。已有分支正好位于该基线时，可显式传 `--target BRANCH`。集成与接受操作保持当前项目分支原位。
 
 ```sh
-uv run python -m multi_agent integration create "$INCOME_TASK_RUN_ID" "$EXPENSE_TASK_RUN_ID" \
-  --database "$DATA/reviews.sqlite3" --repository "$REPO" --target "$SUMMARY_TARGET"
+uv run python -m multi_agent --data-dir "$DATA" project stage integrate "$SUMMARY_RUN_ID"
 uv run python -m multi_agent integration test "$INTEGRATION_ID" \
   --database "$DATA/reviews.sqlite3" --repository "$REPO" --directory "$DATA/summary-tests"
 uv run python -m multi_agent integration review "$INTEGRATION_ID" \
@@ -156,3 +155,5 @@ uv run python -m multi_agent --data-dir "$DATA" project stage show "$SUMMARY_RUN
 ```
 
 `integration` 展示确切成员集合对应的集成 SHA、测试尝试及摘要、审核轮次及快照。只有同一候选的完整测试和最新有效审核通过，阶段才可解锁后继。验收或更新目标分支由用户显式执行。离线可运行 `scripts/verify.sh unit replay`，覆盖真实 Git、SQLite 和假模型 CLI 的流程。
+
+HTTP 客户端可在同一数据目录执行这些操作。[项目 HTTP 服务](project-service.md)

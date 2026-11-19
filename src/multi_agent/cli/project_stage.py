@@ -93,6 +93,14 @@ def add_stage_parser(
         action="store_true",
         help="review a previously unbound leaf against changed upstream candidates",
     )
+    integrate = operations.add_parser(
+        "integrate",
+        help="integrate all current verified candidates for one delegated stage",
+    )
+    integrate.add_argument("stage_run_id")
+    integrate.add_argument(
+        "--target", help="reuse a local branch at the stage execution baseline"
+    )
     operations.add_parser("show").add_argument("stage_run_id")
     operations.add_parser("list").add_argument("plan_id")
 
@@ -637,6 +645,12 @@ def dispatch_stage(
         return launch_leaf(args, store, database)
     if args.stage_action == "resume":
         return _resume(args, store, database, store.load_stage(args.stage_run_id))
+    if args.stage_action == "integrate":
+        from .project_integration import integrate_stage
+
+        return integrate_stage(
+            store, database, store.load_stage(args.stage_run_id), args.target
+        )
     if args.stage_action == "show":
         return stage_view(store, database, store.load_stage(args.stage_run_id))
     return {

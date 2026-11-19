@@ -30,7 +30,7 @@ from multi_agent.store.project_integration import (
     ProjectIntegrationStore,
 )
 
-from .integration_git import IntegrationGit, read_ref, read_tree
+from .integration_git import IntegrationGit, _git, read_ref, read_tree
 from .task_candidates import inspect_task_candidate
 from .task_context import _database, _store_database
 from .task_inputs import freeze_project_rules, validate_task_graph
@@ -313,6 +313,9 @@ def create_integration(
     task_run_ids: list[str],
     *,
     rebased_from: str | None = None,
+    expected_baseline: str | None = None,
+    expected_members: tuple[IntegrationMemberVersion, ...] | None = None,
+    prepare_target: bool = False,
 ) -> IntegrationRecord:
     database = _database(database_path)
     with (
@@ -322,9 +325,21 @@ def create_integration(
     ):
         target_ref = git.branch_ref(target)
         baseline = git.ref_commit(target_ref)
+        create_target = baseline is None and prepare_target
         if baseline is None:
-            raise ValueError(f"local branch {target_ref} does not exist")
+            if not create_target or expected_baseline is None:
+                raise ValueError(f"local branch {target_ref} does not exist")
+            baseline = expected_baseline
+        if expected_baseline is not None and baseline != expected_baseline:
+            raise ValueError(
+                f"local branch {target_ref} is at {baseline}, expected stage baseline {expected_baseline}"
+            )
         members = _ordered_members(store, lease, task_run_ids)
+        if expected_members is not None and sorted(expected_members) != sorted(
+            (item.task_run_id, item.attempt, item.delivery.candidate)
+            for item in members
+        ):
+            raise ValueError("stage leaf candidates changed before integration")
         source = None
         repair = None
         if rebased_from is not None:
@@ -367,6 +382,20 @@ def create_integration(
         )
         _check_lease(lease)
         database.check()
+        if create_target:
+            _git(
+                lease.repository,
+                "update-ref",
+                "--no-deref",
+                target_ref,
+                baseline,
+                "0" * len(baseline),
+            )
+        if (
+            expected_baseline is not None
+            and git.ref_commit(target_ref) != expected_baseline
+        ):
+            raise ValueError("stage target changed before integration publication")
         if isinstance(record.result, IntegrationCandidate):
             git.pin(record.result.ref, record.result.commit)
         try:

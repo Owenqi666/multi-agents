@@ -1,16 +1,20 @@
-"""Serve the workspace API on an loopback endpoint with Host and Origin checks."""
+"""Serve the workspace API on a loopback endpoint with Host and Origin checks."""
 
 import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from sqlite3 import Error as SQLiteError
 from typing import Any, cast
+from urllib.parse import parse_qs, unquote, urlsplit
 
 from multi_agent.adapters.runtime_decode import strict_json_loads
+from multi_agent.store.project_store import ProjectStore
 
-from .jobs import ACTION, PROVIDERS, BusyEnvironment, EnvironmentJobs
+from .actions import ActionConflict, UnknownAction, prepare_action
+from .jobs import ACTION, PROVIDERS, BusyEnvironment, BusyJob, EnvironmentJobs
+from .resources import read_artifact, read_diff, read_resource, read_snapshot_file
 from .workspace import Workspace
 
-_BODY_LIMIT = 4096
-_JOB_PATH = "/api/jobs/"
+_BODY_LIMIT = 8 * 1024 * 1024
 
 
 class RequestError(ValueError):
@@ -22,9 +26,18 @@ class RequestError(ValueError):
 
 class WorkspaceServer(ThreadingHTTPServer):
     def __init__(
-        self, port: int, workspace: Workspace, executables: dict[str, str]
+        self,
+        port: int,
+        workspace: Workspace,
+        executables: dict[str, str],
+        *,
+        tool_directories: tuple[str, ...] = (),
+        runtime_read_paths: tuple[str, ...] = (),
     ) -> None:
         self.workspace = workspace
+        self.executables = executables
+        self.tool_directories = tool_directories
+        self.runtime_read_paths = runtime_read_paths
         super().__init__(("127.0.0.1", port), WorkspaceHandler)
         self.authority = f"127.0.0.1:{self.server_port}"
         self.origin = f"http://{self.authority}"
@@ -32,8 +45,19 @@ class WorkspaceServer(ThreadingHTTPServer):
             self.jobs = EnvironmentJobs(
                 workspace.data_dir, workspace.repository, executables
             )
+            database = workspace.data_dir / "reviews.sqlite3"
+            if database.is_symlink() or database.exists() and not database.is_file():
+                raise ValueError("workspace database must be a regular file")
+            if database.is_file():
+                try:
+                    with ProjectStore(database):
+                        pass
+                except SQLiteError as error:
+                    raise ValueError(
+                        f"workspace database could not be opened: {error}"
+                    ) from error
         except BaseException:
-            super().server_close()
+            self.server_close()
             raise
 
     def server_close(self) -> None:
@@ -88,7 +112,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 403, "invalid_origin", "Origin must equal the printed loopback URL."
             )
 
-    def _provider(self) -> str:
+    def _body(self) -> Any:
         lengths = self.headers.get_all("Content-Length", [])
         if (
             self.headers.get_all("Transfer-Encoding") is not None
@@ -110,21 +134,38 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             encoded = self.rfile.read(length)
             if len(encoded) != length:
                 raise ValueError("Incomplete JSON body")
-            body = strict_json_loads(encoded.decode("utf-8"))
+            return strict_json_loads(encoded.decode("utf-8"))
         except (UnicodeError, ValueError, TimeoutError):
             raise RequestError(
                 400, "invalid_request", "Malformed UTF-8 JSON body."
             ) from None
-        if not isinstance(body, dict) or body.keys() != {"action", "args"}:
+
+    def _start(self, server: WorkspaceServer) -> dict[str, str]:
+        body = self._body()
+        if (
+            not isinstance(body, dict)
+            or body.keys() != {"action", "args"}
+            or not isinstance(body["action"], str)
+            or not isinstance(body["args"], dict)
+        ):
             raise RequestError(
                 400, "invalid_request", "Expected action and args fields."
             )
-        if body["action"] != ACTION:
-            raise RequestError(
-                400, "unknown_action", "The requested action is unavailable."
+        action, args = body["action"], body["args"]
+        if action != ACTION:
+            return server.jobs.start_cli(
+                action,
+                lambda directory: prepare_action(
+                    action,
+                    args,
+                    workspace=server.workspace,
+                    executables=server.executables,
+                    directory=directory,
+                    tool_directories=server.tool_directories,
+                    runtime_read_paths=server.runtime_read_paths,
+                ),
             )
-        args = body["args"]
-        if not isinstance(args, dict) or args.keys() != {"provider"}:
+        if args.keys() != {"provider"}:
             raise RequestError(
                 400, "invalid_request", "Only the provider argument is accepted."
             )
@@ -133,21 +174,67 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             raise RequestError(
                 400, "invalid_provider", "Provider must be codex or claude."
             )
-        return provider
+        return server.jobs.start(provider)
+
+    def _read(
+        self, server: WorkspaceServer, parts: list[str], query: dict[str, list[str]]
+    ) -> dict[str, Any]:
+        match parts:
+            case ["api", "workspace"]:
+                _no_query(query)
+                return server.workspace.view(server.jobs.view())
+            case ["api", "jobs", identifier]:
+                _no_query(query)
+                job = server.jobs.get(identifier)
+                if job is not None:
+                    return job
+            case ["api", "runs"]:
+                if query.keys() - {"kind"}:
+                    raise ValueError("Only a kind filter is accepted.")
+                kinds = query.get("kind")
+                if kinds is not None and (len(kinds) != 1 or not kinds[0]):
+                    raise ValueError("Expected a single kind filter.")
+                return server.jobs.runs(kinds[0] if kinds else None)
+            case ["api", "resources", kind, identifier]:
+                return read_resource(server.workspace, kind, identifier, query)
+            case ["api", "diffs", kind, identifier]:
+                _no_query(query)
+                return read_diff(server.workspace, kind, identifier)
+            case ["api", "snapshots", identifier, "file"]:
+                return read_snapshot_file(
+                    server.workspace, "snapshot", identifier, query
+                )
+            case ["api", "artifacts", identifier]:
+                artifact = server.jobs.read_artifact(identifier, query)
+                if artifact is not None:
+                    return artifact
+                return read_artifact(server.workspace, identifier, query)
+        raise KeyError("resource")
 
     def _dispatch(self, server: WorkspaceServer) -> tuple[int, dict[str, Any]]:
-        if self.command == "GET" and self.path == "/api/workspace":
-            return 200, server.workspace.view(server.jobs.view())
-        if self.command == "GET" and self.path.startswith(_JOB_PATH):
-            job = server.jobs.get(self.path.removeprefix(_JOB_PATH))
-            if job is not None:
-                return 200, job
-        if self.command == "POST" and self.path == "/api/jobs":
-            try:
-                return 202, server.jobs.start(self._provider())
-            except BusyEnvironment as error:
-                raise RequestError(409, "environment_busy", str(error)) from None
-        raise RequestError(404, "not_found", "The requested resource does not exist.")
+        target = urlsplit(self.path)
+        if (
+            target.scheme
+            or target.netloc
+            or target.fragment
+            or not target.path.startswith("/")
+        ):
+            raise ValueError("Expected a local API path.")
+        parts = [unquote(part, errors="strict") for part in target.path[1:].split("/")]
+        query = parse_qs(
+            target.query, keep_blank_values=True, strict_parsing=True, errors="strict"
+        )
+        if self.command == "GET":
+            return 200, self._read(server, parts, query)
+        _no_query(query)
+        match parts:
+            case ["api", "jobs"]:
+                return 202, self._start(server)
+            case ["api", "jobs", identifier, "cancel"]:
+                if self._body() != {}:
+                    raise ValueError("Job cancellation requires an empty JSON object.")
+                return 202, server.jobs.cancel(identifier)
+        raise KeyError("resource")
 
     def _serve(self) -> None:
         server = cast(WorkspaceServer, self.server)
@@ -156,16 +243,40 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             status, body = self._dispatch(server)
         except RequestError as error:
             status = error.status
-            body = {"error": {"code": error.code, "message": str(error)}}
-        except (OSError, ValueError):
+            body = _error(error.code, str(error))
+        except BusyEnvironment as error:
+            status, body = 409, _error("environment_busy", str(error))
+        except (ActionConflict, BusyJob) as error:
+            status, body = 409, _error("job_unavailable", str(error))
+        except UnknownAction as error:
+            status, body = 400, _error("unknown_action", str(error))
+        except KeyError:
+            status, body = (
+                404,
+                _error("not_found", "The requested resource does not exist."),
+            )
+        except UnicodeError:
+            status, body = (
+                400,
+                _error("invalid_request", "Malformed UTF-8 request target."),
+            )
+        except ValueError as error:
+            status, body = 400, _error("invalid_request", str(error))
+        except (OSError, SQLiteError):
             status = 500
-            body = {
-                "error": {
-                    "code": "workspace_unavailable",
-                    "message": "The workspace could not be read or updated.",
-                }
-            }
+            body = _error(
+                "workspace_unavailable", "The workspace could not be read or updated."
+            )
         self._reply(status, body)
 
     do_GET = _serve
     do_POST = _serve
+
+
+def _no_query(query: dict[str, list[str]]) -> None:
+    if query:
+        raise ValueError("This endpoint does not accept query parameters.")
+
+
+def _error(code: str, message: str) -> dict[str, Any]:
+    return {"error": {"code": code, "message": message}}

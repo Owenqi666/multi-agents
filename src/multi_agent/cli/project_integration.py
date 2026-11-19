@@ -5,14 +5,59 @@ from pathlib import Path
 from typing import Any
 
 from multi_agent.core.integration import IntegrationConflict
+from multi_agent.core.project_plan import StageRun
 from multi_agent.store.project_integration import (
     IntegrationMemberVersion,
     ProjectIntegrationStore,
 )
+from multi_agent.store.project_store import ProjectStore
 
-from .integration_cli import inspect_integration_candidate
+from .integration_cli import _view, create_integration, inspect_integration_candidate
 from .integration_git import read_ref
 from .integration_verification import verification_view
+
+
+def integrate_stage(
+    store: ProjectStore, database: Path, stage: StageRun, target: str | None
+) -> dict[str, Any]:
+    from .project_cli import _repository
+    from .project_delegation import delegated_view
+
+    if stage.mode != "delegate":
+        raise ValueError("stage integration requires a delegated stage")
+    view = delegated_view(store, database, stage)
+    if not view["can_integrate"]:
+        raise ValueError(
+            "stage integration requires all exact verified leaf candidates"
+        )
+    members = tuple(
+        (leaf["task_run_id"], leaf["implementation_attempt"], leaf["candidate"])
+        for leaf in view["leaves"]
+    )
+    goal = store.show_plan(stage.plan_id)["goal"]
+    repo, common = _repository(Path(goal["repository"]), database.parent)
+    if str(common) != goal["git_common_dir"]:
+        raise ValueError("repository Git metadata differs from the confirmed goal")
+    branch = (
+        target if target is not None else f"multi-agent/stages/{stage.stage_run_id}"
+    )
+    result = create_integration(
+        database,
+        repo,
+        branch,
+        [item[0] for item in members],
+        expected_baseline=stage.execution_baseline,
+        expected_members=members,
+        prepare_target=target is None,
+    )
+    return {
+        **_view(result, "create"),
+        "kind": "project_stage_integration",
+        "stage_run_id": stage.stage_run_id,
+        "stage_id": stage.stage_id,
+        "plan_id": stage.plan_id,
+        "application_target": target is None,
+    }
 
 
 def view_delegated_integration(

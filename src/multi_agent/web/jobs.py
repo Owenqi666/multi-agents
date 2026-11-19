@@ -1,33 +1,124 @@
-"""Persist loopback jobs and execute only explicit runtime environment checks."""
+"""Persist loopback jobs and own their controller processes for one service."""
 
 import asyncio
 import fcntl
+import hashlib
 import json
 import os
+import re
+import shutil
+import signal
 import stat
+import subprocess
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from threading import Lock
-from typing import Any
+from typing import Any, BinaryIO
 from uuid import uuid4
 
 from multi_agent.adapters.probe.process import ProcessCleanupIncomplete
 from multi_agent.adapters.runtime import RuntimeAdapter
-from multi_agent.adapters.runtime_decode import RuntimeFailure
+from multi_agent.adapters.runtime_decode import RuntimeFailure, strict_json_loads
 from multi_agent.cli.runner import _environment_value
 
+from .resources import references
 from .workspace import private_directory
 
 PROVIDERS = ("codex", "claude")
 ACTION = "environment.refresh"
 _ACTIVE_STATES = {"queued", "running", "cancelling"}
 _FIELDS = ("cli_version", "logged_in", "models", "model_efforts")
+_ARTIFACT = re.compile(r"([0-9a-f]{32})\.(stdout|stderr)")
+_PREVIEW_BYTES = 64 * 1024
 
 
-class BusyEnvironment(ValueError):
+class BusyJob(ValueError):
     pass
+
+
+class BusyEnvironment(BusyJob):
+    pass
+
+
+def _private_file(path: str, flags: int) -> int:
+    return os.open(path, flags | os.O_NOFOLLOW, 0o600)
+
+
+def _cli_result(
+    path: Path, exit_code: int
+) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
+    raw = path.read_bytes()
+    if not raw.strip() and exit_code:
+        if exit_code in (130, -signal.SIGINT):
+            return None, {
+                "code": "cli_cancelled",
+                "message": "The CLI was interrupted.",
+            }
+        return None, {"code": "cli_failed", "message": "The CLI exited unsuccessfully."}
+    try:
+        value = strict_json_loads(raw.decode("utf-8"))
+        if not isinstance(value, dict):
+            raise TypeError("CLI output must be an object")
+    except (TypeError, ValueError):
+        return None, {
+            "code": "invalid_cli_output",
+            "message": "The CLI did not return a valid JSON object.",
+        }
+    return value, None
+
+
+def _seal_artifact(path: Path, artifact_id: str, stream: str) -> dict[str, Any]:
+    with path.open("rb") as artifact:
+        return {
+            "artifact_id": artifact_id,
+            "stream": stream,
+            "byte_count": os.fstat(artifact.fileno()).st_size,
+            "sha256": hashlib.file_digest(artifact, "sha256").hexdigest(),
+        }
+
+
+def _page(query: dict[str, list[str]]) -> tuple[int, int]:
+    options = {"offset": 0, "limit": _PREVIEW_BYTES}
+    for name, values in query.items():
+        if (
+            name not in options
+            or len(values) != 1
+            or not (values[0].isascii() and values[0].isdecimal())
+        ):
+            raise ValueError("Expected a single byte offset and page limit.")
+        options[name] = int(values[0])
+    if not 1 <= options["limit"] <= _PREVIEW_BYTES:
+        raise ValueError("Artifact page limit must be between 1 and 65536 bytes.")
+    return options["offset"], options["limit"]
+
+
+def _preview_artifact(
+    artifact: BinaryIO, registered: dict[str, Any], offset: int, limit: int
+) -> dict[str, Any]:
+    digest = hashlib.sha256()
+    preview = bytearray()
+    size = 0
+    for chunk in iter(lambda: artifact.read(_PREVIEW_BYTES), b""):
+        digest.update(chunk)
+        end = size + len(chunk)
+        if size < offset + limit and end > offset:
+            preview.extend(chunk[max(0, offset - size) : offset + limit - size])
+        size = end
+    if registered["byte_count"] != size or registered["sha256"] != digest.hexdigest():
+        raise KeyError(registered["artifact_id"])
+    next_offset = offset + len(preview)
+    return {
+        "stream": registered["stream"],
+        "text": preview.decode("utf-8", errors="replace"),
+        "offset": offset,
+        "next_offset": next_offset if next_offset < size else None,
+        "byte_count": size,
+        "sha256": registered["sha256"],
+        "truncated": next_offset < size,
+    }
 
 
 class EnvironmentJobs:
@@ -40,11 +131,14 @@ class EnvironmentJobs:
         private_directory(self.directory)
         self.log_dir = self.directory / "logs"
         private_directory(self.log_dir)
+        self.job_root = data_dir / "web-jobs"
         self.state_path = self.directory / "state.json"
         self.lock = Lock()
         self.closed = False
         self.active: set[str] = set()
+        self.controllers: dict[str, subprocess.Popen[bytes]] = {}
         self.jobs: dict[str, dict[str, Any]] = {}
+        self.navigation: dict[tuple[str, str], dict[str, Any]] = {}
         self.environments: dict[str, Any] = dict.fromkeys(PROVIDERS)
         owner = self._lock_directory()
         self.owner: int | None = owner
@@ -91,6 +185,9 @@ class EnvironmentJobs:
                 )
             self.jobs = state["jobs"]
             self.environments = state["environments"]
+            self.navigation = {
+                (item["kind"], item["id"]): item for item in state.get("runs", [])
+            }
         except (KeyError, TypeError, UnicodeError, json.JSONDecodeError):
             raise ValueError("environment state is unreadable") from None
         interrupted = False
@@ -113,6 +210,7 @@ class EnvironmentJobs:
             "repository": self.repository,
             "jobs": self.jobs,
             "environments": self.environments,
+            "runs": list(self.navigation.values()),
         }
         with NamedTemporaryFile(
             mode="w", encoding="utf-8", dir=self.directory, delete=False
@@ -129,12 +227,18 @@ class EnvironmentJobs:
     def close(self) -> None:
         with self.lock:
             self.closed = True
+            for identifier, controller in self.controllers.items():
+                if (
+                    self.jobs[identifier]["state"] == "running"
+                    and controller.poll() is None
+                ):
+                    self._signal_cancel(identifier, controller)
         # If waiting is interrupted, retain ownership until a later drain
         # or process exit. Only those workers may still commit results.
         self.pool.shutdown(wait=True)
         with self.lock:
-            if self.active:
-                raise RuntimeError("environment workers are still active")
+            if self.active or self.controllers:
+                raise RuntimeError("job workers are still active")
             owner, self.owner = self.owner, None
             if owner is not None:
                 os.close(owner)
@@ -148,6 +252,33 @@ class EnvironmentJobs:
             job = self.jobs.get(identifier)
             return job.copy() if job is not None else None
 
+    def runs(self, kind: str | None) -> dict[str, Any]:
+        with self.lock:
+            items = [
+                item.copy()
+                for (record_kind, _), item in self.navigation.items()
+                if kind is None or record_kind == kind
+            ]
+        return {
+            "items": sorted(items, key=lambda item: item["updated_at"], reverse=True)
+        }
+
+    def _accept(self, identifier: str, action: str) -> None:
+        self.jobs[identifier] = {
+            "job_id": identifier,
+            "action": action,
+            "state": "queued",
+            "exit_code": None,
+            "result": None,
+            "error": None,
+            "resources": [],
+        }
+        try:
+            self._save()
+        except OSError:
+            del self.jobs[identifier]
+            raise
+
     def start(self, provider: str) -> dict[str, str]:
         with self.lock:
             if self.closed or provider in self.active:
@@ -155,23 +286,185 @@ class EnvironmentJobs:
                     "An environment check cannot start for this provider now."
                 )
             identifier = uuid4().hex
-            self.jobs[identifier] = {
-                "job_id": identifier,
-                "action": ACTION,
-                "state": "queued",
-                "exit_code": None,
-                "result": None,
-                "error": None,
-                "resources": [],
-            }
-            try:
-                self._save()
-            except OSError:
-                del self.jobs[identifier]
-                raise
+            self._accept(identifier, ACTION)
             self.active.add(provider)
             self.pool.submit(self._run, provider, identifier)
         return {"job_id": identifier, "state": "queued"}
+
+    def start_cli(
+        self, action: str, prepare: Callable[[Path], list[str]]
+    ) -> dict[str, str]:
+        private_directory(self.job_root)
+        identifier = uuid4().hex
+        directory = self.job_root / identifier
+        directory.mkdir(mode=0o700)
+        try:
+            input_dir = directory / "input"
+            input_dir.mkdir(mode=0o700)
+            argv = prepare(input_dir)
+            with self.lock:
+                if self.closed:
+                    raise BusyJob("The service is closing.")
+                self._accept(identifier, action)
+                self.pool.submit(self._run_cli, identifier, argv, directory)
+        except BaseException:
+            shutil.rmtree(directory)
+            raise
+        return {"job_id": identifier, "state": "queued"}
+
+    def _signal_cancel(
+        self, identifier: str, controller: subprocess.Popen[bytes]
+    ) -> None:
+        job = self.jobs[identifier]
+        job["state"] = "cancelling"
+        try:
+            self._save()
+        except OSError:
+            job["state"] = "running"
+            raise
+        controller.send_signal(signal.SIGINT)
+
+    def cancel(self, identifier: str) -> dict[str, str]:
+        with self.lock:
+            job = self.jobs[identifier]
+            controller = self.controllers.get(identifier)
+            if (
+                job["state"] != "running"
+                or controller is None
+                or controller.poll() is not None
+            ):
+                raise BusyJob(
+                    "The service does not control a cancellable process for this job."
+                )
+            self._signal_cancel(identifier, controller)
+        return {"job_id": identifier, "state": "cancelling"}
+
+    def _run_cli(self, identifier: str, argv: list[str], directory: Path) -> None:
+        controller = None
+        exit_code = None
+        result = None
+        error = None
+        artifacts: list[dict[str, Any]] = []
+        try:
+            with self.lock:
+                if self.closed:
+                    self._interrupt(
+                        identifier,
+                        "service_interrupted",
+                        "The service stopped before launching the job.",
+                    )
+                    self._save()
+                    return
+                self.jobs[identifier]["state"] = "running"
+                self._save()
+                with (
+                    open(directory / "stdout", "xb", opener=_private_file) as stdout,
+                    open(directory / "stderr", "xb", opener=_private_file) as stderr,
+                ):
+                    controller = subprocess.Popen(
+                        argv,
+                        cwd=directory / "input",
+                        stdin=subprocess.DEVNULL,
+                        stdout=stdout,
+                        stderr=stderr,
+                        start_new_session=True,
+                    )
+                self.controllers[identifier] = controller
+            exit_code = controller.wait()
+            result, error = _cli_result(directory / "stdout", exit_code)
+            artifacts = [
+                _seal_artifact(directory / stream, f"{identifier}.{stream}", stream)
+                for stream in ("stdout", "stderr")
+            ]
+        except OSError:
+            error = (
+                {"code": "cli_launch_failed", "message": "The CLI did not start."}
+                if controller is None
+                else {
+                    "code": "cli_io_failed",
+                    "message": "The CLI output could not be saved.",
+                }
+            )
+        finally:
+            if controller is not None and exit_code is None:
+                exit_code = controller.wait()
+            with self.lock:
+                self.controllers.pop(identifier, None)
+                if self.jobs[identifier]["state"] != "interrupted":
+                    self._finish_cli(identifier, exit_code, result, error, artifacts)
+
+    def _finish_cli(
+        self,
+        identifier: str,
+        exit_code: int | None,
+        result: dict[str, Any] | None,
+        error: dict[str, str] | None,
+        artifacts: list[dict[str, Any]],
+    ) -> None:
+        job = self.jobs[identifier]
+        records = references(job["action"], result) if result is not None else []
+        job.update(
+            state="finished",
+            exit_code=exit_code,
+            result=result,
+            error=error,
+            resources=[{"kind": item["kind"], "id": item["id"]} for item in records],
+            artifacts=artifacts,
+        )
+        before = self.navigation.copy()
+        now = datetime.now(UTC).isoformat()
+        for item in records:
+            key = item["kind"], item["id"]
+            previous = self.navigation.get(key, {})
+            self.navigation[key] = {
+                "kind": key[0],
+                "id": key[1],
+                "label": item.get("label", previous.get("label", key[1])),
+                "parent_id": item.get("parent_id", previous.get("parent_id")),
+                "updated_at": now,
+            }
+        try:
+            self._save()
+        except OSError:
+            self.navigation = before
+            job["artifacts"] = []
+            job["resources"] = []
+            self._interrupt(
+                identifier, "state_write_failed", "The CLI result could not be saved."
+            )
+
+    def read_artifact(
+        self, artifact_id: str, query: dict[str, list[str]]
+    ) -> dict[str, Any] | None:
+        match = _ARTIFACT.fullmatch(artifact_id)
+        if match is None:
+            return None
+        identifier, stream = match.groups()
+        with self.lock:
+            job = self.jobs.get(identifier)
+            registered = next(
+                (
+                    item
+                    for item in (job or {}).get("artifacts", [])
+                    if item["artifact_id"] == artifact_id
+                ),
+                None,
+            )
+        if registered is None:
+            raise KeyError(artifact_id)
+        offset, limit = _page(query)
+        path = self.job_root / identifier / stream
+        try:
+            if path.resolve(strict=True) != path:
+                raise KeyError(artifact_id)
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+            with os.fdopen(fd, "rb") as artifact:
+                if not stat.S_ISREG(os.fstat(artifact.fileno()).st_mode):
+                    raise KeyError(artifact_id)
+                preview = _preview_artifact(artifact, registered, offset, limit)
+        except OSError:
+            raise KeyError(artifact_id) from None
+        return preview
 
     def _interrupt(self, identifier: str, code: str, message: str) -> None:
         self.jobs[identifier].update(
