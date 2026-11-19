@@ -33,6 +33,16 @@ _ACTIVE_STATES = {"queued", "running", "cancelling"}
 _FIELDS = ("cli_version", "logged_in", "models", "model_efforts")
 _ARTIFACT = re.compile(r"([0-9a-f]{32})\.(stdout|stderr)")
 _PREVIEW_BYTES = 64 * 1024
+_STDERR_TAIL_BYTES = 8 * 1024
+_RECENT_JOBS = 50
+_RECORD_FIELDS = (
+    "args",
+    "created_at",
+    "started_at",
+    "finished_at",
+    "cancel_requested_at",
+    "stderr_tail",
+)
 
 
 class BusyJob(ValueError):
@@ -45,6 +55,21 @@ class BusyEnvironment(BusyJob):
 
 def _private_file(path: str, flags: int) -> int:
     return os.open(path, flags | os.O_NOFOLLOW, 0o600)
+
+
+def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
+    if args is None:
+        return None
+    stored = args.copy()
+    for field in ("original_goal", "confirmed_goal"):
+        if field in args:
+            stored[field] = {"length": len(args[field])}
+    if "document" in args:
+        compact = json.dumps(
+            args["document"], ensure_ascii=False, separators=(",", ":")
+        )
+        stored["document"] = {"length": len(compact)}
+    return stored
 
 
 def _cli_result(
@@ -68,6 +93,13 @@ def _cli_result(
             "message": "The CLI did not return a valid JSON object.",
         }
     return value, None
+
+
+def _stderr_tail(path: Path) -> str:
+    with path.open("rb") as stderr:
+        size = os.fstat(stderr.fileno()).st_size
+        stderr.seek(max(0, size - _STDERR_TAIL_BYTES))
+        return stderr.read(_STDERR_TAIL_BYTES).decode("utf-8", errors="replace")
 
 
 def _seal_artifact(path: Path, artifact_id: str, stream: str) -> dict[str, Any]:
@@ -250,7 +282,22 @@ class EnvironmentJobs:
     def get(self, identifier: str) -> dict[str, Any] | None:
         with self.lock:
             job = self.jobs.get(identifier)
-            return job.copy() if job is not None else None
+            return dict.fromkeys(_RECORD_FIELDS) | job if job is not None else None
+
+    def list_jobs(self) -> dict[str, Any]:
+        with self.lock:
+            # The persisted insertion order breaks ties and orders legacy jobs.
+            ordered = sorted(
+                self.jobs.values(),
+                key=lambda job: job.get("created_at") or "",
+            )
+            return {
+                "items": [
+                    dict.fromkeys(_RECORD_FIELDS) | job
+                    for index, job in enumerate(reversed(ordered))
+                    if index < _RECENT_JOBS or job["state"] in _ACTIVE_STATES
+                ]
+            }
 
     def runs(self, kind: str | None) -> dict[str, Any]:
         with self.lock:
@@ -263,11 +310,16 @@ class EnvironmentJobs:
             "items": sorted(items, key=lambda item: item["updated_at"], reverse=True)
         }
 
-    def _accept(self, identifier: str, action: str) -> None:
+    def _accept(
+        self, identifier: str, action: str, args: dict[str, Any] | None
+    ) -> None:
         self.jobs[identifier] = {
+            **dict.fromkeys(_RECORD_FIELDS),
             "job_id": identifier,
             "action": action,
+            "args": _record_args(args),
             "state": "queued",
+            "created_at": datetime.now(UTC).isoformat(),
             "exit_code": None,
             "result": None,
             "error": None,
@@ -286,13 +338,17 @@ class EnvironmentJobs:
                     "An environment check cannot start for this provider now."
                 )
             identifier = uuid4().hex
-            self._accept(identifier, ACTION)
+            self._accept(identifier, ACTION, {"provider": provider})
             self.active.add(provider)
             self.pool.submit(self._run, provider, identifier)
         return {"job_id": identifier, "state": "queued"}
 
     def start_cli(
-        self, action: str, prepare: Callable[[Path], list[str]]
+        self,
+        action: str,
+        prepare: Callable[[Path], list[str]],
+        *,
+        args: dict[str, Any] | None = None,
     ) -> dict[str, str]:
         private_directory(self.job_root)
         identifier = uuid4().hex
@@ -305,7 +361,7 @@ class EnvironmentJobs:
             with self.lock:
                 if self.closed:
                     raise BusyJob("The service is closing.")
-                self._accept(identifier, action)
+                self._accept(identifier, action, args)
                 self.pool.submit(self._run_cli, identifier, argv, directory)
         except BaseException:
             shutil.rmtree(directory)
@@ -316,11 +372,13 @@ class EnvironmentJobs:
         self, identifier: str, controller: subprocess.Popen[bytes]
     ) -> None:
         job = self.jobs[identifier]
-        job["state"] = "cancelling"
+        job.update(
+            state="cancelling", cancel_requested_at=datetime.now(UTC).isoformat()
+        )
         try:
             self._save()
         except OSError:
-            job["state"] = "running"
+            job.update(state="running", cancel_requested_at=None)
             raise
         controller.send_signal(signal.SIGINT)
 
@@ -344,6 +402,7 @@ class EnvironmentJobs:
         exit_code = None
         result = None
         error = None
+        stderr_tail = None
         artifacts: list[dict[str, Any]] = []
         try:
             with self.lock:
@@ -355,7 +414,9 @@ class EnvironmentJobs:
                     )
                     self._save()
                     return
-                self.jobs[identifier]["state"] = "running"
+                self.jobs[identifier].update(
+                    state="running", started_at=datetime.now(UTC).isoformat()
+                )
                 self._save()
                 with (
                     open(directory / "stdout", "xb", opener=_private_file) as stdout,
@@ -371,6 +432,7 @@ class EnvironmentJobs:
                     )
                 self.controllers[identifier] = controller
             exit_code = controller.wait()
+            stderr_tail = _stderr_tail(directory / "stderr")
             result, error = _cli_result(directory / "stdout", exit_code)
             artifacts = [
                 _seal_artifact(directory / stream, f"{identifier}.{stream}", stream)
@@ -391,7 +453,9 @@ class EnvironmentJobs:
             with self.lock:
                 self.controllers.pop(identifier, None)
                 if self.jobs[identifier]["state"] != "interrupted":
-                    self._finish_cli(identifier, exit_code, result, error, artifacts)
+                    self._finish_cli(
+                        identifier, exit_code, result, error, artifacts, stderr_tail
+                    )
 
     def _finish_cli(
         self,
@@ -400,19 +464,22 @@ class EnvironmentJobs:
         result: dict[str, Any] | None,
         error: dict[str, str] | None,
         artifacts: list[dict[str, Any]],
+        stderr_tail: str | None,
     ) -> None:
         job = self.jobs[identifier]
         records = references(job["action"], result) if result is not None else []
+        now = datetime.now(UTC).isoformat()
         job.update(
             state="finished",
+            finished_at=now,
             exit_code=exit_code,
             result=result,
             error=error,
             resources=[{"kind": item["kind"], "id": item["id"]} for item in records],
             artifacts=artifacts,
+            stderr_tail=stderr_tail,
         )
         before = self.navigation.copy()
-        now = datetime.now(UTC).isoformat()
         for item in records:
             key = item["kind"], item["id"]
             previous = self.navigation.get(key, {})
@@ -475,7 +542,9 @@ class EnvironmentJobs:
         result = None
         try:
             with self.lock:
-                self.jobs[identifier]["state"] = "running"
+                self.jobs[identifier].update(
+                    state="running", started_at=datetime.now(UTC).isoformat()
+                )
                 self._save()
             fields, error = self._observe(provider, identifier)
             result = {
@@ -497,7 +566,10 @@ class EnvironmentJobs:
                         )
                     else:
                         self.jobs[identifier].update(
-                            state="finished", result=result, error=error
+                            state="finished",
+                            finished_at=datetime.now(UTC).isoformat(),
+                            result=result,
+                            error=error,
                         )
                         if error is None:
                             self.environments[provider] = result

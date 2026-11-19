@@ -179,6 +179,7 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     tool_directories=server.tool_directories,
                     runtime_read_paths=server.runtime_read_paths,
                 ),
+                args=args,
             )
         if args.keys() != {"provider"}:
             raise RequestError(
@@ -198,6 +199,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             case ["api", "workspace"]:
                 _no_query(query)
                 return server.workspace.view(server.jobs.view())
+            case ["api", "jobs"]:
+                _no_query(query)
+                return server.jobs.list_jobs()
             case ["api", "jobs", identifier]:
                 _no_query(query)
                 job = server.jobs.get(identifier)
