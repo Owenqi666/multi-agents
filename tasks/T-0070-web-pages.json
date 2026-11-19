@@ -1,0 +1,98 @@
+{
+  "schema_version": 1,
+  "id": "T-0070",
+  "goal": "使用者在本机网页上一眼看出哪个模型在工作、工作怎样在模型之间交接，并能从提出目标一路操作到接受，每一步的状态、改动和日志都按真实记录显示。",
+  "baseline_commit": "2417007646b03301b65b7a38f1af0b1d13ff8b4f",
+  "write_scope": [
+    "frontend/**",
+    "tasks/T-0070-web-pages.json"
+  ],
+  "depends_on": [],
+  "interface_contracts": [
+    {
+      "name": "约定来源",
+      "definition": "以 docs/web-api/contract-2026-11-19.md（Claude Doc《网页模块与桥接服务：分工和接口条件》在 2026-11-19 的导出，已随基线入库，只读）为准：「接口条件」定 /api 的端点、对象、作业、读锁、动作参数和错误；「网页的呈现：分工舞台」定首页和 12 步接力表；「样例与离线联调环境」定样例和联调入口。T-0069 交付后以 docs/project-service.md 为约定正文。标「补 N」的端点和字段由 T-0069 提供，在它合入前用 frontend/ 里按同一样例格式手写的数据开发。约定不够用或有错时先提出，不自行绕过。"
+    },
+    {
+      "name": "和服务的边界",
+      "definition": "只请求同源的 /api，从服务打印的 http://127.0.0.1:<端口> 打开；不拼路径或命令，不直接读库，不用 CDN、外部字体、统计脚本和 Service Worker。只提交业务字段。不认识的字段忽略，缺的键按 null。需求、模型输出、日志、diff 一律按纯文本显示。业务判断以读回的领域字段为准（next_action、phase、verification、current_eligible、阶段门槛字段），不以 error 为 null 判断成功；退出码 2 且没有 result 时显示 stderr 原文。"
+    },
+    {
+      "name": "分工舞台",
+      "definition": "首页是只读的接力线：一条线贯穿全部步骤，颜色随持有者变化，双席审核分成两条支线并标「互不可见」，返工时合回；单席只画一条线，没有返工不画回环。步骤、持有者和完成标志按约定里「接力线的步骤和数据来源」的 12 步表从读回换算。模型名和档位只显示运行时报告值，为 null 时显示「未确认」，请求值单独标「请求」。风格已定为精致写实；具体做法（已完成段带微光的细线，未开始段是底板上的浅槽，降低饱和度，细字重标题，交接物是带指示灯的小胶囊，暗色为主，亮色像印在细纸上的图纸）先落在样张上，以 Owen 在样张上的确认为准。"
+    },
+    {
+      "name": "项目流程操作页",
+      "definition": "覆盖目标（需求咨询、确认目标）、计划（生成、修订、查看旧版本）、阶段（直接和分派、子卡领取、恢复）、实施和重试、测试、审核（单席和双席、补跑、交叉确认、返工）、集成（创建、测试、审核、重建、接受），以及 diff、冻结文件和日志查看。按钮可用条件写在 frontend/README.md，依据领域字段；重复提交保护（提交后到作业结束前按钮不可再点，project.stage.integrate 和各 create 尤其如此）。T-0062 的单卡规划、独立代码审核和只读打开不在本版。"
+    },
+    {
+      "name": "作业和读取节奏",
+      "definition": "作业状态有 queued、running、cancelling、finished、interrupted，前三个算未结束。有作业未结束时不发抢锁读取（task、task-test、task-review、integration、stage、plan、task 和 integration 的 diff 及其日志）；收到 lock_busy 时保留上一次内容并标出读取时间，没有就显示「作业运行中，结束后可读」。作业期间只读 ID 已知的不抢锁记录：舞台按作业的 action 判断交接物位置；补跑审核时席位状态按 args 里的 round_id 读 review；project.plan 和 project.revise 期间从 project 读回的 plans[] 找进行中的计划（finished_at 为 null）；新建的审核轮和需求咨询在作业期间按 action 显示「进行中」，ID 等作业结束后从 resources 取。运行中的作业每 1 秒读一次，其余可读资源最多每 5 秒一次。409 busy 时引导到 active_job_id 对应的作业。取消按钮只在 running 时显示；cancelling 显示「已请求取消」且没有取消按钮，结束后按退出码和领域状态显示「已取消」。刷新页面后用 GET /api/jobs 找回未结束的作业。"
+    },
+    {
+      "name": "样张和模拟模式",
+      "definition": "第 0 步先交一页样张：独立入口（如 frontend/specimen.html），单独一次提交，内容是舞台的接力线、色彩、字体、亮暗两套、状态徽标、diff 行、日志块、空状态，数据用按约定对象形状手写的样例。交样张后停下，把打开方式和亮暗两张截图发给 Owen；他确认后，把确认原话和日期写进 frontend/README.md 的「样张确认」一节，再铺其余页面。模拟模式不需要服务，只回放样例和一条固定的作业时间线，不实现业务规则。"
+    },
+    {
+      "name": "技术栈和检查",
+      "definition": "技术栈由实现方选择（此前清单推荐 React + TypeScript + Vite，包管理 pnpm），在 frontend/README.md 写明安装、构建、启动、开发代理和检查命令。开发代理从环境变量 BRIDGE_URL 读服务地址，转发时把 Host 改成 127.0.0.1:<端口>，Origin 改成服务地址或去掉。frontend/dist 不入库（根目录 .gitignore 已有 dist/），node_modules 由 frontend/.gitignore 忽略。前端检查进不了 scripts/verify.sh，作为 proposed_tests 单独运行；提交钩子仍会跑完整 verify，worktree 要先 uv sync。如果仓库 .agents/skills/ 里已有 frontend-design、handoff-stage、ui-render-check，按它们做界面和渲染检查。"
+    },
+    {
+      "name": "联调",
+      "definition": "T-0069 合入后，在联调分支上合入它，用 tests/unit/web_support/offline_env.py 加 --frontend-dist 跑浏览器端到端，并改用 docs/web-api/samples/ 的录制样例跑组件测试；失败按归属转给对应一方，约定不够用时先提出，不自行绕过。"
+    }
+  ],
+  "deliverables": [
+    "第 0 步样张（单独一次提交），以及 frontend/README.md 里 Owen 的样张确认记录。",
+    "frontend/ 源码和 frontend/README.md（安装、构建、启动、检查命令，按钮可用条件表，舞台步骤映射）。",
+    "模拟模式、组件测试和浏览器端到端脚本。",
+    "联调分支上的一次端到端运行记录（frontend/e2e/records/），以及完整 verify、前端检查的结果、修改路径和已知限制。"
+  ],
+  "acceptance_criteria": [
+    "样张单独一次提交，早于其余页面的提交；frontend/README.md 的「样张确认」一节有 Owen 的确认原话和日期。",
+    "组件测试先用 frontend/ 里按样例格式手写的数据，T-0069 合入后在联调分支改用 docs/web-api/samples/ 的样例，渲染并断言这些状态：lock_busy、退出码 2 没有 result、cancelling、interrupted、报告值为 null、单席和双席审核、有和没有返工、直接和分派阶段。",
+    "舞台对 accept 和 rework 场景的数据按 12 步表显示持有者和交接物；单席只有一条线，没有返工时不出现回环；模型名只来自报告值，null 显示「未确认」。",
+    "（T-0069 合入后在联调分支判定）浏览器端到端在 offline_env.py 上跑三条路径：accept 从目标走到接受（含一个分派阶段）；rework 返工后通过并显示返工增量 diff，能从阻塞意见跳到冻结文件的对应行；cancel 在作业中取消，页面先显示「已请求取消」、结束后显示「已取消」，再向 offline_env.py 发 SIGUSR1 硬停重启，页面对当时未结束的作业显示 interrupted 并引导恢复。每条路径刷新后回到同一页、同一回执。",
+    "（T-0069 合入后在联调分支判定）端到端脚本记录网络请求并断言：作业未结束期间没有发出抢锁种类的请求；页面打开、刷新和查看历史不新增作业。",
+    "目录含 Luna、Haiku 时，模型选择器只出现约定家族，所选型号支持 low 时保留 low；子卡执行者只能选 Terra 或 Sonnet；卡片复核不能选与 Sol 相同的模型。",
+    "proposed_tests 里的 frontend-check 和 frontend-e2e 都通过（后者在联调分支合入 T-0069 后运行），完整 verify 通过；git diff --name-only <联调分支合入 T-0069 后的提交>..HEAD 只涉及 frontend/ 和本卡文件。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": [
+    {
+      "question": "frontend-check 和 frontend-e2e 是否采纳为本卡的验收检查？",
+      "blocks_dispatch": true,
+      "resolution": "采纳两项（Owen，2026-11-19 在选择卡上确认）：frontend-check 和 frontend-e2e 都是本卡的验收检查，在 scripts/verify.sh 之外单独运行；frontend-e2e 在联调分支合入 T-0069 后运行。"
+    }
+  ],
+  "proposed_tests": [
+    {
+      "name": "frontend-check",
+      "executable": "pnpm",
+      "args": [
+        "--dir",
+        "frontend",
+        "run",
+        "check"
+      ],
+      "reason": "类型检查、lint 和组件测试，前端的检查进不了受保护的 scripts/verify.sh。换用其他包管理器时按 frontend/README.md 调整。"
+    },
+    {
+      "name": "frontend-e2e",
+      "executable": "pnpm",
+      "args": [
+        "--dir",
+        "frontend",
+        "run",
+        "e2e"
+      ],
+      "reason": "在离线联调环境上跑三条浏览器端到端路径，需要 T-0069 已合入。"
+    }
+  ]
+}
