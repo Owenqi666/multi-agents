@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "id": "T-0063",
+  "goal": "PM 明确确认目标后，可从本地 CLI 调用选定的顶层规划模型，在项目基线上生成可追溯的多阶段项目计划并在重启后读回。",
+  "baseline_commit": "b9dff6509e287307a6cf7fb50a4a3ad950ca0af5",
+  "write_scope": [
+    "src/multi_agent/cli/main.py",
+    "src/multi_agent/cli/project*.py",
+    "src/multi_agent/core/project*.py",
+    "src/multi_agent/store/project*.py",
+    "src/multi_agent/store/migrations/0009_*.sql",
+    "src/multi_agent/adapters/project*.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/runtime_decode.py",
+    "schemas/project*.json",
+    "tests/unit/test_project*.py",
+    "tests/replay/test_project*.py",
+    "tests/replay/scenarios/project*.json",
+    "docs/project-workflow.md",
+    "src/multi_agent/core/transitions.py",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_planning_store.py",
+    "tests/unit/test_task_test_store.py",
+    "tests/unit/test_task_store.py",
+    "tests/unit/test_store_inputs.py"
+  ],
+  "depends_on": [
+    "T-0061"
+  ],
+  "interface_contracts": [
+    {
+      "name": "项目与版本",
+      "definition": "从 multi_agent 的 project 子命令显式确认原话及可编辑的最终目标，记录项目、基线与不可变的目标版本。规划操作接收确认版本和选定供应商、型号、推理档位，返回计划版本；show 能打开指定版本。动作的具体 argv 与机读 JSON 回执在 docs/project-workflow.md 固化供后续调用。"
+    },
+    {
+      "name": "阶段任务书",
+      "definition": "项目计划含整体架构、共用接口及有稳定标识的有序阶段。每阶段含目标、实现方向、流程、依赖、验收和下游交付物；输出可读 Markdown 与结构化阶段来自同一计划版本。后续领取阶段时使用该计划版本和阶段 ID。"
+    },
+    {
+      "name": "运行证据与只读边界",
+      "definition": "规划通过现有适配器使用符合选定模型的只读会话，并提供指定 Git 基线的仓库上下文。请求与运行时报告分存，缺失报告为未确认。旧版本和失败与成功的规划结果可区分。当前卡只启动显式请求的项目规划角色。"
+    },
+    {
+      "name": "迁移兼容",
+      "definition": "现有命名 store 测试内仅更新迁移版本断言以匹配新增迁移，保持原断言覆盖和旧库读取；按 state-change skill 补针对性回放。"
+    }
+  ],
+  "deliverables": [
+    "可实际使用的确认、规划、读回 CLI 和 SQLite 持久化",
+    "项目计划及阶段任务书示例、CLI 用法和回执格式",
+    "覆盖主路径和失败输入的针对性离线回归"
+  ],
+  "acceptance_criteria": [
+    "unit 通过 CLI 以假运行时产生三阶段样例，断言 Markdown 与 JSON 的架构及阶段标识、验收和依赖一致、目标和基线正确；不同进程 show 可读回同版。",
+    "unit 核对确认和查看均不触发模型，不存在或未确认的目标版本、无法解析的基线均不能启动规划；一次显式规划只调用所选规划者。假运行时可验证只读设置、原话、确认目标和指定提交的上下文，调用前后源工作树与基线相同。",
+    "unit 使用两个确认版本生成独立计划，旧版本内容不变。零阶段、重复阶段 ID、不存在的依赖、循环（含自依赖）及缺失必填字段的输出都不能发布为成功计划。",
+    "对照 diff 与实际运行，产品 CLI 复用现有运行时边界并能用真实顶层模型生成含可执行阶段说明的计划；本窗口审核原始回执、版本与证据。当前卡没有隐式启动阶段实施。",
+    "unit 验证模型调用失败可读回失败记录且不产生成功计划。没有运行时报告的实际型号、档位保持未确认，请求值另列。真实样例各阶段通过同一结果校验。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
