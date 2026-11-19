@@ -26,6 +26,8 @@ Mac 上的个人开发工作台：复用已登录的 Codex 和 Claude Code，跨
 | `src/multi_agent/core/` | 状态机、冻结快照、规则解析、审核汇总 |
 | `src/multi_agent/adapters/` | Codex 与 Claude 适配器，唯一直接接触两边 CLI 的代码 |
 | `src/multi_agent/store/` | SQLite 持久化，迁移在 `store/migrations/` |
+| `src/multi_agent/web/` | 本机回环 HTTP 服务：工作区、作业、资源读回和网页托管。产品动作经 CLI 子进程执行，`environment.refresh` 在服务进程内经 `adapters/` 执行；读取用只读连接；启动时把已有数据库升级到当前结构 |
+| `frontend/` | 网页工作台（分工舞台和项目流程页面）。构建产物 `frontend/dist` 不入库 |
 | `tests/unit/` | 单元测试 |
 | `tests/replay/` | 合成事件回放，场景在 `tests/replay/scenarios/` |
 | `tests/fixtures/runtime/` | 两边 CLI 的实机录制，按 `<cli>-<版本>/` 分目录。探测工具录制，不手改 |
