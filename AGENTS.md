@@ -49,3 +49,6 @@ Mac 上的个人开发工作台：复用已登录的 Codex 和 Claude Code，跨
 | 写或改 `adapters/`，或用到两边 CLI 的选项、方法、事件、输出字段 | `runtime-protocols` |
 | 增改状态、事件类型、失败分类或表结构 | `state-change` |
 | 规划工作、把任务交给另一个模型、开始实现一张任务卡 | `task-card` |
+| 做新界面或改版之前 | `frontend-design` |
+| 做或改首页的分工舞台，或它读取的运行状态 | `handoff-stage` |
+| 改了 `frontend/` 的样式、布局或动效，报告完成之前 | `ui-render-check` |
