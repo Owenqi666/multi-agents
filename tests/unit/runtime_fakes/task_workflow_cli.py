@@ -60,9 +60,18 @@ def implement(prompt):
 
 
 source = Path("planning-input.json")
-if settings["role"] == "planning" and source.is_file():
+role = settings["role"]
+if role == "stage-direct":
+    if source.is_file():
+        role = "planning"
+    elif provider == "codex" and Path("frontend/status.js").is_file():
+        role = "implementation"
+if role == "planning" and source.is_file():
     frozen = json.loads(source.read_text())
-    if provider == "claude":
+    is_draft = not Path("task-card.json").is_file()
+    if settings["role"] == "stage-direct" and arguments[:1] in (["-p"], ["app-server"]):
+        capture("stage-card-input", draft=is_draft, requirements=frozen["requirements"])
+    if is_draft:
         report = {
             "schema_version": 1,
             "id": settings.get("task_id", "T-0200"),
@@ -96,12 +105,21 @@ if settings["role"] == "planning" and source.is_file():
             else [],
         }
     os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(report)
+    if settings["role"] == "stage-direct" and not is_draft:
+        Path(settings["capture"]).with_suffix(".task-hash").write_text(
+            report["task_hash"]
+        )
 
-if settings["role"] == "implementation":
+if role == "implementation":
     os.environ["FAKE_IMPLEMENTATION"] = "1"
+    task_hash = (
+        Path(settings["capture"]).with_suffix(".task-hash").read_text()
+        if settings["role"] == "stage-direct"
+        else settings.get("task_hash")
+    )
     os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(
         {
-            "task_hash": settings.get("task_hash"),
+            "task_hash": task_hash,
             "outcome": settings.get("outcome", "completed"),
             "summary": "Synthetic implementation of the exact task",
             "required_paths": settings.get("required_paths", []),
@@ -121,7 +139,7 @@ if settings["role"] == "implementation":
 
         sys.stdin = requests()
 
-if settings["role"] == "review":
+if role == "review":
     report = settings.get("report", {"summary": "Synthetic review", "findings": []})
     frozen_review = None
     confirmation = False

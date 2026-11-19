@@ -1,0 +1,8 @@
+{
+  "events": [
+    {"stage_run_id": "stage-one", "stage_id": "write", "planning_run_id": "draft-one", "accepted": true},
+    {"stage_run_id": "stage-duplicate", "stage_id": "write", "planning_run_id": "draft-duplicate", "accepted": false},
+    {"stage_run_id": "stage-two", "stage_id": "later", "planning_run_id": "draft-two", "accepted": true}
+  ],
+  "history": ["stage-one", "stage-two"]
+}

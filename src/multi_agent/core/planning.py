@@ -51,6 +51,9 @@ def planning_hash(value: Any) -> str:
     return hashlib.sha256(planning_json(value).encode("utf-8")).hexdigest()
 
 
+LEGACY_PLANNING_PROVIDERS = {"draft": "claude", "review": "codex"}
+
+
 @dataclass(frozen=True, slots=True)
 class PlanningRequest:
     provider: str
@@ -82,6 +85,9 @@ class PlanningInput:
     review_request: PlanningRequest
     dependencies: tuple[DependencyReceipt, ...] = ()
     decisions: tuple[UserDecision, ...] = ()
+
+    def request_for(self, stage: str) -> PlanningRequest:
+        return {"draft": self.draft_request, "review": self.review_request}[stage]
 
     @property
     def input_hash(self) -> str:

@@ -49,3 +49,33 @@ uv run python -m multi_agent --data-dir "$DATA" snapshot "$SOURCE_SNAPSHOT_ID"
 | `monthly-report` | 规划未来按月统计，保留待领取状态。 | 记录报表输入和汇总接口。 | 交付后续可实施的月报说明。 |
 
 每个阶段的字段为 `stage_id`、`title`、`goal`、`approach`、`workflow`、`depends_on`、`acceptance_criteria`、`deliverables`。每个依赖引用同版计划中此前已列出的阶段。阶段任务书以 `plan_id` 和 `stage_id` 为定位依据。
+
+## 领取一个阶段
+
+```sh
+uv run python -m multi_agent --data-dir "$DATA" project stage start "$PLAN_ID" "$STAGE_ID" \
+  --sol gpt-6.2-sol high --card-review claude claude-opus-5-5 high
+uv run python -m multi_agent --data-dir "$DATA" project stage list "$PLAN_ID"
+uv run python -m multi_agent --data-dir "$DATA" project stage show "$STAGE_RUN_ID"
+```
+
+`stage start` 使用 `direct` 模式。Sol 只草拟并实施这一阶段的一张正式任务卡。独立规划席位针对同一张卡的哈希复核。草拟、卡复核和写入各用独立会话。正式任务绑定记录与普通 `task show` 共用，已有单任务流程的默认角色继续沿用。若冻结路径规则拒绝 Sol，回执的 `dispatch_error` 给出规则文件及范围，阶段没有写入尝试。
+
+阶段回执包含 `plan_id`、`goal_id`、`stage_id`、`stage_run_id`、`execution_baseline`、`planning_run_id`、`task_run_id`、`candidate`、规划与实施原回执。重复提交同一计划的同一阶段返回现有记录。尚未绑定实施时，可用 `project stage resume STAGE_RUN_ID` 显式继续已准备并可补跑的规划，沿用冻结配置和原运行标识。若首次准备从未保存，显式使用 `resume STAGE_RUN_ID --prepare`，可随首次准备指定 CLI 路径、超时或宽限期。已绑定实施的失败按现有 `task run --retry` 入口处理。启动或继续阶段在候选校验通过时退出 0，流程失败或派发受阻时退出 1，中断时退出 130。仍可使用 JSON 回执和 `stage show` 读取规划或实施证据。
+
+依赖阶段须有当前候选的可核验测试及审核。启动后续阶段时，工作台记录每个已验证上游的候选、测试尝试和审核。若一个已验证候选已包含其他上游提交，使用该候选作为基线。也可用 `--baseline` 显式指定包含原项目基线和全部上游候选的提交。工作台接受 Git 祖先关系或当前有合格证据的集成。经集成纳入时，阶段记录同时保留集成提交、测试摘要和审核快照。
+
+以回执中的 `task_run_id` 和实现尝试号调用既有测试及审核。两次操作均使用同一个 SQLite 库，运行目录位于该库的同级并且是新目录。
+
+```sh
+uv run python -m multi_agent task-test run "$TASK_RUN_ID" \
+  --database "$DATA/reviews.sqlite3" --repository "$REPO" \
+  --implementation-attempt "$IMPLEMENTATION_ATTEMPT" --directory "$DATA/stage-tests" \
+  --command test --declaration-source "PM 确认的阶段测试"
+uv run python -m multi_agent task-review run "$TASK_RUN_ID" \
+  --database "$DATA/reviews.sqlite3" --repository "$REPO" \
+  --implementation-attempt "$IMPLEMENTATION_ATTEMPT" --test-attempt "$TEST_ATTEMPT" \
+  --directory "$DATA/stage-review" --seat claude claude-opus-5-5 high --no-auto-rework
+```
+
+再次运行 `stage show` 查看 `candidate_verified`、`tests_passed` 和 `review_satisfied`。测试需涵盖正式卡引用并绑定同一候选，最新的一轮代码审核需对应当前实现和测试尝试。审核满足后可用于后续阶段，用户仍控制对项目分支的接受和合并。

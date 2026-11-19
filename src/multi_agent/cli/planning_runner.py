@@ -26,6 +26,7 @@ from multi_agent.adapters.base import (
     TurnHandle,
 )
 from multi_agent.adapters.ownership import RuntimeOwnershipReceipt
+from multi_agent.adapters.project_card_schema import codex_task_card_schema
 from multi_agent.adapters.runtime import RuntimeAdapter
 from multi_agent.adapters.runtime_decode import RuntimeFailure
 from multi_agent.core.events import (
@@ -540,7 +541,9 @@ class _AttemptExecution:
             text = planning_json(self.terminal.result)
             if self.stage == "draft":
                 event: PlanningEvent = PlanningDraftValidated(
-                    parse_planning_draft(text, state.planning_input)
+                    parse_planning_draft(
+                        text, state.planning_input, configured_roles=True
+                    )
                 )
             else:
                 if state.card is None:
@@ -633,6 +636,8 @@ class _AttemptExecution:
             schema = _output_schema(self.prepared)
             self.inspect()
             request = self.attempt.request.request
+            if self.stage == "draft" and request.provider == "codex":
+                schema = codex_task_card_schema(schema)
             policy = self.prepared.policy
             self.adapter = RuntimeAdapter(
                 request.provider,
@@ -642,8 +647,9 @@ class _AttemptExecution:
                 grace=policy.grace,
                 log_dir=Path(self.logs.path),
                 output_schema=schema,
-                claude_planning_draft=self.stage == "draft",
-                codex_planning_review=self.stage == "review",
+                claude_planning_draft=request.provider == "claude",
+                codex_planning_review=self.stage == "review"
+                and request.provider == "codex",
             )
             if await self.preflight(stop_waiter):
                 await self.model(stop_waiter)

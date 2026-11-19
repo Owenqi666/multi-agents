@@ -4,14 +4,19 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from multi_agent.core.planning import PlanningRequest, planning_json
-from multi_agent.core.project_plan import ConfirmedGoal, ProjectPlan, render_markdown
+from multi_agent.core.planning import PlanningInput, PlanningRequest, planning_json
+from multi_agent.core.project_plan import (
+    ConfirmedGoal,
+    ProjectPlan,
+    StageRun,
+    render_markdown,
+)
 from multi_agent.core.transitions import project_plan_status
 
-from .database import ReviewStore
+from .task_review_store import TaskReviewStore
 
 
-class ProjectStore(ReviewStore):
+class ProjectStore(TaskReviewStore):
     def confirm_goal(self, goal: ConfirmedGoal, *, new_project: bool) -> None:
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
@@ -178,3 +183,64 @@ class ProjectStore(ReviewStore):
                     for row in plans
                 ],
             }
+
+    def reserve_stage(self, stage: StageRun, planning: PlanningInput) -> None:
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._insert_planning(stage.planning_run_id, planning, stage.created_at)
+            self._connection.execute(
+                """INSERT INTO project_stage_runs (
+                       stage_run_id, plan_id, stage_id, planning_run_id, mode,
+                       execution_baseline, dependencies, created_at
+                   ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    stage.stage_run_id,
+                    stage.plan_id,
+                    stage.stage_id,
+                    stage.planning_run_id,
+                    stage.mode,
+                    stage.execution_baseline,
+                    planning_json(stage.dependencies),
+                    stage.created_at,
+                ),
+            )
+
+    def load_stage(self, stage_run_id: str) -> StageRun:
+        row = self._connection.execute(
+            "SELECT * FROM project_stage_runs WHERE stage_run_id = ?", (stage_run_id,)
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"unknown project stage run {stage_run_id}")
+        values = dict(row)
+        values["dependencies"] = tuple(json.loads(values["dependencies"]))
+        return StageRun(**values)
+
+    def find_stage(self, plan_id: str, stage_id: str) -> StageRun | None:
+        row = self._connection.execute(
+            "SELECT stage_run_id FROM project_stage_runs WHERE plan_id = ? AND stage_id = ?",
+            (plan_id, stage_id),
+        ).fetchone()
+        return None if row is None else self.load_stage(row["stage_run_id"])
+
+    def stage_for_planning(self, planning_run_id: str) -> StageRun | None:
+        row = self._connection.execute(
+            "SELECT stage_run_id FROM project_stage_runs WHERE planning_run_id = ?",
+            (planning_run_id,),
+        ).fetchone()
+        return None if row is None else self.load_stage(row["stage_run_id"])
+
+    def list_stages(self, plan_id: str) -> list[StageRun]:
+        self.show_plan(plan_id)
+        return [
+            self.load_stage(row["stage_run_id"])
+            for row in self._connection.execute(
+                "SELECT stage_run_id FROM project_stage_runs WHERE plan_id = ? ORDER BY created_at, stage_run_id",
+                (plan_id,),
+            )
+        ]
+
+    def block_stage_dispatch(self, stage_run_id: str, reason: str) -> None:
+        self._connection.execute(
+            "UPDATE project_stage_runs SET dispatch_error = ? WHERE stage_run_id = ? AND dispatch_error IS NULL",
+            (reason, stage_run_id),
+        )

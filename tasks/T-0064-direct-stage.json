@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "id": "T-0064",
+  "goal": "用户在已生成的项目计划中领取一个阶段，默认由 Sol 制定该阶段的一份正式卡并完成整阶段实施，能在 CLI 查到阶段候选和既有测试、独立审核结果。",
+  "baseline_commit": "8455461860ea14f830cee30c63dc25ff2303d638",
+  "write_scope": [
+    "src/multi_agent/cli/project*.py",
+    "src/multi_agent/core/project*.py",
+    "src/multi_agent/store/project*.py",
+    "src/multi_agent/core/planning*.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/planning*.py",
+    "src/multi_agent/cli/planning*.py",
+    "src/multi_agent/cli/task_cli.py",
+    "src/multi_agent/cli/task_context.py",
+    "src/multi_agent/cli/task_prompt.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/project*.py",
+    "tests/unit/test_project*.py",
+    "tests/unit/test_planning*.py",
+    "tests/unit/test_task_workflow_cli.py",
+    "tests/unit/runtime_fakes/planning_cli.py",
+    "tests/unit/runtime_fakes/task_workflow_cli.py",
+    "tests/unit/runtime_fakes/project*.py",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_task_store.py",
+    "tests/unit/test_task_test_store.py",
+    "tests/unit/test_store_inputs.py",
+    "tests/replay/test_project*.py",
+    "tests/replay/test_planning_replay.py",
+    "tests/replay/scenarios/project/*.json",
+    "docs/project-workflow.md",
+    "src/multi_agent/store/migrations/0010_*.sql",
+    "tests/unit/test_runtime.py",
+    "tests/unit/test_task_context.py",
+    "tests/unit/test_task_execution_store.py",
+    "tests/replay/scenarios/planning/*.json",
+    "tasks/T-0064-direct-stage.json"
+  ],
+  "depends_on": [
+    "T-0063"
+  ],
+  "interface_contracts": [
+    {
+      "name": "阶段上下文",
+      "definition": "由 project 子命令接收准确的 plan_id（计划版本）与 stage_id，返回稳定的阶段运行标识。读取项目原话、确认目标及版本、整体架构和共用接口、当前阶段任务书，以及依赖的交付与所用基线。未就绪的上游不能作为已完成输入。每次调用只领取当前阶段。对接 T-0063 的实际字段名，以 docs/project-workflow.md 作为上层接口说明。 T63 的 project show PLAN_ID 给出 goal、document.stages、source_snapshot_id；已有本机三阶段账本计划用于实机联调。"
+    },
+    {
+      "name": "单卡执行与规则",
+      "definition": "direct 为默认：Sol 草拟一张阶段卡，独立只读席位核对此卡，再由 Sol 使用实施权限写代码。规划和实施独立会话。复用现有正式卡校验、受冻结规则约束的派发、worktree 和候选校验。用户选择与规则冲突时返回可读原因，在写入前停止，不静默更换执行者。"
+    },
+    {
+      "name": "角色与证据",
+      "definition": "起草和复核按冻结角色的 provider、model、effort 执行，处理两家支持的输出 schema；旧单任务入口沿用原默认。重试按原冻结配置，已有运行的模板内容、哈希与证据可继续核验。actual 字段仅记录运行时报告。 本卡先把提供方选择从固定 draft/review 绑定改为按已冻结请求；后续委派沿用。存储旧库断言只随迁移版本更新。"
+    },
+    {
+      "name": "阶段读回",
+      "definition": "阶段回执和 show 暴露计划/目标版本、stage_id、模式、执行基线、planning_run_id、task_run_id、候选及已有测试、审核定位。候选已生成、测试已通过、审核已满足等事实能分辨；依赖解锁使用绑定到确切上游候选的证据。由用户触发正式接受或合并。 直接阶段使用该候选的完整 task-test 和 task-review 作为通过依据，不依赖后续多卡集成。"
+    }
+  ],
+  "deliverables": [
+    "CLI 的默认直接阶段入口及相同阶段历史读回",
+    "Sol 草拟、独立复核、Sol 实施至候选的真实接线；保留原 task CLI 和证据",
+    "文档给出从 T-0063 的计划到候选、测试、独立审核的操作和字段说明"
+  ],
+  "acceptance_criteria": [
+    "unit 经产品 CLI 使用同一份包含多个阶段的计划，核对一次 Sol 草拟、一次独立卡复核及一个 Sol 写入会话；关闭委派时不建立叶子卡、其他阶段无实施尝试、Terra 和 Sonnet 的写入次数均为零，临时仓库有可校验候选。",
+    "unit 从 Sol 两次角色的实际输入可定位同一目标/计划版本、当前阶段和基线；刷新或重新打开 CLI 后读回原阶段、规划和任务 ID。通过现有 task-test 与 task-review 运行后能关联同一候选，单有候选不显示为阶段验收通过。",
+    "unit 验证显式 Sol 实施与路径规则冲突或所需前序阶段尚无可用交付时不发起写会话，记录能定位冲突路径或缺失依赖。回放或既有用例证明旧规划仍可读，旧模板/哈希及同轮补跑沿用冻结角色与原输入。",
+    "真实运行时在临时项目上走通 Sol 阶段制卡、独立卡复核和 Sol 写入；交付 SHA、调用回执和候选证据，按实际报告值列型号、档位及未确认字段。对照 diff 可确认仍经过原有计划来源、候选与审核路径。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

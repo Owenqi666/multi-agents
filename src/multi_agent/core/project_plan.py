@@ -1,7 +1,7 @@
 """Versioned project inputs and a single representation of the plan document."""
 
 from dataclasses import dataclass
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,3 +63,36 @@ def render_markdown(plan: ProjectPlan) -> str:
             )
         )
     return "\n\n".join(sections) + "\n"
+
+
+class StageIntegrationProof(TypedDict):
+    integration_id: str
+    candidate: str
+    test_attempt: int
+    test_evidence_hash: str
+    review_round_id: str
+    review_snapshot_id: str
+
+
+class StageDependency(TypedDict):
+    stage_id: str
+    stage_run_id: str
+    task_run_id: str
+    implementation_attempt: int
+    candidate: str
+    test_attempt: int
+    review_round_id: str
+    integration: NotRequired[StageIntegrationProof]
+
+
+@dataclass(frozen=True, slots=True)
+class StageRun:
+    stage_run_id: str
+    plan_id: str
+    stage_id: str
+    planning_run_id: str
+    mode: str
+    execution_baseline: str
+    dependencies: tuple[StageDependency, ...]
+    created_at: str
+    dispatch_error: str | None = None

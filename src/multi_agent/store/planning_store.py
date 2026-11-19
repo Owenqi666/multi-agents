@@ -44,21 +44,25 @@ class PlanningStore(TaskStore):
     def create_planning(
         self, run_id: str, planning_input: PlanningInput, created_at: str
     ) -> None:
-        payload = encode_planning_input(planning_input)
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
-            self._connection.execute(
-                """INSERT INTO planning_runs (
-                       run_id, input_hash, input_payload, created_at, phase
-                   ) VALUES (?, ?, ?, ?, ?)""",
-                (
-                    run_id,
-                    planning_input.input_hash,
-                    payload,
-                    created_at,
-                    PlanningPhase.PENDING,
-                ),
-            )
+            self._insert_planning(run_id, planning_input, created_at)
+
+    def _insert_planning(
+        self, run_id: str, planning_input: PlanningInput, created_at: str
+    ) -> None:
+        self._connection.execute(
+            """INSERT INTO planning_runs (
+                   run_id, input_hash, input_payload, created_at, phase
+               ) VALUES (?, ?, ?, ?, ?)""",
+            (
+                run_id,
+                planning_input.input_hash,
+                encode_planning_input(planning_input),
+                created_at,
+                PlanningPhase.PENDING,
+            ),
+        )
 
     def apply_planning(self, run_id: str, envelope: PlanningEnvelope) -> Disposition:
         if isinstance(envelope.event, PlanningTaskBound):
@@ -95,6 +99,8 @@ class PlanningStore(TaskStore):
             in (
                 "planning-draft-v2",
                 "planning-review-v2",
+                "planning-draft-v3",
+                "planning-review-v3",
             )
             and expected_history_length is None
         ):

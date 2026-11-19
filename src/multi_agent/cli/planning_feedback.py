@@ -27,7 +27,7 @@ def feedback_for_prefix(
     An applied review with a broken association is corrupt evidence, not a
     reason to silently substitute another card or an older review.
     """
-    validate_planning_input(planning_input)
+    validate_planning_input(planning_input, configured_roles=True)
     drafts: dict[int, TaskCard] = {}
     requests: dict[int, PlanningAttemptStarted] = {}
     reviewed_card: TaskCard | None = None

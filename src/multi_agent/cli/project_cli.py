@@ -19,6 +19,7 @@ from multi_agent.core.project_plan import ConfirmedGoal
 from multi_agent.store.project_store import ProjectStore
 
 from .main import data_directory
+from .project_stage import add_stage_parser, dispatch_stage
 from .runner import _tree_digest
 from .snapshot import _git, _resolve_commit, _string, freeze_repository, materialize
 
@@ -51,6 +52,7 @@ def add_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "show", help="read a project, confirmed goal, or plan version"
     )
     show.add_argument("version_id")
+    add_stage_parser(actions)
 
 
 def _now() -> str:
@@ -226,7 +228,23 @@ def dispatch_project(args: argparse.Namespace) -> dict[str, Any]:
     data_path = args.data_dir.expanduser().resolve()
     if args.project_action == "confirm":
         return _confirm(args, data_path)
-    with ProjectStore(_database(data_path)) as store:
+    database = _database(data_path)
+    with ProjectStore(database) as store:
+        if args.project_action == "stage":
+            result = dispatch_stage(args, store, database)
+            if args.stage_action in ("start", "resume"):
+                if result.get("interrupted") is True:
+                    status = 130
+                else:
+                    status = 0 if result["candidate_verified"] else 1
+                if status:
+                    print(
+                        json.dumps(
+                            result, ensure_ascii=False, indent=2, allow_nan=False
+                        )
+                    )
+                    raise SystemExit(status)
+            return result
         if args.project_action == "plan":
             return _plan(args, store, data_path)
         identifier = args.version_id

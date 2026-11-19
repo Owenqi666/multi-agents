@@ -369,9 +369,13 @@ def _provenance(
         )
     ):
         raise ValueError("task input differs from its bound planning provenance")
-    validate_planning_input(stored.planning_input)
+    validate_planning_input(stored.planning_input, configured_roles=True)
     if (
-        parse_planning_draft(planning_json(value.card.to_dict()), stored.planning_input)
+        parse_planning_draft(
+            planning_json(value.card.to_dict()),
+            stored.planning_input,
+            configured_roles=True,
+        )
         != value.card
     ):
         raise ValueError("planning task card is not canonical")

@@ -18,6 +18,7 @@ from multi_agent.cli.task_inputs import (
     validate_task_graph,
 )
 from multi_agent.core.planning import (
+    LEGACY_PLANNING_PROVIDERS,
     DependencyReceipt,
     PlanningInput,
     PlanningRequest,
@@ -59,10 +60,13 @@ def _record[T](value: object, expected: type[T], name: str) -> T:
     return value
 
 
-def _request(value: PlanningRequest, provider: str) -> None:
+def _request(value: PlanningRequest, expected_provider: str | None) -> None:
     _record(value, PlanningRequest, "planning request")
-    if _string(value.provider, "requested provider") != provider:
-        raise ValueError(f"planning role requires provider {provider}")
+    provider = _string(value.provider, "requested provider")
+    if provider not in _EFFORTS:
+        raise ValueError("planning provider must be claude or codex")
+    if expected_provider is not None and provider != expected_provider:
+        raise ValueError(f"planning role requires provider {expected_provider}")
     model = _string(value.model, "requested model", nonempty=True)
     effort = _string(value.effort, "requested effort", nonempty=True)
     if not _MODEL.fullmatch(model):
@@ -71,12 +75,14 @@ def _request(value: PlanningRequest, provider: str) -> None:
         raise ValueError("requested effort is outside the pinned provider vocabulary")
 
 
-def validate_planning_input(value: PlanningInput) -> None:
+def validate_planning_input(
+    value: PlanningInput, *, configured_roles: bool = False
+) -> None:
     """Check user declarations, preserving their exact text and provenance."""
     _record(value, PlanningInput, "planning input")
     _input_text(value.requirements)
-    _request(value.draft_request, "claude")
-    _request(value.review_request, "codex")
+    for stage, provider in LEGACY_PLANNING_PROVIDERS.items():
+        _request(value.request_for(stage), None if configured_roles else provider)
     baseline = _string(value.frozen_rules.baseline_commit, "rules baseline")
     if not _COMMIT_ID.fullmatch(baseline):
         raise ValueError("invalid frozen rules baseline")
@@ -109,9 +115,11 @@ def validate_planning_input(value: PlanningInput) -> None:
             raise ValueError("user decision must be user_declared")
 
 
-def parse_planning_draft(text: str, planning_input: PlanningInput) -> TaskCard:
+def parse_planning_draft(
+    text: str, planning_input: PlanningInput, *, configured_roles: bool = False
+) -> TaskCard:
     """Validate a single draft; unanswered blocking questions remain visible."""
-    validate_planning_input(planning_input)
+    validate_planning_input(planning_input, configured_roles=configured_roles)
     try:
         card = parse_task_card(text)
     except RecursionError as error:

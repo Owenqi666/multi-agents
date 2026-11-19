@@ -15,6 +15,7 @@ from uuid import uuid4
 from multi_agent.core import Disposition, transitions
 from multi_agent.core.events import thaw_json
 from multi_agent.core.planning import (
+    LEGACY_PLANNING_PROVIDERS,
     PlanningAttempt,
     PlanningInput,
     PlanningState,
@@ -45,6 +46,7 @@ from .planning_prompt import (
     planning_output_schema,
     planning_prompt,
     planning_prompt_version,
+    planning_uses_feedback,
 )
 from .snapshot import _git, _string, freeze_repository, materialize
 from .task_inputs import freeze_project_rules
@@ -422,9 +424,7 @@ def _context_value(
 ) -> dict[str, Any]:
     context = prepared.attempt_context
     version = started.prompt_template_version
-    if version not in (f"planning-{stage}-v1", f"planning-{stage}-v2"):
-        raise ValueError("unsupported frozen planning prompt version")
-    if (version.endswith("-v2")) != (feedback is not None):
+    if planning_uses_feedback(stage, version) != (feedback is not None):
         raise ValueError("planning feedback does not match the template version")
     value = {
         "version": 1 if feedback is None else 2,
@@ -473,7 +473,7 @@ def _inspect(
         raise ValueError("planning context manifest changed")
     feedback = None
     feedback_hash = None
-    if attempt.request.prompt_template_version == f"planning-{stage}-v2":
+    if planning_uses_feedback(stage, attempt.request.prompt_template_version):
         prefix = (
             _history_before(store, run_id, stage, attempt)
             if prospective_history is None
@@ -578,10 +578,16 @@ def _prepare_planning_attempt(
     policy: PlanningExecutionPolicy | None = None,
 ) -> PlanningExecutionPrepared:
     """Create a fresh context and atomically reserve it before any runtime I/O."""
-    template_version = planning_prompt_version(stage)
+    legacy_template = planning_prompt_version(stage)
     state = store.load_planning(run_id)
+    request = state.planning_input.request_for(stage)
+    template_version = (
+        legacy_template
+        if request.provider == LEGACY_PLANNING_PROVIDERS[stage]
+        else planning_prompt_version(stage, request.provider)
+    )
     history_prefix = store.load_planning_history(run_id)
-    validate_planning_input(state.planning_input)
+    validate_planning_input(state.planning_input, configured_roles=True)
     records = _managed(state)
     if records:
         first = records[0][2]
@@ -619,7 +625,7 @@ def _prepare_planning_attempt(
     draft = state.current("draft") if stage == "review" else None
     feedback = (
         feedback_for_prefix(history_prefix, state.planning_input)
-        if template_version == f"planning-{stage}-v2"
+        if planning_uses_feedback(stage, template_version)
         else None
     )
     feedback_hash = (
@@ -628,7 +634,7 @@ def _prepare_planning_attempt(
         else None
     )
     started = PlanningAttemptStarted(
-        getattr(state.planning_input, stage + "_request"),
+        request,
         planning_prompt(
             stage,
             state.planning_input,

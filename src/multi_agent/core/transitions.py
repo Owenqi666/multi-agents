@@ -788,9 +788,8 @@ def _planning_start(
         for current in (state.current("draft"), state.current("review"))
     ):
         raise ValueError("planning requires latest process-stop reconciliation")
-    expected = getattr(state.planning_input, envelope.stage + "_request")
-    provider = {"draft": "claude", "review": "codex"}[envelope.stage]
-    if event.request != expected or event.request.provider != provider:
+    expected = state.planning_input.request_for(envelope.stage)
+    if event.request != expected:
         raise ValueError("planning role must retain its frozen provider and request")
     if envelope.stage == "draft":
         if event.draft_attempt is not None or event.task_hash is not None:

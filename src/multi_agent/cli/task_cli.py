@@ -38,6 +38,7 @@ from multi_agent.core.task_execution import (
 )
 from multi_agent.core.task_state import TaskPhase, TaskState
 from multi_agent.core.tasks import TaskCard
+from multi_agent.store.project_store import ProjectStore
 from multi_agent.store.task_review_store import TaskReviewStore
 
 from .planning_context import capture_planning_policy
@@ -211,8 +212,13 @@ def _plan_view(
     records = prepared_attempts(state)
     budget = None
     if records:
+        requests = {
+            stage: state.planning_input.request_for(stage).provider
+            for stage in ("draft", "review")
+        }
+        distinct = len(set(requests.values())) == len(requests)
         budget = {
-            provider: {
+            (provider if distinct else stage): {
                 "limit": records[0].policy.for_provider(provider).max_attempts,
                 "used": len(state.attempts(stage)),
                 "remaining": max(
@@ -221,7 +227,7 @@ def _plan_view(
                     - len(state.attempts(stage)),
                 ),
             }
-            for provider, stage in (("claude", "draft"), ("codex", "review"))
+            for stage, provider in requests.items()
         }
     errors = []
     qualified = True
@@ -595,7 +601,7 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             raise ValueError(
                 "planning execution is incomplete; stopping facts must be reconciled"
             )
-        provider = "claude" if stage == "draft" else "codex"
+        provider = state.planning_input.request_for(stage).provider
         if (
             len(state.attempts(stage))
             >= records[0].policy.for_provider(provider).max_attempts
@@ -627,9 +633,10 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             and not stop.is_set()
         ):
             records = prepared_attempts(state)
+            provider = state.planning_input.review_request.provider
             if (
                 len(state.review_attempts)
-                >= records[0].policy.for_provider("codex").max_attempts
+                >= records[0].policy.for_provider(provider).max_attempts
             ):
                 return state, True
             state = await execute_planning_attempt(
@@ -729,7 +736,7 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     policy = None
     dispatch = None
     unavailable: frozenset[tuple[str, str]] = frozenset()
-    with TaskReviewStore(database) as store:
+    with ProjectStore(database) as store:
         planning = store.load_planning(args.planning_run_id)
         if (
             planning.phase not in (PlanningPhase.READY, PlanningPhase.BOUND)
@@ -788,6 +795,18 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                     "existing implementation requires explicit retry or inspection"
                 )
             dispatch = _new_dispatch(args)
+            linked_stage = store.stage_for_planning(args.planning_run_id)
+            if linked_stage is not None and linked_stage.mode == "direct":
+                sol = planning.planning_input.draft_request
+                if (
+                    dispatch.requested
+                    != ImplementationChoice(sol.provider, sol.model, sol.effort)
+                    or dispatch.fallbacks
+                    or dispatch.task_type is not None
+                ):
+                    raise ValueError(
+                        "direct project stage requires its frozen Sol configuration"
+                    )
             policy = _execution_policy(args, planning, dispatch)
             with executor_lock(args.repository) as lease:
                 _new_root(args.directory, _database(database), lease)
@@ -831,10 +850,15 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
 
 
 def _batch_plans(
-    store: TaskReviewStore, identifiers: list[str], lease: ExecutorLease
+    store: ProjectStore, identifiers: list[str], lease: ExecutorLease
 ) -> list[tuple[str, PlanningState, TaskCard]]:
     selections = []
     for identifier in identifiers:
+        stage = store.stage_for_planning(identifier)
+        if stage is not None and stage.mode == "direct":
+            raise ValueError(
+                "a direct project stage uses the single-task implementation entry"
+            )
         planning = store.load_planning(identifier)
         card = planning.card
         if (
@@ -890,7 +914,7 @@ def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     database = _database(args.database)
     dispatch = _new_dispatch(args)
     with (
-        TaskReviewStore(database.path) as store,
+        ProjectStore(database.path) as store,
         executor_lock(args.repository) as lease,
     ):
         selections = _batch_plans(store, identifiers, lease)

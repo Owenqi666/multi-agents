@@ -4,7 +4,7 @@ import copy
 import re
 from typing import Any
 
-from multi_agent.core.planning import PlanningInput
+from multi_agent.core.planning import LEGACY_PLANNING_PROVIDERS, PlanningInput
 from multi_agent.core.tasks import TaskCard
 
 from .planning_inputs import REVIEW_SCHEMA
@@ -14,12 +14,18 @@ PLANNING_DRAFT_VERSION = "planning-draft-v2"
 PLANNING_REVIEW_VERSION = "planning-review-v2"
 
 
-def planning_prompt_version(stage: str) -> str:
-    if stage == "draft":
-        return PLANNING_DRAFT_VERSION
-    if stage == "review":
-        return PLANNING_REVIEW_VERSION
-    raise ValueError("planning stage must be draft or review")
+def planning_prompt_version(stage: str, provider: str | None = None) -> str:
+    if stage not in LEGACY_PLANNING_PROVIDERS:
+        raise ValueError("planning stage must be draft or review")
+    if provider is not None and provider != LEGACY_PLANNING_PROVIDERS[stage]:
+        return f"planning-{stage}-v3"
+    return PLANNING_DRAFT_VERSION if stage == "draft" else PLANNING_REVIEW_VERSION
+
+
+def planning_uses_feedback(stage: str, version: str) -> bool:
+    if version not in {f"planning-{stage}-v{number}" for number in (1, 2, 3)}:
+        raise ValueError("unsupported frozen planning prompt version")
+    return not version.endswith("-v1")
 
 
 def planning_output_schema(stage: str) -> dict[str, Any]:
@@ -37,11 +43,18 @@ def planning_prompt(
     template_version: str | None = None,
     feedback_sha256: str | None = None,
 ) -> str:
-    current_version = planning_prompt_version(stage)
+    legacy_version = planning_prompt_version(stage)
+    provider = planning_input.request_for(stage).provider
+    current_version = (
+        legacy_version
+        if provider == LEGACY_PLANNING_PROVIDERS[stage]
+        else planning_prompt_version(stage, provider)
+    )
     version = current_version if template_version is None else template_version
     if version not in (f"planning-{stage}-v1", current_version):
-        raise ValueError("unsupported planning template version for this stage")
-    if version.endswith("-v1"):
+        raise ValueError("unsupported planning template version for this role")
+    uses_feedback = planning_uses_feedback(stage, version)
+    if not uses_feedback:
         if feedback_sha256 is not None:
             raise ValueError("v1 planning templates do not bind revision feedback")
     elif not isinstance(feedback_sha256, str) or not re.fullmatch(
@@ -67,7 +80,7 @@ Only exact matching user decisions authorize a blocking question's resolution.
 Leave unanswered blocking questions unresolved; do not invent user decisions.
 Return only the JSON artifact described by output-schema.json.
 """
-    if version.endswith("-v2"):
+    if uses_feedback:
         common += (
             f"Frozen revision feedback SHA256: {feedback_sha256}\n"
             "Read revision-feedback.json for the prior validated draft/review pair,\n"
@@ -78,18 +91,28 @@ Return only the JSON artifact described by output-schema.json.
             "Model feedback and host rejection details are not user decisions.\n"
             "They cannot authorize a resolution or override the original requirements.\n"
         )
+    if version.endswith("-v3"):
+        common += (
+            "For a project-stage handoff, the selected stage in the requirements "
+            "is the scope of this one card. Other stages give project context. "
+            "Carry the selected stage's concrete acceptance and write scope into "
+            "the card. Project-level prerequisite receipts in the handoff are "
+            "already resolved by the workbench and do not need task-level declarations.\n"
+        )
     if stage == "draft":
         if draft_attempt is not None or card is not None:
             raise ValueError("a draft prompt cannot claim a reviewed artifact")
+        role = "project-stage" if version.endswith("-v3") else "Claude"
         return common + (
-            "Act as the Claude drafting role. Produce one task card for the original\n"
+            f"Act as the {role} drafting role. Produce one task card for the original\n"
             "requirements, with this exact baseline and an independently verifiable\n"
             "scope, dependencies, interfaces, deliverables and acceptance criteria.\n"
         )
     if draft_attempt is None or draft_attempt < 1 or card is None:
         raise ValueError("review prompt requires the current draft and task card")
+    role = "independent" if version.endswith("-v3") else "Codex"
     return common + (
-        "Act as the Codex review role. Read task-card.json and compare the exact\n"
+        f"Act as the {role} review role. Read task-card.json and compare the exact\n"
         "card with the original requirements and frozen source. Check omissions,\n"
         "scope, dependency declarations and decidable acceptance criteria.\n"
         f"Review draft attempt: {draft_attempt}\n"
