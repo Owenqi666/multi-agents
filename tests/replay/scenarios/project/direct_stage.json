@@ -1,8 +1,74 @@
 {
   "events": [
-    {"stage_run_id": "stage-one", "stage_id": "write", "planning_run_id": "draft-one", "accepted": true},
-    {"stage_run_id": "stage-duplicate", "stage_id": "write", "planning_run_id": "draft-duplicate", "accepted": false},
-    {"stage_run_id": "stage-two", "stage_id": "later", "planning_run_id": "draft-two", "accepted": true}
+    {
+      "stage_run_id": "stage-one",
+      "stage_id": "write",
+      "planning_run_id": "draft-one",
+      "accepted": true
+    },
+    {
+      "stage_run_id": "stage-duplicate",
+      "stage_id": "write",
+      "planning_run_id": "draft-duplicate",
+      "accepted": false
+    },
+    {
+      "stage_run_id": "stage-two",
+      "stage_id": "later",
+      "planning_run_id": "draft-two",
+      "accepted": true
+    },
+    {
+      "stage_run_id": "stage-split",
+      "stage_id": "split-summary",
+      "planning_run_id": "draft-split",
+      "accepted": true,
+      "mode": "delegate"
+    }
   ],
-  "history": ["stage-one", "stage-two"]
+  "history": [
+    "stage-one",
+    "stage-two",
+    "stage-split"
+  ],
+  "split_cards": [
+    {
+      "schema_version": 1,
+      "id": "T-0031",
+      "goal": "Implement income",
+      "baseline_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "write_scope": [
+        "app/income.pl"
+      ],
+      "depends_on": [],
+      "interface_contracts": [],
+      "deliverables": [
+        "Implement income"
+      ],
+      "acceptance_criteria": [
+        "Implement income"
+      ],
+      "test_refs": [],
+      "open_questions": []
+    },
+    {
+      "schema_version": 1,
+      "id": "T-0032",
+      "goal": "Implement expense",
+      "baseline_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "write_scope": [
+        "app/expense.pl"
+      ],
+      "depends_on": [],
+      "interface_contracts": [],
+      "deliverables": [
+        "Implement expense"
+      ],
+      "acceptance_criteria": [
+        "Implement expense"
+      ],
+      "test_refs": [],
+      "open_questions": []
+    }
+  ]
 }

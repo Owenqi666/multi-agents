@@ -17,6 +17,7 @@ from multi_agent.cli.task_inputs import (
     parse_task_card,
     validate_task_graph,
 )
+from multi_agent.core.dispatch import resolve_dispatch
 from multi_agent.core.planning import (
     LEGACY_PLANNING_PROVIDERS,
     DependencyReceipt,
@@ -24,6 +25,7 @@ from multi_agent.core.planning import (
     PlanningRequest,
     PlanningReview,
     UserDecision,
+    planning_json,
 )
 from multi_agent.core.tasks import TaskCard
 
@@ -116,7 +118,11 @@ def validate_planning_input(
 
 
 def parse_planning_draft(
-    text: str, planning_input: PlanningInput, *, configured_roles: bool = False
+    text: str,
+    planning_input: PlanningInput,
+    *,
+    configured_roles: bool = False,
+    verified_dependency_ids: frozenset[str] = frozenset(),
 ) -> TaskCard:
     """Validate a single draft; unanswered blocking questions remain visible."""
     validate_planning_input(planning_input, configured_roles=configured_roles)
@@ -130,7 +136,9 @@ def parse_planning_draft(
     if set(card.test_refs) - {command.name for command in rules.rules.commands}:
         raise ValueError("draft references an unknown test command")
     validate_task_graph(
-        (card,), frozenset(receipt.task_id for receipt in planning_input.dependencies)
+        (card,),
+        verified_dependency_ids
+        | frozenset(receipt.task_id for receipt in planning_input.dependencies),
     )
     decisions = {
         (decision.question, decision.resolution)
@@ -144,6 +152,27 @@ def parse_planning_draft(
         ):
             raise ValueError("blocking resolution does not match a user decision")
     return card
+
+
+def parse_project_split(text: str, value: PlanningInput) -> tuple[TaskCard, ...]:
+    result = json.loads(text)
+    if not isinstance(result, dict) or set(result) != {"cards"}:
+        raise ValueError("a stage split must contain only cards")
+    entries = result["cards"]
+    if not isinstance(entries, list) or len(entries) < 2:
+        raise ValueError("a delegated stage must have at least two cards")
+    artifacts = tuple(planning_json(entry) for entry in entries)
+    known = frozenset(parse_task_card(item).id for item in artifacts)
+    cards = tuple(
+        parse_planning_draft(
+            item, value, configured_roles=True, verified_dependency_ids=known
+        )
+        for item in artifacts
+    )
+    validate_task_graph(cards)
+    for card in cards:
+        resolve_dispatch(card, value.frozen_rules)
+    return cards
 
 
 def _reject_constant(value: str) -> Any:

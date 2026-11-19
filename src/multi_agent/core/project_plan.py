@@ -77,8 +77,8 @@ class StageIntegrationProof(TypedDict):
 class StageDependency(TypedDict):
     stage_id: str
     stage_run_id: str
-    task_run_id: str
-    implementation_attempt: int
+    task_run_id: NotRequired[str]
+    implementation_attempt: NotRequired[int]
     candidate: str
     test_attempt: int
     review_round_id: str

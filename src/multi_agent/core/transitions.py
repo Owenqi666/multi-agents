@@ -44,6 +44,7 @@ from .planning_events import (
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
+    PlanningSplitValidated,
     PlanningTaskBound,
     PlanningValidationRejected,
 )
@@ -792,6 +793,10 @@ def _planning_start(
     if event.request != expected:
         raise ValueError("planning role must retain its frozen provider and request")
     if envelope.stage == "draft":
+        if state.projection is not None or (
+            state.split and state.phase == PlanningPhase.READY
+        ):
+            raise ValueError("the selected draft source is already fixed")
         if event.draft_attempt is not None or event.task_hash is not None:
             raise ValueError("draft attempt cannot claim a reviewed artifact")
         updated = replace(
@@ -807,12 +812,9 @@ def _planning_start(
             PlanningPhase.CANCELLED,
         ):
             raise ValueError("review requires a validated draft or failed review retry")
-        draft = state.current("draft")
         if (
             state.card is None
-            or draft is None
-            or not draft.usable
-            or event.draft_attempt != draft.number
+            or not state.matches_draft(event.draft_attempt)
             or event.task_hash != state.card.task_hash
         ):
             raise ValueError("review must bind the current usable draft and task hash")
@@ -1046,8 +1048,10 @@ def _planning_validate(
         )
     event = envelope.event
     if isinstance(event, PlanningDraftValidated):
-        if envelope.stage != "draft":
-            raise ValueError("only a draft attempt can validate a task card")
+        if envelope.stage != "draft" or state.split:
+            raise ValueError(
+                "only a single-card draft attempt can validate a task card"
+            )
         source_card = TaskCard.from_dict(
             cast(dict[str, Any], thaw_json(current.runtime.result))
         )
@@ -1059,16 +1063,21 @@ def _planning_validate(
         ):
             raise ValueError("draft baseline differs from frozen planning input")
         updated = replace(state, card=event.card, phase=PlanningPhase.AWAITING_REVIEW)
+    elif isinstance(event, PlanningSplitValidated):
+        if envelope.stage != "draft" or not state.split:
+            raise ValueError("only a split draft can validate a collection")
+        result = cast(dict[str, Any], thaw_json(current.runtime.result))
+        cards = tuple(TaskCard.from_dict(item) for item in result["cards"])
+        if cards != event.cards:
+            raise ValueError("validated split differs from the current runtime result")
+        updated = replace(state, phase=PlanningPhase.READY)
     elif isinstance(event, PlanningReviewValidated):
         if planning_value(event.review) != thaw_json(current.runtime.result):
             raise ValueError("validated review differs from the current runtime result")
-        draft = state.current("draft")
         if (
             envelope.stage != "review"
             or state.card is None
-            or draft is None
-            or not draft.usable
-            or current.request.draft_attempt != draft.number
+            or not state.matches_draft(current.request.draft_attempt)
             or current.request.task_hash != state.card.task_hash
             or event.review.task_hash != state.card.task_hash
         ):
@@ -1112,6 +1121,10 @@ def _planning_repeat_validation(
         isinstance(event, PlanningDraftValidated)
         and envelope.stage == "draft"
         and state.card == event.card
+        or isinstance(event, PlanningSplitValidated)
+        and state.split
+        and envelope.stage == "draft"
+        and event in current.events
         or isinstance(event, PlanningReviewValidated)
         and envelope.stage == "review"
         and state.review_artifact == event.review
@@ -1145,6 +1158,7 @@ _PLANNING_CLOSED: dict[type[PlanningEvent], PlanningTransition | None] = {
         (SessionStarted, Message, Usage, Completed, Error, CancelRequested)
     ),
     PlanningDraftValidated: _planning_repeat_validation,
+    PlanningSplitValidated: _planning_repeat_validation,
     PlanningReviewValidated: _planning_repeat_validation,
     PlanningValidationRejected: _planning_repeat_validation,
     ProcessExited: _planning_exit,
@@ -1164,6 +1178,7 @@ _PLANNING_TRANSITIONS: dict[
     PlanningPhase.AWAITING_VALIDATION: {
         **_PLANNING_CLOSED,
         PlanningDraftValidated: _planning_validate,
+        PlanningSplitValidated: _planning_validate,
         PlanningReviewValidated: _planning_validate,
         PlanningValidationRejected: _planning_validate,
     },

@@ -50,10 +50,10 @@ uv run python -m multi_agent --data-dir "$DATA" snapshot "$SOURCE_SNAPSHOT_ID"
 
 每个阶段的字段为 `stage_id`、`title`、`goal`、`approach`、`workflow`、`depends_on`、`acceptance_criteria`、`deliverables`。每个依赖引用同版计划中此前已列出的阶段。阶段任务书以 `plan_id` 和 `stage_id` 为定位依据。
 
-## 领取一个阶段
+## 直做金额阶段
 
 ```sh
-uv run python -m multi_agent --data-dir "$DATA" project stage start "$PLAN_ID" "$STAGE_ID" \
+uv run python -m multi_agent --data-dir "$DATA" project stage start "$PLAN_ID" amount \
   --sol gpt-6.2-sol high --card-review claude claude-opus-5-5 high
 uv run python -m multi_agent --data-dir "$DATA" project stage list "$PLAN_ID"
 uv run python -m multi_agent --data-dir "$DATA" project stage show "$STAGE_RUN_ID"
@@ -79,3 +79,41 @@ uv run python -m multi_agent task-review run "$TASK_RUN_ID" \
 ```
 
 再次运行 `stage show` 查看 `candidate_verified`、`tests_passed` 和 `review_satisfied`。测试需涵盖正式卡引用并绑定同一候选，最新的一轮代码审核需对应当前实现和测试尝试。审核满足后可用于后续阶段，用户仍控制对项目分支的接受和合并。
+
+## 委派交易汇总阶段
+
+沿用上面的 `PLAN_ID`、`DATA` 和 `REPO`。金额阶段的测试与审核通过后，领取依赖它的 `summary`。Sol 在共同的冻结基线上一次草拟一组任务卡。阶段回执保留 Sol 的运行、原始输出及有效拆分，`leaves` 列出各卡的真实 ID、定义和 `unmet_dependencies`。`stage list` 此时返回 `amount` 和 `summary` 两条领取记录。月报仍可在原计划中查看。
+
+```sh
+uv run python -m multi_agent --data-dir "$DATA" project stage start "$PLAN_ID" summary \
+  --mode delegate --sol gpt-6.2-sol high --card-review claude claude-opus-5-5 high
+uv run python -m multi_agent --data-dir "$DATA" project stage show "$SUMMARY_RUN_ID"
+```
+
+从回执中取 `SUMMARY_RUN_ID` 和两张叶卡的 ID。按 `write_scope` 区分收入卡和支出卡。首次领取时，显式选择符合该卡冻结规则的 Terra 或 Sonnet 及档位。复核输入包含实际基线、父拆分运行与清单摘要、所领条目及最终任务卡哈希。每张叶卡有独立复核决定和实施候选。`stage show` 可用 `blocked_reason` 定位失败，无依赖的兄弟卡可继续领取。
+
+```sh
+uv run python -m multi_agent --data-dir "$DATA" project stage leaf "$SUMMARY_RUN_ID" "$INCOME_CARD" \
+  --implementation codex gpt-6.1-terra medium --review-only
+uv run python -m multi_agent --data-dir "$DATA" project stage leaf "$SUMMARY_RUN_ID" "$EXPENSE_CARD" \
+  --implementation codex gpt-6.1-terra medium --review-only
+uv run python -m multi_agent task run-batch "$INCOME_PLANNING_RUN_ID" "$EXPENSE_PLANNING_RUN_ID" \
+  --database "$DATA/reviews.sqlite3" --repository "$REPO" --directory "$DATA/summary-work"
+```
+
+对单卡立即实施时省略 `--review-only`。批量实施适用于同基线、无内部依赖且写入范围不重叠的已复核卡。批量命令默认使用各叶卡自己的冻结执行者。有关联的叶卡须先交付精确上游候选。下游基线须包含这些候选，或包含已通过完整测试与独立审核的上游集成候选。多个上游无共同候选时，使用 `--baseline` 指定已验证的集成基线。工作台在启动实施时复查该集成的当期测试和审核。已复核但尚未绑定实施的叶卡遇到上游候选变化，使用 `project stage leaf SUMMARY_RUN_ID CARD_ID --refreeze` 重新冻结并复核，可加 `--review-only`。`prior_planning_run_ids` 保留先前版本。已绑定的叶卡遇到相同变化时需要新的项目计划版本。
+
+两张卡都出现当前有效候选后，`can_integrate` 为 true。用 `stage show` 中的任务运行 ID 创建集成。`SUMMARY_TARGET` 是指向该阶段 `execution_baseline` 的本地分支名。选择现有合适分支，或在验收仓库中为该基线创建分支。
+
+```sh
+uv run python -m multi_agent integration create "$INCOME_TASK_RUN_ID" "$EXPENSE_TASK_RUN_ID" \
+  --database "$DATA/reviews.sqlite3" --repository "$REPO" --target "$SUMMARY_TARGET"
+uv run python -m multi_agent integration test "$INTEGRATION_ID" \
+  --database "$DATA/reviews.sqlite3" --repository "$REPO" --directory "$DATA/summary-tests"
+uv run python -m multi_agent integration review "$INTEGRATION_ID" \
+  --database "$DATA/reviews.sqlite3" --repository "$REPO" --directory "$DATA/summary-review" \
+  --seat claude claude-opus-5-5 high --no-auto-rework
+uv run python -m multi_agent --data-dir "$DATA" project stage show "$SUMMARY_RUN_ID"
+```
+
+`integration` 展示确切成员集合对应的集成 SHA、测试尝试及摘要、审核轮次及快照。只有同一候选的完整测试和最新有效审核通过，阶段才可解锁后继。验收或更新目标分支由用户显式执行。离线可运行 `scripts/verify.sh unit replay`，覆盖真实 Git、SQLite 和假模型 CLI 的流程。

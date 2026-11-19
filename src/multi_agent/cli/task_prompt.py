@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from multi_agent.core.dispatch import DispatchDecision
 from multi_agent.core.events import thaw_json
-from multi_agent.core.planning import PlanningProvenance
+from multi_agent.core.planning import VerifiedPlanningProvenance
 from multi_agent.core.review_input import ExecutedReviewInput
 from multi_agent.core.task_execution import TaskDispatchPolicy, task_execution_json
 from multi_agent.core.task_rework import TaskReworkSource
@@ -42,7 +42,7 @@ def task_output_schema() -> dict[str, Any]:
 def task_prompt(
     task_input: TaskInput,
     *,
-    provenance: PlanningProvenance,
+    provenance: VerifiedPlanningProvenance,
     decision: DispatchDecision,
     dispatch_policy: TaskDispatchPolicy,
     workspace: WorkspaceRecord,

@@ -29,12 +29,12 @@ def _model_card(stage_id, dependencies):
     }
 
 
-def _planned_project(workflow):
+def _planned_project(workflow, stages=None):
     document = {
         "title": "Project",
         "architecture": "One code path",
         "shared_interfaces": ["Shared status field"],
-        "stages": [_model_card("write", []), _model_card("later", ["write"])],
+        "stages": stages or [_model_card("write", []), _model_card("later", ["write"])],
     }
     planner = workflow_helpers.executable(workflow, "claude", "review", report=document)
     goal = workflow_helpers.successful(
@@ -70,7 +70,9 @@ def _planned_project(workflow):
     )
 
 
-def _direct_inputs(workflow):
+def _direct_inputs(
+    workflow, path="frontend/status.js", content=workflow_helpers.FIXED_BYTES
+):
     base = workflow.base
     transport = base / "bin" / "codex-transport.py"
     transport.write_text(
@@ -83,8 +85,8 @@ def _direct_inputs(workflow):
         workflow,
         "codex",
         "stage-direct",
-        write_scope=["frontend/status.js"],
-        writes={"frontend/status.js": workflow_helpers.FIXED_BYTES.hex()},
+        write_scope=[path],
+        writes={path: content.hex()},
     )
     claude = workflow_helpers.executable(workflow, "claude", "stage-direct")
     return (

@@ -22,7 +22,13 @@ from uuid import uuid4
 
 from multi_agent.core import Disposition
 from multi_agent.core.dispatch import ImplementationChoice, resolve_dispatch
-from multi_agent.core.planning import PlanningPhase, PlanningProvenance, planning_json
+from multi_agent.core.planning import (
+    PlanningAttempt,
+    PlanningPhase,
+    PlanningProvenance,
+    VerifiedPlanningProvenance,
+    planning_json,
+)
 from multi_agent.core.review_input import ExecutedReviewInput
 from multi_agent.core.task_events import (
     TaskAttemptStarted,
@@ -44,7 +50,7 @@ from multi_agent.core.task_state import TaskAttempt, TaskInput, TaskPhase, TaskS
 from multi_agent.core.transitions import apply_task
 from multi_agent.store.planning_store import PlanningStore
 
-from .planning_evidence import inspect_planning_execution
+from .planning_evidence import inspect_planning_execution, inspect_projected_draft
 from .planning_inputs import parse_planning_draft, validate_planning_input
 from .task_inputs import (
     freeze_project_rules,
@@ -351,7 +357,7 @@ def _dispatch(
 
 def _provenance(
     store: PlanningStore, run_id: str, planning_run_id: str, lease: ExecutorLease
-) -> tuple[TaskInput, PlanningProvenance]:
+) -> tuple[TaskInput, VerifiedPlanningProvenance]:
     value = store.load_task_input(run_id)
     stored = store.load_task_provenance(run_id)
     state = store.load_planning(planning_run_id)
@@ -375,6 +381,9 @@ def _provenance(
             planning_json(value.card.to_dict()),
             stored.planning_input,
             configured_roles=True,
+            verified_dependency_ids=state.projection.dependency_ids
+            if state.projection
+            else frozenset(),
         )
         != value.card
     ):
@@ -391,7 +400,12 @@ def _provenance(
         != value.frozen_rules
     ):
         raise ValueError("baseline rules differ from the frozen task input")
-    for stage, attempt in (("draft", stored.draft), ("review", stored.review)):
+    attempts: tuple[tuple[str, PlanningAttempt], ...] = (("review", stored.review),)
+    if isinstance(stored, PlanningProvenance):
+        attempts = (("draft", stored.draft), *attempts)
+    else:
+        inspect_projected_draft(store, planning_run_id, state, lease=lease)
+    for stage, attempt in attempts:
         if not inspect_planning_execution(
             store, planning_run_id, stage, attempt.number
         ).qualified:
@@ -540,7 +554,7 @@ def _manifest_value(
     run_id: str,
     planning_run_id: str,
     value: TaskInput,
-    provenance: PlanningProvenance,
+    provenance: VerifiedPlanningProvenance,
     started: TaskEnvelope,
     prepared: TaskExecutionPrepared,
     history: TaskHistory,
@@ -601,7 +615,7 @@ def _inspect_files(
     lease: ExecutorLease,
     database: _Database,
     value: TaskInput,
-    provenance: PlanningProvenance,
+    provenance: VerifiedPlanningProvenance,
     started: TaskEnvelope,
     prepared: TaskExecutionPrepared,
     history: TaskHistory,
@@ -978,7 +992,7 @@ def _create_preparation(
     root: Path,
     registry: Path,
     value: TaskInput,
-    provenance: PlanningProvenance,
+    provenance: VerifiedPlanningProvenance,
     history: TaskHistory,
     started: TaskEnvelope,
     policy: TaskExecutionPolicy,

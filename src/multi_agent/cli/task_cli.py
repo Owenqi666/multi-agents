@@ -9,7 +9,7 @@ import sqlite3
 import sys
 from collections.abc import Awaitable, Callable
 from contextlib import nullcontext
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from itertools import combinations
 from pathlib import Path
@@ -42,7 +42,12 @@ from multi_agent.store.project_store import ProjectStore
 from multi_agent.store.task_review_store import TaskReviewStore
 
 from .planning_context import capture_planning_policy
-from .planning_evidence import bind_planning_task, inspect_planning_execution
+from .planning_evidence import (
+    bind_planning_task,
+    inspect_bound_planning,
+    inspect_planning_execution,
+    inspect_projected_draft,
+)
 from .planning_inputs import validate_planning_input
 from .planning_runner import execute_planning_attempt
 from .review_inputs import load_review_input
@@ -231,7 +236,20 @@ def _plan_view(
         }
     errors = []
     qualified = True
-    for stage in ("draft", "review"):
+    selected_stages = (
+        ("draft",)
+        if state.split
+        else ("review",)
+        if state.projection
+        else ("draft", "review")
+    )
+    if state.projection is not None:
+        try:
+            inspect_projected_draft(store, identifier, state)
+        except _ERRORS as error:
+            errors.append(str(error))
+            qualified = False
+    for stage in selected_stages:
         current = state.current(stage)
         if current is None:
             qualified = False
@@ -244,7 +262,14 @@ def _plan_view(
         except _ERRORS as error:
             errors.append(str(error))
             qualified = False
-    if state.phase in (PlanningPhase.READY, PlanningPhase.BOUND):
+    if state.split and state.phase == PlanningPhase.READY:
+        next_kind = "project_stage" if qualified else "user_decision"
+        detail = (
+            "Open the delegated stage and select an exact leaf for review or implementation."
+            if qualified
+            else "The parent split evidence could not be verified."
+        )
+    elif state.phase in (PlanningPhase.READY, PlanningPhase.BOUND):
         next_kind = "run" if state.bound_task_run_id is None else "user_decision"
         detail = (
             "The reviewed plan is ready for implementation."
@@ -293,6 +318,10 @@ def _plan_view(
             task_run_id=state.bound_task_run_id,
         ),
     )
+    if state.projection is not None:
+        result["draft_projection"] = task_execution_value(state.projection)
+    if state.split:
+        result["planning_kind"] = "stage_split"
     if history:
         result["history"] = task_execution_value(
             store.load_planning_history(identifier)
@@ -589,12 +618,17 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         if state.phase == PlanningPhase.AWAITING_REVIEW:
             stage = "review"
         elif state.phase == PlanningPhase.REVISION_REQUIRED:
+            if state.projection is not None:
+                raise ValueError(
+                    "the exact delegated card requires a revised stage plan"
+                )
             stage = "draft"
         elif state.phase in (PlanningPhase.FAILED, PlanningPhase.CANCELLED):
             draft = state.current("draft")
             stage = (
                 "review"
-                if state.stage == "review" and draft is not None and draft.usable
+                if state.projection is not None
+                or (state.stage == "review" and draft is not None and draft.usable)
                 else "draft"
             )
         else:
@@ -710,10 +744,24 @@ def _new_dispatch(args: argparse.Namespace) -> TaskDispatchPolicy:
     return dispatch
 
 
+def _selected_dispatch(
+    planning: PlanningState, dispatch: TaskDispatchPolicy
+) -> TaskDispatchPolicy:
+    if planning.projection is not None and dispatch == TaskDispatchPolicy():
+        return replace(dispatch, requested=planning.projection.executor)
+    return dispatch
+
+
 def _execution_policy(
     args: argparse.Namespace, planning: PlanningState, dispatch: TaskDispatchPolicy
 ) -> TaskExecutionPolicy:
     assert planning.card is not None
+    if planning.projection is not None and (
+        dispatch.requested != planning.projection.executor
+        or dispatch.fallbacks
+        or dispatch.task_type is not None
+    ):
+        raise ValueError("delegated leaf requires its frozen executor configuration")
     decision = resolve_dispatch(
         planning.card,
         planning.planning_input.frozen_rules,
@@ -794,7 +842,7 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 raise ValueError(
                     "existing implementation requires explicit retry or inspection"
                 )
-            dispatch = _new_dispatch(args)
+            dispatch = _selected_dispatch(planning, _new_dispatch(args))
             linked_stage = store.stage_for_planning(args.planning_run_id)
             if linked_stage is not None and linked_stage.mode == "direct":
                 sol = planning.planning_input.draft_request
@@ -810,14 +858,15 @@ def _run(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             policy = _execution_policy(args, planning, dispatch)
             with executor_lock(args.repository) as lease:
                 _new_root(args.directory, _database(database), lease)
-            if identifier is None:
-                identifier = uuid4().hex
-                bind_planning_task(
-                    store,
-                    args.planning_run_id,
-                    identifier,
-                    datetime.now(UTC).isoformat(),
-                )
+                if identifier is None:
+                    identifier = uuid4().hex
+                    bind_planning_task(
+                        store,
+                        args.planning_run_id,
+                        identifier,
+                        datetime.now(UTC).isoformat(),
+                        lease=lease,
+                    )
     assert identifier is not None
 
     async def execute(stop: asyncio.Event) -> TaskState:
@@ -894,6 +943,12 @@ def _batch_plans(
             receipt.task_id
             for _, planning, _ in selections
             for receipt in planning.planning_input.dependencies
+        )
+        | frozenset(
+            identifier
+            for _, planning, _ in selections
+            if planning.projection is not None
+            for identifier in planning.projection.dependency_ids
         ),
     )
     return selections
@@ -905,6 +960,7 @@ class _BatchMember:
     task_run_id: str
     directory: Path
     policy: TaskExecutionPolicy
+    dispatch: TaskDispatchPolicy
 
 
 def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
@@ -918,19 +974,23 @@ def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         executor_lock(args.repository) as lease,
     ):
         selections = _batch_plans(store, identifiers, lease)
-        members = [
-            _BatchMember(
-                identifier,
-                planning.bound_task_run_id or uuid4().hex,
-                _new_root(
-                    args.directory.with_name(f"{args.directory.name}-{card.id}"),
-                    database,
-                    lease,
-                ),
-                _execution_policy(args, planning, dispatch),
+        members = []
+        for identifier, planning, card in selections:
+            selected_dispatch = _selected_dispatch(planning, dispatch)
+            members.append(
+                _BatchMember(
+                    identifier,
+                    planning.bound_task_run_id or uuid4().hex,
+                    _new_root(
+                        args.directory.with_name(f"{args.directory.name}-{card.id}"),
+                        database,
+                        lease,
+                    ),
+                    _execution_policy(args, planning, selected_dispatch),
+                    selected_dispatch,
+                )
             )
-            for identifier, planning, card in selections
-        ]
+            inspect_bound_planning(store, identifier, planning, lease=lease)
         batch = prepare_task_batch(
             store, lease, frozenset(member.task_run_id for member in members)
         )
@@ -941,16 +1001,8 @@ def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                     member.planning_id,
                     member.task_run_id,
                     datetime.now(UTC).isoformat(),
+                    lease=lease,
                 )
-            else:
-                provenance = planning.provenance()
-                for stage, attempt in (
-                    ("draft", provenance.draft),
-                    ("review", provenance.review),
-                ):
-                    inspect_planning_execution(
-                        store, member.planning_id, stage, attempt.number
-                    )
 
         async def execute(stop: asyncio.Event) -> list[TaskState | BaseException]:
             return await asyncio.gather(
@@ -962,7 +1014,7 @@ def _run_batch(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                         repository=lease.source,
                         directory=member.directory,
                         policy=member.policy,
-                        dispatch_policy=dispatch,
+                        dispatch_policy=member.dispatch,
                         stop=stop,
                         batch=batch,
                     )

@@ -232,11 +232,18 @@ def dispatch_project(args: argparse.Namespace) -> dict[str, Any]:
     with ProjectStore(database) as store:
         if args.project_action == "stage":
             result = dispatch_stage(args, store, database)
-            if args.stage_action in ("start", "resume"):
-                if result.get("interrupted") is True:
-                    status = 130
+            if args.stage_action in ("start", "resume", "leaf"):
+                if args.stage_action == "leaf":
+                    ready = (
+                        result["review_ready"]
+                        if args.review_only
+                        else result["candidate_verified"]
+                    )
+                elif result["mode"] == "delegate":
+                    ready = result["split_verified"]
                 else:
-                    status = 0 if result["candidate_verified"] else 1
+                    ready = result["candidate_verified"]
+                status = 130 if result.get("interrupted") is True else 0 if ready else 1
                 if status:
                     print(
                         json.dumps(

@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "id": "T-0065",
+  "goal": "用户按阶段选择委派后，Sol 一次细化当前阶段，小阶段逐卡独立复核与执行，用户可查看各自候选、阻塞项和阶段整体的集成测试、审核证据。",
+  "baseline_commit": "41d482f0da5d69afb5f995acfa232ae989fb4c54",
+  "write_scope": [
+    "src/multi_agent/cli/project*.py",
+    "src/multi_agent/core/project*.py",
+    "src/multi_agent/store/project*.py",
+    "src/multi_agent/core/planning*.py",
+    "src/multi_agent/core/transitions.py",
+    "src/multi_agent/store/planning*.py",
+    "src/multi_agent/cli/planning*.py",
+    "src/multi_agent/cli/task_cli.py",
+    "src/multi_agent/cli/task_context.py",
+    "src/multi_agent/cli/task_prompt.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/project*.py",
+    "tests/unit/test_project*.py",
+    "tests/unit/test_planning*.py",
+    "tests/unit/test_task_workflow_cli.py",
+    "tests/unit/runtime_fakes/planning_cli.py",
+    "tests/unit/runtime_fakes/task_workflow_cli.py",
+    "tests/unit/runtime_fakes/project*.py",
+    "tests/unit/test_store_review.py",
+    "tests/unit/test_task_store.py",
+    "tests/unit/test_task_test_store.py",
+    "tests/unit/test_store_inputs.py",
+    "tests/replay/test_project*.py",
+    "tests/replay/test_planning_replay.py",
+    "tests/replay/scenarios/project/*.json",
+    "docs/project-workflow.md",
+    "src/multi_agent/store/migrations/0011_*.sql",
+    "src/multi_agent/cli/task_evidence.py",
+    "src/multi_agent/cli/integration_cli.py",
+    "src/multi_agent/core/tasks.py",
+    "src/multi_agent/core/task_state.py",
+    "src/multi_agent/cli/task_inputs.py",
+    "schemas/project*.json",
+    "tests/unit/test_task_context.py",
+    "tests/unit/test_integration_cli.py",
+    "tests/unit/test_runtime.py",
+    "tests/replay/scenarios/planning/*.json",
+    "tasks/T-0065-delegate-stage.json"
+  ],
+  "depends_on": [
+    "T-0064"
+  ],
+  "interface_contracts": [
+    {
+      "name": "阶段拆分与发布",
+      "definition": "delegate 为当前阶段的显式选项。一次 Sol 拆分产出同一阶段的一组有稳定标识、输入输出、接口、写入范围、依赖和验收的任务。每张可执行卡均通过现有任务卡 schema 及冻结项目规则验证。保留共同的草拟会话与原始输出，以及每卡在其中的位置、字段和最终待审哈希。 接续 T64 的 project stage start/show/resume；同项目的 direct 可以查询此前的独立实施及候选。"
+    },
+    {
+      "name": "小阶段的复核与派发",
+      "definition": "每个最终卡的复核结果绑定自身和真实的父级草拟证据。复核可逐卡或按组运行，只要每张卡的决定可独立核验。阻塞或未经复核的卡不能派发。一次实施会话只领一张卡，用户可选规定范围内的 Terra 或 Sonnet；显式改派仍受项目规则约束。维持原单卡规划与实施的证据核对。 所有可启动实施的入口遵循该绑定，同轮重试沿用已冻结输入。"
+    },
+    {
+      "name": "依赖与候选",
+      "definition": "无依赖且写入范围互不重叠的卡可沿既有批量机制并行；有关联的卡按上游确切交付顺序执行。下游执行基线包含上游候选或经核验的对应集成提交，最终卡在真实基线上冻结并复核。必要时在等待期间保留子任务定义。上游来源记录为实际证据，不冒充用户声明。"
+    },
+    {
+      "name": "阶段集合与完成",
+      "definition": "show 以 plan_id、stage_id、stage_run_id 关联 mode 和各叶子的规划、实施尝试、候选、阻塞原因。按原集成入口汇总同一阶段的全部必需交付，完整测试和独立审核绑定同一集成候选。局部完成、可集成、已通过阶段验收有各自证据，接受或合并由用户显式触发。 多次审核时按被选中的当前有效证据判定。适用时由同一证据解锁后继阶段。"
+    }
+  ],
+  "deliverables": [
+    "可用的阶段委派及逐卡实施 CLI，可查真实父级草拟和各叶子独立复核",
+    "阶段候选、集成测试与审核结果读回，涵盖未完成与阻塞",
+    "docs/project-workflow.md 中可贯通的两阶段示例和离线验证命令"
+  ],
+  "acceptance_criteria": [
+    "unit 与回放使用同一个项目的 direct 和 delegate 阶段，后者一次 Sol 拆分产生至少两张可复核的卡。核对每份实施输入均只含所领卡及相同父阶段/计划版本的相关上下文；未领取阶段没有任务，直接模式仍可使用。",
+    "unit 核对每张叶子能够追溯同一真实父级草拟和各自 exact hash 的有效卡复核。改变子卡内容或拿兄弟卡的复核不能取得派发资格。一张阻塞时CLI 阶段读回 能显示其原因和已交付的兄弟卡，阶段仍未验收。",
+    "unit 覆盖前后依赖的两个叶子：上游尚未产生确切候选前下游无写入；下游最终冻结基线含该产物，复核与候选绑定该基线。已有并行路径对无依赖、写入范围不相交的卡可继续共用原机制。",
+    "端到端在真实 Git/SQLite、假 CLI 的样例上生成阶段集成候选、运行原完整测试并独立审核。阶段回执列出所有必需叶子、各自候选和集成 SHA/测试/审核标识；缺卡、集成测试失败或阻塞审核均不得提前显示阶段验收成功。",
+    "实机在已批准的临时样例上至少记录一次真实 Sol 多卡拆分及真实 Terra 或 Sonnet 小阶段实施，给出实际报告的型号和档位、父卡或父运行、叶子卡和各候选，保留可复核证据。主窗口版本验收在最终候选上复核两条完整路径。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

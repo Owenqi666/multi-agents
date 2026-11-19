@@ -365,6 +365,14 @@ def _owner(
 def _review_card(
     state: PlanningState, started: PlanningAttemptStarted
 ) -> TaskCard | None:
+    if state.projection is not None:
+        if (
+            state.card is None
+            or started.task_hash != state.card.task_hash
+            or not state.matches_draft(started.draft_attempt)
+        ):
+            raise ValueError("review context does not bind the projected task card")
+        return state.card
     if started.draft_attempt is None:
         if started.task_hash is not None:
             raise ValueError("draft context has an unexpected task hash")
@@ -502,6 +510,8 @@ def _inspect(
         card=card,
         template_version=attempt.request.prompt_template_version,
         feedback_sha256=feedback_hash,
+        split=state.split,
+        projection=state.projection,
     )
     if prompt != attempt.request.prompt:
         raise ValueError("planning prompt differs from its frozen context")
@@ -586,6 +596,10 @@ def _prepare_planning_attempt(
         if request.provider == LEGACY_PLANNING_PROVIDERS[stage]
         else planning_prompt_version(stage, request.provider)
     )
+    if state.split:
+        template_version = "planning-draft-v5"
+    elif state.projection is not None:
+        template_version = "planning-review-v4"
     history_prefix = store.load_planning_history(run_id)
     validate_planning_input(state.planning_input, configured_roles=True)
     records = _managed(state)
@@ -643,6 +657,8 @@ def _prepare_planning_attempt(
             card=card,
             template_version=template_version,
             feedback_sha256=feedback_hash,
+            split=state.split,
+            projection=state.projection,
         ),
         template_version,
         datetime.now(UTC).isoformat(),
@@ -679,7 +695,10 @@ def _prepare_planning_attempt(
         path.mkdir(mode=0o700)
         materialize(snapshot, path / "source")
         _write(path / "planning-input.json", planning_value(state.planning_input))
-        _write(path / "output-schema.json", planning_output_schema(stage))
+        _write(
+            path / "output-schema.json",
+            planning_output_schema(stage, split=state.split),
+        )
         if card is not None:
             _write(path / "task-card.json", card.to_dict())
         if feedback is not None:

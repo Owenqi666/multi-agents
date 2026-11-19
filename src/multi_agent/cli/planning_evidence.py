@@ -7,9 +7,9 @@ import json
 import os
 import re
 import stat
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from multi_agent.adapters.base import EnvironmentInfo, TurnHandle, TurnResult
 from multi_agent.adapters.ownership import (
@@ -22,9 +22,10 @@ from multi_agent.adapters.ownership import (
     RuntimeOwnershipReceipt,
 )
 from multi_agent.adapters.runtime import RuntimeAdapter
-from multi_agent.core.events import Completed, Error, ProcessExited
+from multi_agent.core.events import Completed, Error, ProcessExited, thaw_json
 from multi_agent.core.planning import (
     PlanningAttempt,
+    PlanningPhase,
     PlanningState,
     planning_hash,
     planning_json,
@@ -34,11 +35,17 @@ from multi_agent.core.planning_events import (
     PlanningEnvironmentObserved,
     PlanningEvidenceRejected,
     PlanningExecutionPrepared,
+    PlanningSplitValidated,
 )
 from multi_agent.core.state import AttemptStatus
+from multi_agent.core.tasks import TaskCard
 from multi_agent.store.planning_store import PlanningStore
 
 from .planning_context import _canonical, _directory, inspect_planning_context
+from .planning_inputs import parse_project_split
+
+if TYPE_CHECKING:
+    from .workspaces import ExecutorLease
 
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 _NOFOLLOW = os.O_NOFOLLOW | os.O_NONBLOCK
@@ -682,18 +689,154 @@ def inspect_planning_execution(
         os.close(directory)
 
 
+def inspect_project_split(
+    store: PlanningStore, run_id: str
+) -> tuple[PlanningAttempt, tuple[TaskCard, ...], PlanningExecutionManifest]:
+    state = store.load_planning(run_id)
+    attempt = state.current("draft")
+    if (
+        not state.split
+        or state.phase != PlanningPhase.READY
+        or attempt is None
+        or not attempt.usable
+    ):
+        raise ValueError("a verified parent stage split is required")
+    manifest = inspect_planning_execution(store, run_id, "draft", attempt.number)
+    cards = parse_project_split(
+        planning_json(attempt.runtime.result), state.planning_input
+    )
+    if PlanningSplitValidated(cards) not in attempt.events:
+        raise ValueError("validated stage definitions differ from sealed split output")
+    return attempt, cards, manifest
+
+
+def split_entry_hash(attempt: PlanningAttempt, index: int) -> str:
+    return planning_hash(
+        cast(dict[str, Any], thaw_json(attempt.runtime.result))["cards"][index]
+    )
+
+
+def inspect_projected_draft(
+    store: PlanningStore,
+    run_id: str,
+    state: PlanningState,
+    *,
+    lease: ExecutorLease | None = None,
+) -> None:
+    source = state.projection
+    card = state.card
+    assert source is not None and card is not None
+    store.require_latest_projection(run_id, card.id, source)
+    attempt, cards, manifest = inspect_project_split(store, source.split_run_id)
+    index = source.entry_index
+    if (
+        source.split_attempt != attempt.number
+        or source.split_manifest_sha256 != manifest.sha256
+        or not 0 <= index < len(cards)
+        or split_entry_hash(attempt, index) != source.entry_hash
+        or replace(
+            cards[index],
+            baseline_commit=state.planning_input.frozen_rules.baseline_commit,
+        )
+        != card
+        or card.task_hash != source.card_hash
+        or set(card.depends_on) != source.dependency_ids
+    ):
+        raise ValueError("the projected card differs from the selected split entry")
+    if source.dependencies:
+        _inspect_projected_prerequisites(
+            store, state, cards[index].baseline_commit, lease
+        )
+
+
+def _inspect_projected_prerequisites(
+    store: PlanningStore,
+    state: PlanningState,
+    stage_baseline: str,
+    lease: ExecutorLease | None,
+) -> None:
+    from .integration_cli import inspect_delegated_prerequisite_integration
+    from .project_stage import _contains
+    from .task_candidates import inspect_task_candidate
+    from .task_context import _store_database
+
+    source = state.projection
+    assert source is not None and state.card is not None
+    value = state.planning_input
+    common = Path(value.frozen_rules.repository)
+    baseline = state.card.baseline_commit
+    handoff = json.loads(value.requirements.partition("\n")[2])
+    mapping = handoff["upstream_integration"]
+    if not _contains(common, baseline, stage_baseline):
+        raise ValueError("delegated leaf baseline does not contain its stage baseline")
+    if mapping is None:
+        if not all(
+            _contains(common, baseline, item.candidate) for item in source.dependencies
+        ):
+            raise ValueError(
+                "delegated leaf baseline does not contain its prerequisites"
+            )
+    else:
+        if not _contains(common, baseline, mapping["candidate"]):
+            raise ValueError(
+                "delegated leaf baseline does not contain its frozen integration"
+            )
+        try:
+            inspect_delegated_prerequisite_integration(
+                _store_database(store).path,
+                common,
+                stage_baseline,
+                tuple(
+                    (item.task_run_id, item.implementation_attempt, item.candidate)
+                    for item in source.dependencies
+                ),
+                mapping["integration_id"],
+                mapping["candidate"],
+                lease=lease,
+            )
+        except (OSError, TypeError, ValueError) as error:
+            raise ValueError(
+                f"delegated prerequisite integration {mapping['integration_id']} "
+                f"has no current verified review for the frozen candidate: {error}"
+            ) from error
+    if lease is not None:
+        for item in source.dependencies:
+            inspect_task_candidate(
+                store, item.task_run_id, item.implementation_attempt, lease
+            )
+
+
+def inspect_bound_planning(
+    store: PlanningStore,
+    run_id: str,
+    state: PlanningState,
+    *,
+    lease: ExecutorLease | None = None,
+) -> None:
+    provenance = state.provenance()
+    if state.projection is not None:
+        inspect_projected_draft(store, run_id, state, lease=lease)
+    else:
+        draft = state.current("draft")
+        assert draft is not None
+        inspect_planning_execution(store, run_id, "draft", draft.number)
+    inspect_planning_execution(store, run_id, "review", provenance.review.number)
+
+
 def bind_planning_task(
-    store: PlanningStore, planning_run_id: str, task_run_id: str, created_at: str
+    store: PlanningStore,
+    planning_run_id: str,
+    task_run_id: str,
+    created_at: str,
+    *,
+    lease: ExecutorLease | None = None,
 ) -> None:
     """Bind only the selected pair that was just verified, using a store CAS."""
     state = store.load_planning(planning_run_id)
     if not state.can_bind:
         raise ValueError("planning evidence does not permit a task binding")
     provenance = state.provenance()
-    inspect_planning_execution(store, planning_run_id, "draft", provenance.draft.number)
-    inspect_planning_execution(
-        store, planning_run_id, "review", provenance.review.number
-    )
+    inspect_bound_planning(store, planning_run_id, state, lease=lease)
     store.create_planned_task(
         task_run_id,
         planning_run_id,

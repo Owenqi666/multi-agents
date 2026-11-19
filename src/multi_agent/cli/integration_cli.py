@@ -4,6 +4,7 @@ import argparse
 import json
 import sqlite3
 import sys
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -24,10 +25,14 @@ from multi_agent.core.path_patterns import path_matches
 from multi_agent.core.task_execution import task_execution_value
 from multi_agent.core.transitions import apply_integration
 from multi_agent.store.integration_store import IntegrationStore
+from multi_agent.store.project_integration import (
+    IntegrationMemberVersion,
+    ProjectIntegrationStore,
+)
 
 from .integration_git import IntegrationGit, read_ref, read_tree
 from .task_candidates import inspect_task_candidate
-from .task_context import _database
+from .task_context import _database, _store_database
 from .task_inputs import freeze_project_rules, validate_task_graph
 from .workspaces import ExecutorLease, _check_lease, executor_lock
 
@@ -74,6 +79,46 @@ def inspect_integration_candidate(record: IntegrationRecord) -> IntegrationCandi
             f"integration {record.integration_id} candidate binding changed"
         )
     return candidate
+
+
+def inspect_delegated_prerequisite_integration(
+    database: Path,
+    repository: Path,
+    stage_baseline: str,
+    members: tuple[IntegrationMemberVersion, ...],
+    integration_id: str,
+    candidate: str,
+    *,
+    lease: ExecutorLease | None,
+) -> None:
+    """Require live test and review evidence for an exact upstream integration."""
+    from .integration_review import inspect_integration_review
+    from .integration_verification import _current_test, _review_input
+    from .task_test_cli import _existing_lease
+
+    with ProjectIntegrationStore.open_readonly(database) as store:
+        record = store.newest_matching_integration(
+            str(repository), stage_baseline, members, integration_id=integration_id
+        )
+        if record is None or inspect_integration_candidate(record).commit != candidate:
+            raise ValueError("delegated prerequisite integration binding changed")
+        member = record.members[0]
+        held = (
+            nullcontext(lease)
+            if lease is not None
+            else _existing_lease(store, member.task_run_id, member.attempt)
+        )
+        with held as active:
+            store.require_current_integration_revision(integration_id)
+            reviews = store.integration_reviews(integration_id)
+            if not reviews:
+                raise ValueError(
+                    "delegated prerequisite integration requires a current review"
+                )
+            latest = reviews[-1]
+            attempt = _current_test(store, record, latest.test_attempt)
+            source = _review_input(record, attempt, active, _store_database(store))
+            inspect_integration_review(store, latest.round_id, source)
 
 
 def _ordered_members(

@@ -729,6 +729,8 @@ NEW_TABLES = {
     "project_goals",
     "project_plans",
     "project_stage_runs",
+    "project_stage_leaves",
+    "project_planning_sources",
 }
 
 
@@ -848,7 +850,7 @@ def test_task_test_v4_to_v5_preserves_all_original_schema_and_values(tmp_path):
     assert {"text", "blob"} <= observed_types
     for _ in range(2):
         with TaskTestStore(path) as store:
-            assert store._connection.execute("PRAGMA user_version").fetchone()[0] == 10
+            assert store._connection.execute("PRAGMA user_version").fetchone()[0] == 11
             assert (
                 store._connection.execute("PRAGMA foreign_key_check").fetchall() == []
             )
@@ -898,7 +900,7 @@ def test_task_test_failed_v5_migration_rolls_back_schema_version_and_rows(
         } == set(OLD_TABLES)
         assert connection.execute("PRAGMA foreign_key_check").fetchall() == []
     with TaskTestStore(path) as recovered:
-        assert recovered._connection.execute("PRAGMA user_version").fetchone()[0] == 10
+        assert recovered._connection.execute("PRAGMA user_version").fetchone()[0] == 11
     assert raw_legacy(path) == before
 
 

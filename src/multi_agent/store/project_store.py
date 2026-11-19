@@ -4,13 +4,20 @@ import json
 from dataclasses import asdict
 from typing import Any
 
-from multi_agent.core.planning import PlanningInput, PlanningRequest, planning_json
+from multi_agent.core.planning import (
+    PlanningInput,
+    PlanningPhase,
+    PlanningRequest,
+    ProjectedDraft,
+    planning_json,
+)
 from multi_agent.core.project_plan import (
     ConfirmedGoal,
     ProjectPlan,
     StageRun,
     render_markdown,
 )
+from multi_agent.core.tasks import TaskCard
 from multi_agent.core.transitions import project_plan_status
 
 from .task_review_store import TaskReviewStore
@@ -188,6 +195,11 @@ class ProjectStore(TaskReviewStore):
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             self._insert_planning(stage.planning_run_id, planning, stage.created_at)
+            if stage.mode == "delegate":
+                self._connection.execute(
+                    "INSERT INTO project_planning_sources VALUES (?, 'split', NULL)",
+                    (stage.planning_run_id,),
+                )
             self._connection.execute(
                 """INSERT INTO project_stage_runs (
                        stage_run_id, plan_id, stage_id, planning_run_id, mode,
@@ -243,4 +255,81 @@ class ProjectStore(TaskReviewStore):
         self._connection.execute(
             "UPDATE project_stage_runs SET dispatch_error = ? WHERE stage_run_id = ? AND dispatch_error IS NULL",
             (reason, stage_run_id),
+        )
+
+    def reserve_leaf(
+        self,
+        planning_run_id: str,
+        position: ProjectedDraft,
+        card: TaskCard,
+        value: PlanningInput,
+        created_at: str,
+        *,
+        replaces_run_id: str | None = None,
+    ) -> None:
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            head = self._connection.execute(
+                """SELECT revision, planning_run_id FROM project_stage_leaves
+                   WHERE stage_run_id = ? AND card_id = ? ORDER BY revision DESC LIMIT 1""",
+                (position.stage_run_id, card.id),
+            ).fetchone()
+            if (
+                head["planning_run_id"] if head is not None else None
+            ) != replaces_run_id:
+                raise ValueError("the current delegated leaf changed")
+            if replaces_run_id is not None:
+                old = self._read_planning(replaces_run_id)
+                if old.bound_task_run_id is not None or any(
+                    not item.stopped for item in old.review_attempts
+                ):
+                    raise ValueError("only a stopped, unbound leaf can be frozen again")
+            split = self._read_planning(position.split_run_id)
+            attempt = split.current("draft")
+            if (
+                not split.split
+                or split.phase != PlanningPhase.READY
+                or attempt is None
+                or attempt.number != position.split_attempt
+                or not attempt.usable
+                or card.task_hash != position.card_hash
+            ):
+                raise ValueError("the delegated split or projected card changed")
+            self.require_current_projection_dependencies(position)
+            self._insert_planning(planning_run_id, value, created_at)
+            self._connection.execute(
+                "INSERT INTO project_planning_sources VALUES (?, 'projected', ?)",
+                (planning_run_id, planning_json(position)),
+            )
+            self._connection.execute(
+                "UPDATE planning_runs SET card_payload = ?, phase = ? WHERE run_id = ?",
+                (planning_json(card), PlanningPhase.AWAITING_REVIEW, planning_run_id),
+            )
+            self._connection.execute(
+                "INSERT INTO project_stage_leaves VALUES (?, ?, ?, ?)",
+                (
+                    position.stage_run_id,
+                    card.id,
+                    head["revision"] + 1 if head else 1,
+                    planning_run_id,
+                ),
+            )
+
+    def leaf_runs(self, stage_run_id: str) -> dict[str, str]:
+        return {
+            row["card_id"]: row["planning_run_id"]
+            for row in self._connection.execute(
+                "SELECT card_id, planning_run_id FROM project_stage_leaves WHERE stage_run_id = ? ORDER BY revision",
+                (stage_run_id,),
+            )
+        }
+
+    def leaf_history(self, stage_run_id: str, card_id: str) -> tuple[str, ...]:
+        return tuple(
+            row["planning_run_id"]
+            for row in self._connection.execute(
+                """SELECT planning_run_id FROM project_stage_leaves
+               WHERE stage_run_id = ? AND card_id = ? ORDER BY revision""",
+                (stage_run_id, card_id),
+            )
         )

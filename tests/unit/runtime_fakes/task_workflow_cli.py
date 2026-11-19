@@ -66,7 +66,7 @@ if role == "stage-direct":
         role = "planning"
     elif provider == "codex" and Path("frontend/status.js").is_file():
         role = "implementation"
-if role == "planning" and source.is_file():
+if role in ("planning", "stage-delegate") and source.is_file():
     frozen = json.loads(source.read_text())
     is_draft = not Path("task-card.json").is_file()
     if settings["role"] == "stage-direct" and arguments[:1] in (["-p"], ["app-server"]):
@@ -90,6 +90,8 @@ if role == "planning" and source.is_file():
             report["open_questions"] = [
                 {"question": "Which status?", "blocks_dispatch": True}
             ]
+        if "split_cards" in settings:
+            report = {"cards": [{**report, **card} for card in settings["split_cards"]]}
     else:
         card = json.loads(Path("task-card.json").read_text())
         report = {
@@ -105,6 +107,11 @@ if role == "planning" and source.is_file():
             else [],
         }
     os.environ["FAKE_RUNTIME_REPORT"] = json.dumps(report)
+    if settings["role"] == "stage-delegate" and arguments[:1] in (
+        ["-p"],
+        ["app-server"],
+    ):
+        capture("split" if is_draft else "leaf-review", input=frozen, report=report)
     if settings["role"] == "stage-direct" and not is_draft:
         Path(settings["capture"]).with_suffix(".task-hash").write_text(
             report["task_hash"]

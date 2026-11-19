@@ -59,6 +59,12 @@ class PlanningDraftValidated:
 
 
 @dataclass(frozen=True, slots=True)
+class PlanningSplitValidated:
+    kind: ClassVar[str] = "planning_split_validated"
+    cards: tuple[TaskCard, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class PlanningReviewValidated:
     kind: ClassVar[str] = "planning_review_validated"
     review: PlanningReview
@@ -97,6 +103,7 @@ type PlanningEvent = (
     | PlanningEnvironmentObserved
     | PlanningEvidenceRejected
     | PlanningDraftValidated
+    | PlanningSplitValidated
     | PlanningReviewValidated
     | PlanningValidationRejected
     | PlanningReconciled

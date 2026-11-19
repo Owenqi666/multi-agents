@@ -55,6 +55,7 @@ from multi_agent.core.planning_events import (
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
+    PlanningSplitValidated,
     PlanningValidationRejected,
 )
 from multi_agent.core.planning_execution import PlanningExecutionPolicy, prepared_for
@@ -65,10 +66,15 @@ from .planning_evidence import (
     PlanningExecutionManifest,
     PlanningLogDirectory,
     inspect_planning_execution,
+    inspect_projected_draft,
     prepare_planning_logs,
     seal_planning_execution,
 )
-from .planning_inputs import parse_planning_draft, parse_planning_review
+from .planning_inputs import (
+    parse_planning_draft,
+    parse_planning_review,
+    parse_project_split,
+)
 
 _BOUNDARY_ERRORS = (
     OSError,
@@ -193,7 +199,11 @@ def _ensure_no_unknown(store: PlanningStore) -> None:
 def _review_prerequisite(store: PlanningStore, run_id: str, stage: str) -> None:
     if stage != "review":
         return
-    draft = store.load_planning(run_id).current("draft")
+    state = store.load_planning(run_id)
+    if state.projection is not None:
+        inspect_projected_draft(store, run_id, state)
+        return
+    draft = state.current("draft")
     if (
         draft is None
         or not inspect_planning_execution(
@@ -539,8 +549,12 @@ class _AttemptExecution:
             return
         try:
             text = planning_json(self.terminal.result)
-            if self.stage == "draft":
-                event: PlanningEvent = PlanningDraftValidated(
+            if state.split:
+                event: PlanningEvent = PlanningSplitValidated(
+                    parse_project_split(text, state.planning_input)
+                )
+            elif self.stage == "draft":
+                event = PlanningDraftValidated(
                     parse_planning_draft(
                         text, state.planning_input, configured_roles=True
                     )
@@ -637,7 +651,14 @@ class _AttemptExecution:
             self.inspect()
             request = self.attempt.request.request
             if self.stage == "draft" and request.provider == "codex":
-                schema = codex_task_card_schema(schema)
+                if self.attempt.request.prompt_template_version in (
+                    "planning-draft-v4",
+                    "planning-draft-v5",
+                ):
+                    cards = schema["properties"]["cards"]
+                    cards["items"] = codex_task_card_schema(cards["items"])
+                else:
+                    schema = codex_task_card_schema(schema)
             policy = self.prepared.policy
             self.adapter = RuntimeAdapter(
                 request.provider,

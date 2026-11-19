@@ -9,6 +9,7 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
+from .dispatch import ImplementationChoice
 from .state import AttemptState, AttemptStatus
 from .tasks import FrozenProjectRules, TaskCard
 
@@ -162,6 +163,48 @@ class PlanningProvenance:
 
 
 @dataclass(frozen=True, slots=True)
+class ProjectedDependency:
+    card_id: str
+    planning_run_id: str
+    task_run_id: str
+    implementation_attempt: int
+    candidate: str
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectedDraft:
+    stage_run_id: str
+    split_run_id: str
+    split_attempt: int
+    split_manifest_sha256: str
+    entry_index: int
+    entry_hash: str
+    card_hash: str
+    executor: ImplementationChoice
+    dependencies: tuple[ProjectedDependency, ...]
+
+    @property
+    def dependency_ids(self) -> frozenset[str]:
+        return frozenset(item.card_id for item in self.dependencies)
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectedPlanningProvenance:
+    planning_input: PlanningInput
+    card: TaskCard
+    projection: ProjectedDraft
+    review: PlanningAttempt
+    review_artifact: PlanningReview
+
+    @property
+    def plan_hash(self) -> str:
+        return planning_hash(self)
+
+
+type VerifiedPlanningProvenance = PlanningProvenance | ProjectedPlanningProvenance
+
+
+@dataclass(frozen=True, slots=True)
 class PlanningState:
     planning_input: PlanningInput
     phase: PlanningPhase = PlanningPhase.PENDING
@@ -172,6 +215,8 @@ class PlanningState:
     review_artifact: PlanningReview | None = None
     validation_error: str | None = None
     bound_task_run_id: str | None = None
+    split: bool = False
+    projection: ProjectedDraft | None = None
 
     def attempts(self, stage: str) -> tuple[PlanningAttempt, ...]:
         return {"draft": self.draft_attempts, "review": self.review_attempts}[stage]
@@ -195,17 +240,25 @@ class PlanningState:
             for item in self.card.open_questions
         )
 
+    def matches_draft(self, draft_attempt: int | None) -> bool:
+        draft = self.current("draft")
+        if self.projection is not None:
+            return (
+                draft is None
+                and draft_attempt is None
+                and self.card is not None
+                and self.card.task_hash == self.projection.card_hash
+            )
+        return draft is not None and draft.usable and draft_attempt == draft.number
+
     @property
     def evidence_ready(self) -> bool:
-        draft = self.current("draft")
         review = self.current("review")
         return (
             self.card is not None
-            and draft is not None
-            and draft.usable
             and review is not None
             and review.usable
-            and review.request.draft_attempt == draft.number
+            and self.matches_draft(review.request.draft_attempt)
             and review.request.task_hash == self.card.task_hash
             and self.review_artifact is not None
             and self.review_artifact.task_hash == self.card.task_hash
@@ -218,13 +271,22 @@ class PlanningState:
     def can_bind(self) -> bool:
         return self.phase == PlanningPhase.READY and self.evidence_ready
 
-    def provenance(self) -> PlanningProvenance:
+    def provenance(self) -> VerifiedPlanningProvenance:
         if not self.can_bind and self.phase != PlanningPhase.BOUND:
             raise ValueError("planning evidence does not permit a task binding")
         draft = self.current("draft")
         review = self.current("review")
         assert self.card is not None and self.review_artifact is not None
-        assert draft is not None and review is not None
+        assert review is not None
+        if self.projection is not None:
+            return ProjectedPlanningProvenance(
+                self.planning_input,
+                self.card,
+                self.projection,
+                review,
+                self.review_artifact,
+            )
+        assert draft is not None
         return PlanningProvenance(
             self.planning_input, self.card, draft, review, self.review_artifact
         )

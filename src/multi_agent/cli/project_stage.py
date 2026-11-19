@@ -48,10 +48,11 @@ def add_stage_parser(
     )
     operations = stage.add_subparsers(dest="stage_action", required=True)
     start = operations.add_parser(
-        "start", help="have Sol plan and implement one whole stage"
+        "start", help="have Sol plan a direct or delegated stage"
     )
     start.add_argument("plan_id")
     start.add_argument("stage_id")
+    start.add_argument("--mode", choices=("direct", "delegate"), default="direct")
     start.add_argument(
         "--baseline", help="choose a commit containing all verified prerequisites"
     )
@@ -68,7 +69,7 @@ def add_stage_parser(
     start.add_argument("--claude-bin")
     start.add_argument("--timeout", type=float, default=300)
     start.add_argument("--grace", type=float, default=2)
-    resume = operations.add_parser("resume", help="explicitly continue a direct stage")
+    resume = operations.add_parser("resume", help="explicitly continue a claimed stage")
     resume.add_argument("stage_run_id")
     resume.add_argument(
         "--prepare",
@@ -79,6 +80,19 @@ def add_stage_parser(
     resume.add_argument("--claude-bin")
     resume.add_argument("--timeout", type=float)
     resume.add_argument("--grace", type=float)
+    leaf = operations.add_parser("leaf", help="review or implement one delegated card")
+    leaf.add_argument("stage_run_id")
+    leaf.add_argument("card_id")
+    leaf.add_argument(
+        "--implementation", nargs=3, metavar=("PROVIDER", "MODEL", "EFFORT")
+    )
+    leaf.add_argument("--baseline")
+    leaf.add_argument("--review-only", action="store_true")
+    leaf.add_argument(
+        "--refreeze",
+        action="store_true",
+        help="review a previously unbound leaf against changed upstream candidates",
+    )
     operations.add_parser("show").add_argument("stage_run_id")
     operations.add_parser("list").add_argument("plan_id")
 
@@ -136,6 +150,10 @@ def _matching_implementation(task: dict[str, Any], sol: PlanningRequest) -> bool
 
 
 def stage_view(store: ProjectStore, database: Path, stage: StageRun) -> dict[str, Any]:
+    if stage.mode == "delegate":
+        from .project_delegation import delegated_view
+
+        return delegated_view(store, database, stage)
     goal_id = store.show_plan(stage.plan_id)["goal"]["goal_id"]
     planning = view_task(database, planning_run_id=stage.planning_run_id)
     task_run_id = planning["task_run_id"]
@@ -182,19 +200,29 @@ def _prerequisites(
             raise ValueError(
                 f"stage {identifier} requires an exact candidate with verified tests and review"
             )
-        dependencies.append(
-            StageDependency(
-                stage_id=identifier,
-                stage_run_id=run.stage_run_id,
-                task_run_id=result["task_run_id"],
-                implementation_attempt=result["implementation"][
-                    "implementation_attempt"
-                ],
-                candidate=result["candidate"],
-                test_attempt=result["test_attempt"],
-                review_round_id=result["review_round_id"],
-            )
+        dependency = StageDependency(
+            stage_id=identifier,
+            stage_run_id=run.stage_run_id,
+            candidate=result["candidate"],
+            test_attempt=result["test_attempt"],
+            review_round_id=result["review_round_id"],
         )
+        if run.mode == "delegate":
+            integration = result["integration"]
+            dependency["integration"] = StageIntegrationProof(
+                integration_id=integration["integration_id"],
+                candidate=integration["candidate"],
+                test_attempt=integration["test_attempt"],
+                test_evidence_hash=integration["test_evidence_hash"],
+                review_round_id=integration["review_round_id"],
+                review_snapshot_id=integration["review_snapshot_id"],
+            )
+        else:
+            dependency["task_run_id"] = result["task_run_id"]
+            dependency["implementation_attempt"] = result["implementation"][
+                "implementation_attempt"
+            ]
+        dependencies.append(dependency)
     return tuple(dependencies)
 
 
@@ -222,6 +250,7 @@ def _integrated_prerequisites(
             "stage_id"
         ]
         for item in missing
+        if "task_run_id" in item and "implementation_attempt" in item
     }
     covered: dict[str, StageIntegrationProof] = {}
     with IntegrationStore.open_readonly(database) as store:
@@ -323,6 +352,8 @@ def _handoff(
     stage: StagePlan,
     baseline: str,
     dependencies: tuple[StageDependency, ...],
+    *,
+    delegate: bool = False,
 ) -> str:
     context = {
         "plan_id": plan_id,
@@ -341,11 +372,22 @@ def _handoff(
             if item["stage_id"] != stage["stage_id"]
         ],
     }
+    instruction = (
+        "Split only selected_stage into executable task cards from the confirmed project plan below. "
+        if delegate
+        else "Implement only selected_stage from the confirmed project plan below. "
+    )
     return (
-        "Implement only selected_stage from the confirmed project plan below. "
-        "Other stages and the original user wording provide context. "
-        "The workbench has checked the project-level prerequisites. "
-        "Use the selected stage's scope, acceptance and named tests for this one formal card.\n"
+        instruction
+        + (
+            "Other stages and the original user wording provide context. "
+            "The workbench has checked the project-level prerequisites. "
+        )
+        + (
+            "Use the selected stage's scope, acceptance and named tests across the split.\n"
+            if delegate
+            else "Use the selected stage's scope, acceptance and named tests for this one formal card.\n"
+        )
         + json.dumps(context, ensure_ascii=False, sort_keys=True)
     )
 
@@ -366,6 +408,8 @@ def _start(
         raise ValueError(f"unknown stage {args.stage_id} in plan {args.plan_id}")
     existing = store.find_stage(args.plan_id, args.stage_id)
     if existing is not None:
+        if existing.mode != args.mode:
+            raise ValueError(f"stage has already been claimed in {existing.mode} mode")
         return stage_view(store, database, existing)
     goal = plan["goal"]
     repo, common = _repository(Path(goal["repository"]), database.parent)
@@ -377,13 +421,21 @@ def _start(
     )
     sol = PlanningRequest("codex", *args.sol)
     if re.fullmatch(r"gpt-\d+(?:\.\d+)*-sol", sol.model) is None:
-        raise ValueError("the direct stage owner must be an explicit GPT Sol model")
+        raise ValueError("the stage planner must be an explicit GPT Sol model")
     reviewer = PlanningRequest(*args.card_review)
     if (sol.provider, sol.model) == (reviewer.provider, reviewer.model):
         raise ValueError("the independent card reviewer must use a distinct model")
     frozen = freeze_project_rules(repo, baseline)
     value = PlanningInput(
-        _handoff(args.plan_id, goal, document, selected, baseline, dependencies),
+        _handoff(
+            args.plan_id,
+            goal,
+            document,
+            selected,
+            baseline,
+            dependencies,
+            delegate=args.mode == "delegate",
+        ),
         frozen,
         sol,
         reviewer,
@@ -395,14 +447,14 @@ def _start(
         args.plan_id,
         args.stage_id,
         uuid4().hex,
-        "direct",
+        args.mode,
         baseline,
         dependencies,
         datetime.now(UTC).isoformat(),
     )
     store.reserve_stage(record, value)
 
-    return _prepare_direct(store, database, record, repo, policy)
+    return _prepare_stage(store, database, record, repo, policy)
 
 
 def _capture_policy(args: argparse.Namespace) -> PlanningExecutionPolicy:
@@ -414,7 +466,7 @@ def _capture_policy(args: argparse.Namespace) -> PlanningExecutionPolicy:
     )
 
 
-def _prepare_direct(
+def _prepare_stage(
     store: ProjectStore,
     database: Path,
     record: StageRun,
@@ -517,7 +569,7 @@ def _resume(
             raise ValueError(
                 "the first attempt was never prepared; resume using --prepare"
             )
-        return _prepare_direct(store, database, record, repo, _capture_policy(args))
+        return _prepare_stage(store, database, record, repo, _capture_policy(args))
     if state.phase != PlanningPhase.READY:
         _, status = _plan(
             argparse.Namespace(
@@ -538,6 +590,10 @@ def dispatch_stage(
 ) -> dict[str, Any]:
     if args.stage_action == "start":
         return _start(args, store, database)
+    if args.stage_action == "leaf":
+        from .project_delegation import launch_leaf
+
+        return launch_leaf(args, store, database)
     if args.stage_action == "resume":
         return _resume(args, store, database, store.load_stage(args.stage_run_id))
     if args.stage_action == "show":

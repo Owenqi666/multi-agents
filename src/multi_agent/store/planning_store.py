@@ -8,8 +8,9 @@ from multi_agent.core import Disposition, transitions
 from multi_agent.core.planning import (
     PlanningInput,
     PlanningPhase,
-    PlanningProvenance,
     PlanningState,
+    ProjectedDraft,
+    VerifiedPlanningProvenance,
     planning_hash,
     planning_json,
 )
@@ -29,6 +30,7 @@ from .planning_codec import (
     decode_planning_input,
     decode_planning_provenance,
     decode_planning_review,
+    decode_projected_draft,
     encode_planning_attempt,
     encode_planning_envelope,
     encode_planning_input,
@@ -108,6 +110,9 @@ class PlanningStore(TaskStore):
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             state = self._read_planning(run_id)
+            if state.projection is not None:
+                assert state.card is not None
+                self.require_latest_projection(run_id, state.card.id, state.projection)
             if expected_history_length is not None:
                 history = self._read_planning_history(run_id)
                 if (
@@ -207,6 +212,11 @@ class PlanningStore(TaskStore):
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
             state = self._read_planning(planning_run_id)
+            if state.projection is not None:
+                assert state.card is not None
+                self.require_latest_projection(
+                    planning_run_id, state.card.id, state.projection
+                )
             provenance = state.provenance()
             if (
                 expected_plan_hash is not None
@@ -250,7 +260,7 @@ class PlanningStore(TaskStore):
             self._write_planning(planning_run_id, updated)
             self._append_planning_history(planning_run_id, envelope, disposition)
 
-    def load_task_provenance(self, task_run_id: str) -> PlanningProvenance:
+    def load_task_provenance(self, task_run_id: str) -> VerifiedPlanningProvenance:
         with self._connection:
             self._connection.execute("BEGIN")
             row = self._connection.execute(
@@ -260,6 +270,65 @@ class PlanningStore(TaskStore):
             if row is None:
                 raise KeyError(task_run_id)
             return decode_planning_provenance(row["payload"])
+
+    def projection_matches_stage(
+        self, planning_run_id: str, card_id: str, projection: ProjectedDraft
+    ) -> bool:
+        row = self._connection.execute(
+            """SELECT s.planning_run_id FROM project_stage_leaves AS l
+               JOIN project_stage_runs AS s USING (stage_run_id)
+               WHERE l.planning_run_id = ? AND l.stage_run_id = ? AND l.card_id = ?
+                 AND s.mode = 'delegate'
+                 AND l.revision = (
+                     SELECT MAX(prior.revision) FROM project_stage_leaves AS prior
+                     WHERE prior.stage_run_id = l.stage_run_id AND prior.card_id = l.card_id
+                 )""",
+            (planning_run_id, projection.stage_run_id, card_id),
+        ).fetchone()
+        return row is not None and row["planning_run_id"] == projection.split_run_id
+
+    def require_latest_projection(
+        self, planning_run_id: str, card_id: str, projection: ProjectedDraft
+    ) -> None:
+        if not self.projection_matches_stage(planning_run_id, card_id, projection):
+            raise ValueError(
+                "the projected card is not the current leaf of its parent stage"
+            )
+        self.require_current_projection_dependencies(projection)
+
+    def require_current_projection_dependencies(
+        self, projection: ProjectedDraft
+    ) -> None:
+        checked: set[str] = set()
+
+        def check(source: ProjectedDraft) -> None:
+            for expected in source.dependencies:
+                upstream = self._read_planning(expected.planning_run_id)
+                task = self._read_task(expected.task_run_id)
+                candidate = task.current_candidate
+                if (
+                    upstream.projection is None
+                    or upstream.projection.stage_run_id != source.stage_run_id
+                    or not self.projection_matches_stage(
+                        expected.planning_run_id, expected.card_id, upstream.projection
+                    )
+                    or upstream.bound_task_run_id != expected.task_run_id
+                    or upstream.card is None
+                    or upstream.card.id != expected.card_id
+                    or not task.candidate_ready
+                    or candidate is None
+                    or task.current_attempt is None
+                    or task.current_attempt.number != expected.implementation_attempt
+                    or candidate.delivery.candidate != expected.candidate
+                ):
+                    raise ValueError(
+                        f"delegated prerequisite {expected.card_id} changed after review"
+                    )
+                if expected.planning_run_id not in checked:
+                    checked.add(expected.planning_run_id)
+                    check(upstream.projection)
+
+        check(projection)
 
     def _planning_row(self, run_id: str) -> sqlite3.Row:
         row = self._connection.execute(
@@ -275,6 +344,13 @@ class PlanningStore(TaskStore):
             "SELECT stage, payload FROM planning_attempts WHERE run_id = ? ORDER BY number",
             (run_id,),
         ).fetchall()
+        source = None
+        if self._connection.execute("PRAGMA user_version").fetchone()[0] >= 11:
+            source = self._connection.execute(
+                "SELECT kind, projection FROM project_planning_sources WHERE planning_run_id = ?",
+                (run_id,),
+            ).fetchone()
+        projected = source["projection"] if source is not None else None
         return PlanningState(
             planning_input=decode_planning_input(row["input_payload"]),
             phase=PlanningPhase(row["phase"]),
@@ -297,6 +373,10 @@ class PlanningStore(TaskStore):
             else None,
             validation_error=row["validation_error"],
             bound_task_run_id=row["bound_task_run_id"],
+            split=source is not None and source["kind"] == "split",
+            projection=decode_projected_draft(projected)
+            if projected is not None
+            else None,
         )
 
     def _write_planning(self, run_id: str, state: PlanningState) -> None:

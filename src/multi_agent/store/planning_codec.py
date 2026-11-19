@@ -3,6 +3,7 @@
 import json
 from typing import Any, cast
 
+from multi_agent.core.dispatch import ImplementationChoice
 from multi_agent.core.planning import (
     DependencyReceipt,
     PlanningAttempt,
@@ -10,7 +11,11 @@ from multi_agent.core.planning import (
     PlanningProvenance,
     PlanningRequest,
     PlanningReview,
+    ProjectedDependency,
+    ProjectedDraft,
+    ProjectedPlanningProvenance,
     UserDecision,
+    VerifiedPlanningProvenance,
     planning_json,
 )
 from multi_agent.core.planning_events import (
@@ -24,6 +29,7 @@ from multi_agent.core.planning_events import (
     PlanningExecutionPrepared,
     PlanningReconciled,
     PlanningReviewValidated,
+    PlanningSplitValidated,
     PlanningTaskBound,
     PlanningValidationRejected,
 )
@@ -134,6 +140,10 @@ def _planning_event(value: dict[str, Any]) -> PlanningEvent:
         return PlanningEvidenceRejected(value["detail"])
     if kind == PlanningDraftValidated.kind:
         return PlanningDraftValidated(TaskCard.from_dict(value["card"]))
+    if kind == PlanningSplitValidated.kind:
+        return PlanningSplitValidated(
+            tuple(TaskCard.from_dict(card) for card in value["cards"])
+        )
     if kind == PlanningReviewValidated.kind:
         return PlanningReviewValidated(_review(value["review"]))
     if kind == PlanningValidationRejected.kind:
@@ -206,16 +216,36 @@ def decode_planning_envelope(encoded: str) -> PlanningEnvelope:
     )
 
 
-def encode_planning_provenance(value: PlanningProvenance) -> str:
+def encode_planning_provenance(value: VerifiedPlanningProvenance) -> str:
     return planning_json(value)
 
 
-def decode_planning_provenance(encoded: str) -> PlanningProvenance:
+def _projected(value: dict[str, Any]) -> ProjectedDraft:
+    return ProjectedDraft(
+        **{
+            **value,
+            "executor": ImplementationChoice(**value["executor"]),
+            "dependencies": tuple(
+                ProjectedDependency(**item) for item in value["dependencies"]
+            ),
+        }
+    )
+
+
+def decode_projected_draft(encoded: str) -> ProjectedDraft:
+    return _projected(json.loads(encoded))
+
+
+def decode_planning_provenance(encoded: str) -> VerifiedPlanningProvenance:
     value = json.loads(encoded)
+    planning_input = _input(value["planning_input"])
+    card = TaskCard.from_dict(value["card"])
+    review = _attempt(value["review"])
+    artifact = _review(value["review_artifact"])
+    if "projection" in value:
+        return ProjectedPlanningProvenance(
+            planning_input, card, _projected(value["projection"]), review, artifact
+        )
     return PlanningProvenance(
-        _input(value["planning_input"]),
-        TaskCard.from_dict(value["card"]),
-        _attempt(value["draft"]),
-        _attempt(value["review"]),
-        _review(value["review_artifact"]),
+        planning_input, card, _attempt(value["draft"]), review, artifact
     )

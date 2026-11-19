@@ -2,12 +2,21 @@
 
 import json
 from contextlib import nullcontext
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from multi_agent.core.events import Completed, ProcessExited
 from multi_agent.core.planning import PlanningRequest
+from multi_agent.core.planning_events import (
+    PlanningAttemptStarted,
+    PlanningEnvelope,
+    PlanningReconciled,
+    PlanningSplitValidated,
+)
 from multi_agent.core.project_plan import ConfirmedGoal
+from multi_agent.core.state import Disposition
 from multi_agent.store.project_store import ProjectStore
 
 
@@ -82,7 +91,7 @@ def test_project_stage_reservation_replay(tmp_path):
 
     from multi_agent.core.planning import PlanningInput
     from multi_agent.core.project_plan import StageRun
-    from multi_agent.core.tasks import FrozenProjectRules, ProjectRules
+    from multi_agent.core.tasks import FrozenProjectRules, ProjectRules, TaskCard
 
     fixture = Path(__file__).parent / "scenarios" / "project" / "direct_stage.json"
     scenario = json.loads(fixture.read_bytes())
@@ -119,7 +128,7 @@ def test_project_stage_reservation_replay(tmp_path):
                 "plan-one",
                 event["stage_id"],
                 event["planning_run_id"],
-                "direct",
+                event.get("mode", "direct"),
                 baseline,
                 (),
                 str(position),
@@ -134,6 +143,26 @@ def test_project_stage_reservation_replay(tmp_path):
             if not event["accepted"]:
                 with pytest.raises(KeyError):
                     store.load_planning(stage.planning_run_id)
+        delegated = store.load_stage("stage-split")
+        assert delegated.mode == "delegate"
+        split_run = delegated.planning_run_id
+        cards = tuple(TaskCard.from_dict(item) for item in scenario["split_cards"])
+        for event in (
+            PlanningAttemptStarted(draft, "Split the selected phase", "offline", "03"),
+            Completed(
+                raw_type="offline", result={"cards": [card.to_dict() for card in cards]}
+            ),
+            ProcessExited(exit_code=0),
+            PlanningReconciled(True, "Offline receipt", "/synthetic/draft", "b" * 64),
+        ):
+            store.apply_planning(split_run, PlanningEnvelope("draft", 1, event, "03"))
+        forged = PlanningSplitValidated(
+            (replace(cards[0], goal="Other work"), cards[1])
+        )
+        with pytest.raises(ValueError, match="differs from the current runtime result"):
+            store.apply_planning(split_run, PlanningEnvelope("draft", 1, forged, "04"))
+        exact = PlanningEnvelope("draft", 1, PlanningSplitValidated(cards), "05")
+        assert store.apply_planning(split_run, exact) == Disposition.APPLIED
     with ProjectStore(path) as store:
         history = store.list_stages("plan-one")
         assert [item.stage_run_id for item in history] == scenario["history"]
@@ -141,3 +170,6 @@ def test_project_stage_reservation_replay(tmp_path):
             store.load_planning(item.planning_run_id).planning_input == planning
             for item in history
         )
+        persisted = store.load_planning(split_run)
+        assert persisted.phase == "ready" and not persisted.can_bind and persisted.split
+        assert store.apply_planning(split_run, exact) == Disposition.HISTORY_ONLY
