@@ -11,8 +11,17 @@ from multi_agent.adapters.runtime_decode import strict_json_loads
 from multi_agent.store.project_store import ProjectStore
 
 from .actions import ActionConflict, UnknownAction, prepare_action
-from .jobs import ACTION, PROVIDERS, BusyEnvironment, BusyJob, EnvironmentJobs
-from .resources import read_artifact, read_diff, read_resource, read_snapshot_file
+from .jobs import ACTION, PROVIDERS, BusyCLI, BusyEnvironment, BusyJob, EnvironmentJobs
+from .resources import (
+    LOCKED_DIFF_KINDS,
+    LOCKED_RESOURCE_KINDS,
+    lock_busy_diff,
+    lock_busy_resource,
+    read_artifact,
+    read_diff,
+    read_resource,
+    read_snapshot_file,
+)
 from .static import FrontendResponse, read_frontend
 from .workspace import Workspace
 
@@ -215,10 +224,20 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                     raise ValueError("Expected a single kind filter.")
                 return server.jobs.runs(kinds[0] if kinds else None)
             case ["api", "resources", kind, identifier]:
-                return read_resource(server.workspace, kind, identifier, query)
+                with server.jobs.read_gate.read(
+                    guarded=kind in LOCKED_RESOURCE_KINDS
+                ) as allowed:
+                    if not allowed:
+                        return lock_busy_resource(kind, identifier, query)
+                    return read_resource(server.workspace, kind, identifier, query)
             case ["api", "diffs", kind, identifier]:
                 _no_query(query)
-                return read_diff(server.workspace, kind, identifier)
+                with server.jobs.read_gate.read(
+                    guarded=kind in LOCKED_DIFF_KINDS
+                ) as allowed:
+                    if not allowed:
+                        return lock_busy_diff(kind, identifier)
+                    return read_diff(server.workspace, kind, identifier)
             case ["api", "snapshots", identifier, "file"]:
                 return read_snapshot_file(
                     server.workspace, "snapshot", identifier, query
@@ -227,7 +246,9 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 artifact = server.jobs.read_artifact(identifier, query)
                 if artifact is not None:
                     return artifact
-                return read_artifact(server.workspace, identifier, query)
+                return read_artifact(
+                    server.workspace, identifier, query, gate=server.jobs.read_gate
+                )
         raise KeyError("resource")
 
     def _dispatch(
@@ -273,6 +294,13 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             body = _error(error.code, str(error))
         except BusyEnvironment as error:
             status, body = 409, _error("environment_busy", str(error))
+        except BusyCLI as error:
+            status, body = (
+                409,
+                _error(
+                    "busy", str(error), details={"active_job_id": error.active_job_id}
+                ),
+            )
         except (ActionConflict, BusyJob) as error:
             status, body = 409, _error("job_unavailable", str(error))
         except UnknownAction as error:
@@ -315,5 +343,10 @@ def _no_query(query: dict[str, list[str]]) -> None:
         raise ValueError("This endpoint does not accept query parameters.")
 
 
-def _error(code: str, message: str) -> dict[str, Any]:
-    return {"error": {"code": code, "message": message}}
+def _error(
+    code: str, message: str, *, details: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    body: dict[str, Any] = {"code": code, "message": message}
+    if details is not None:
+        body["details"] = details
+    return {"error": body}

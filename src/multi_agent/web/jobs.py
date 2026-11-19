@@ -24,6 +24,7 @@ from multi_agent.adapters.runtime import RuntimeAdapter
 from multi_agent.adapters.runtime_decode import RuntimeFailure, strict_json_loads
 from multi_agent.cli.runner import _environment_value
 
+from .gate import ReadGate
 from .resources import references
 from .workspace import private_directory
 
@@ -51,6 +52,12 @@ class BusyJob(ValueError):
 
 class BusyEnvironment(BusyJob):
     pass
+
+
+class BusyCLI(BusyJob):
+    def __init__(self, active_job_id: str) -> None:
+        super().__init__("A CLI job is already active.")
+        self.active_job_id = active_job_id
 
 
 def _private_file(path: str, flags: int) -> int:
@@ -166,6 +173,8 @@ class EnvironmentJobs:
         self.job_root = data_dir / "web-jobs"
         self.state_path = self.directory / "state.json"
         self.lock = Lock()
+        self._submission = Lock()
+        self.read_gate = ReadGate()
         self.closed = False
         self.active: set[str] = set()
         self.controllers: dict[str, subprocess.Popen[bytes]] = {}
@@ -259,16 +268,18 @@ class EnvironmentJobs:
     def close(self) -> None:
         with self.lock:
             self.closed = True
+            self.read_gate.stop_reads()
             for identifier, controller in self.controllers.items():
                 if (
                     self.jobs[identifier]["state"] == "running"
                     and controller.poll() is None
                 ):
                     self._signal_cancel(identifier, controller)
-        # If waiting is interrupted, retain ownership until a later drain
-        # or process exit. Only those workers may still commit results.
+        # Retain ownership until workers and admitted reads finish and any
+        # submission can clean up its private inputs, even if close is retried.
         self.pool.shutdown(wait=True)
-        with self.lock:
+        self.read_gate.wait_for_read()
+        with self._submission, self.lock:
             if self.active or self.controllers:
                 raise RuntimeError("job workers are still active")
             owner, self.owner = self.owner, None
@@ -350,22 +361,35 @@ class EnvironmentJobs:
         *,
         args: dict[str, Any] | None = None,
     ) -> dict[str, str]:
-        private_directory(self.job_root)
-        identifier = uuid4().hex
-        directory = self.job_root / identifier
-        directory.mkdir(mode=0o700)
-        try:
-            input_dir = directory / "input"
-            input_dir.mkdir(mode=0o700)
-            argv = prepare(input_dir)
+        with self._submission:
+            active = self.read_gate.active_job_id
+            if active is not None:
+                raise BusyCLI(active)
             with self.lock:
                 if self.closed:
                     raise BusyJob("The service is closing.")
-                self._accept(identifier, action, args)
-                self.pool.submit(self._run_cli, identifier, argv, directory)
-        except BaseException:
-            shutil.rmtree(directory)
-            raise
+            private_directory(self.job_root)
+            identifier = uuid4().hex
+            directory = self.job_root / identifier
+            directory.mkdir(mode=0o700)
+            try:
+                input_dir = directory / "input"
+                input_dir.mkdir(mode=0o700)
+                with self.read_gate.read(
+                    guarded=action == "project.stage.integrate"
+                ) as allowed:
+                    if not allowed:
+                        raise BusyJob("The service is closing.")
+                    argv = prepare(input_dir)
+                with self.lock:
+                    if self.closed:
+                        raise BusyJob("The service is closing.")
+                    self._accept(identifier, action, args)
+                    self.read_gate.begin_job(identifier)
+                    self.pool.submit(self._run_cli, identifier, argv, directory)
+            except BaseException:
+                shutil.rmtree(directory)
+                raise
         return {"job_id": identifier, "state": "queued"}
 
     def _signal_cancel(
@@ -405,6 +429,7 @@ class EnvironmentJobs:
         stderr_tail = None
         artifacts: list[dict[str, Any]] = []
         try:
+            self.read_gate.wait_for_read()
             with self.lock:
                 if self.closed:
                     self._interrupt(
@@ -456,6 +481,7 @@ class EnvironmentJobs:
                     self._finish_cli(
                         identifier, exit_code, result, error, artifacts, stderr_tail
                     )
+                self.read_gate.finish_job()
 
     def _finish_cli(
         self,

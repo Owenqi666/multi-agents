@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -30,6 +31,7 @@ from multi_agent.core.review_input import (
 from multi_agent.store.integration_store import IntegrationStore
 from multi_agent.store.project_store import ProjectStore
 
+from .gate import ReadGate
 from .workspace import Workspace
 
 _IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
@@ -48,6 +50,10 @@ _HISTORY = {"plan", "task", "task-review", "integration", "review"}
 _KINDS = _HISTORY | set(_PROJECT_SCHEMA) | {"task-test", "snapshot"}
 _ARTIFACT_PAGE = 65_536
 _ARTIFACT_LIMIT = 128 * 1024 * 1024
+LOCKED_RESOURCE_KINDS = frozenset(
+    {"task", "task-test", "task-review", "integration", "stage", "plan"}
+)
+LOCKED_DIFF_KINDS = frozenset({"task", "integration"})
 
 type _Query = dict[str, list[str]]
 
@@ -68,9 +74,13 @@ def _number(value: str, label: str, *, minimum: int = 1) -> int:
     return int(value)
 
 
-def _scope(workspace: Workspace, kind: str, identifier: str) -> tuple[Path, str]:
+def _validate_resource_identity(kind: str, identifier: str) -> None:
     if kind not in _KINDS or not _IDENTITY.fullmatch(identifier):
         raise ValueError("invalid resource kind or identifier")
+
+
+def _scope(workspace: Workspace, kind: str, identifier: str) -> tuple[Path, str]:
+    _validate_resource_identity(kind, identifier)
     database = workspace.data_dir / "reviews.sqlite3"
     if database.is_symlink():
         raise ValueError("workspace database must be a regular file")
@@ -147,16 +157,29 @@ def require_owned(workspace: Workspace, kind: str, identifier: str) -> None:
         _owned(store, common, kind, identifier)
 
 
-def _resource_data(
-    workspace: Workspace, kind: str, identifier: str, query: _Query
-) -> dict[str, Any]:
+def _resource_options(kind: str, query: _Query) -> dict[str, str]:
     allowed = {"history"} if kind in _HISTORY else set()
     if kind == "task-test":
         allowed = {"implementation_attempt", "test_attempt"}
     options = _query(query, allowed)
-    history = options.get("history")
-    if history is not None and history != "1":
+    if "history" in options and options["history"] != "1":
         raise ValueError("history must be 1")
+    return options
+
+
+def _test_attempts(options: dict[str, str]) -> tuple[int, int | None]:
+    implementation = _number(
+        options.get("implementation_attempt", ""), "implementation_attempt"
+    )
+    test = options.get("test_attempt")
+    return implementation, _number(test, "test_attempt") if test is not None else None
+
+
+def _resource_data(
+    workspace: Workspace, kind: str, identifier: str, query: _Query
+) -> dict[str, Any]:
+    options = _resource_options(kind, query)
+    history = "history" in options
     database, common = _scope(workspace, kind, identifier)
     with _ResourceStore.open_readonly(database) as store:
         _owned(store, common, kind, identifier)
@@ -169,33 +192,25 @@ def _resource_data(
                         store,
                         record,
                         target_current=result["target_is_current"],
-                        history=bool(history),
+                        history=history,
                     )
                 )
             return result
         if kind == "review":
-            return view_round(store, identifier, history=bool(history))
+            return view_round(store, identifier, history=history)
         if kind == "snapshot":
             value = _read_snapshot(store, identifier)
             return {"snapshot_id": value.snapshot_id, "input": value.to_dict()}
 
     if kind == "plan":
-        return view_task(database, planning_run_id=identifier, history=bool(history))
+        return view_task(database, planning_run_id=identifier, history=history)
     if kind == "task":
-        return view_task(database, task_run_id=identifier, history=bool(history))
+        return view_task(database, task_run_id=identifier, history=history)
     if kind == "task-review":
-        return view_task_review(database, identifier, history=bool(history))
+        return view_task_review(database, identifier, history=history)
     if kind == "task-test":
-        attempt = _number(
-            options.get("implementation_attempt", ""), "implementation_attempt"
-        )
-        test = options.get("test_attempt")
-        return view_task_test(
-            database,
-            identifier,
-            attempt,
-            test_attempt=_number(test, "test_attempt") if test is not None else None,
-        )
+        attempt, test = _test_attempts(options)
+        return view_task_test(database, identifier, attempt, test_attempt=test)
     with ProjectStore.open_readonly(database) as projects:
         match kind:
             case "project":
@@ -245,14 +260,27 @@ def read_snapshot_file(
     raise KeyError(path)
 
 
-def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any]:
-    result: dict[str, Any] = {
+def _empty_diff() -> dict[str, Any]:
+    return {
         "baseline": None,
         "candidate": None,
         "snapshot_id": None,
         "diff": None,
         "test_change_paths": [],
     }
+
+
+def lock_busy_diff(kind: str, identifier: str) -> dict[str, Any]:
+    _validate_resource_identity(kind, identifier)
+    return _empty_diff() | {
+        "unavailable_reason": "A CLI job is active.",
+        "unavailable_code": "lock_busy",
+        "lock_busy": True,
+    }
+
+
+def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any]:
+    result = _empty_diff()
     if kind == "snapshot":
         snapshot = _snapshot(workspace, identifier)
         source = review_source(snapshot)
@@ -265,7 +293,7 @@ def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any
             if isinstance(snapshot, IntegrationReviewInput)
             else [],
         }
-    if kind not in {"task", "integration"}:
+    if kind not in LOCKED_DIFF_KINDS:
         raise ValueError("diffs require a task, integration or snapshot")
     value = _resource_data(workspace, kind, identifier, {})
     candidate = value["candidate"]
@@ -519,6 +547,24 @@ def _artifact_id(
     return "art-" + base64.urlsafe_b64encode(locator.encode()).decode().rstrip("=")
 
 
+def _validate_resource_request(kind: str, identifier: str, query: _Query) -> None:
+    _validate_resource_identity(kind, identifier)
+    options = _resource_options(kind, query)
+    if kind == "task-test":
+        _test_attempts(options)
+
+
+def lock_busy_resource(kind: str, identifier: str, query: _Query) -> dict[str, Any]:
+    _validate_resource_request(kind, identifier, query)
+    return {
+        "kind": kind,
+        "id": identifier,
+        "data": None,
+        "artifacts": [],
+        "lock_busy": True,
+    }
+
+
 def read_resource(
     workspace: Workspace, kind: str, identifier: str, query: _Query
 ) -> dict[str, Any]:
@@ -550,7 +596,11 @@ def read_resource(
 
 
 def read_artifact(
-    workspace: Workspace, artifact_id: str, query: _Query
+    workspace: Workspace,
+    artifact_id: str,
+    query: _Query,
+    *,
+    gate: ReadGate | None = None,
 ) -> dict[str, Any]:
     options = _query(query, {"offset", "limit"})
     offset = _number(options.get("offset", "0"), "offset", minimum=0)
@@ -581,25 +631,43 @@ def read_artifact(
     except (ValueError, TypeError, UnicodeError, binascii.Error) as error:
         raise KeyError(artifact_id) from error
 
-    data = _resource_data(workspace, kind, identifier, selection)
-    artifact = _artifacts(workspace, kind, identifier, data).get(key)
-    if artifact is None or artifact.sha256 != digest:
-        raise KeyError(artifact_id)
-    source = artifact.source
-    part = (
-        _sealed_bytes(
-            workspace,
-            source,
-            artifact.sha256,
-            limit=_ARTIFACT_LIMIT,
-            size=artifact.byte_count,
-            identity=artifact.identity,
-            offset=offset,
-            length=limit,
-        )
-        if isinstance(source, Path)
-        else source[offset : offset + limit]
+    admission = (
+        gate.read(guarded=kind in LOCKED_RESOURCE_KINDS)
+        if gate is not None
+        else nullcontext(True)
     )
+    with admission as allowed:
+        if not allowed:
+            _validate_resource_request(kind, identifier, selection)
+            return {
+                "stream": None,
+                "text": None,
+                "offset": offset,
+                "next_offset": None,
+                "byte_count": None,
+                "sha256": None,
+                "truncated": None,
+                "lock_busy": True,
+            }
+        data = _resource_data(workspace, kind, identifier, selection)
+        artifact = _artifacts(workspace, kind, identifier, data).get(key)
+        if artifact is None or artifact.sha256 != digest:
+            raise KeyError(artifact_id)
+        source = artifact.source
+        part = (
+            _sealed_bytes(
+                workspace,
+                source,
+                artifact.sha256,
+                limit=_ARTIFACT_LIMIT,
+                size=artifact.byte_count,
+                identity=artifact.identity,
+                offset=offset,
+                length=limit,
+            )
+            if isinstance(source, Path)
+            else source[offset : offset + limit]
+        )
     next_offset = offset + len(part)
     return {
         "stream": artifact.stream,
