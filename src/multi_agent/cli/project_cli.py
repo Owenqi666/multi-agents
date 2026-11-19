@@ -13,12 +13,18 @@ from tempfile import TemporaryDirectory
 from typing import Any
 from uuid import uuid4
 
-from multi_agent.adapters.project_planner import PROMPT_VERSION, run_project_planner
+from multi_agent.adapters.project_planner import (
+    PROMPT_VERSION,
+    parse_project_plan,
+    run_project_planner,
+)
+from multi_agent.adapters.runtime_decode import strict_json_loads
 from multi_agent.core.planning import PlanningRequest
 from multi_agent.core.project_plan import ConfirmedGoal
 from multi_agent.store.project_store import ProjectStore
 
 from .main import data_directory
+from .project_consult import add_consult_parser, consult
 from .project_stage import add_stage_parser, dispatch_stage
 from .runner import _tree_digest
 from .snapshot import _git, _resolve_commit, _string, freeze_repository, materialize
@@ -37,6 +43,11 @@ def add_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     confirm.add_argument("--baseline", required=True)
     confirm.add_argument("--original-goal", type=Path, required=True)
     confirm.add_argument("--confirmed-goal", type=Path, required=True)
+    confirm.add_argument(
+        "--consultation", help="associate an existing completed consultation"
+    )
+    confirm.add_argument("--adoption", choices=("accepted", "edited"))
+    add_consult_parser(actions)
     plan = actions.add_parser(
         "plan", help="generate a project plan from a confirmed goal"
     )
@@ -48,8 +59,13 @@ def add_parser(commands: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     plan.add_argument("--grace", type=float, default=2)
     plan.add_argument("--codex-bin", default="codex")
     plan.add_argument("--claude-bin", default="claude")
+    revise = actions.add_parser(
+        "revise", help="publish an edited version of a project plan"
+    )
+    revise.add_argument("plan_id")
+    revise.add_argument("--document", type=Path, required=True)
     show = actions.add_parser(
-        "show", help="read a project, confirmed goal, or plan version"
+        "show", help="read a project, consultation, confirmed goal, or plan version"
     )
     show.add_argument("version_id")
     add_stage_parser(actions)
@@ -95,13 +111,17 @@ def _database(data_path: Path, *, create: bool = False) -> Path:
 
 
 def _confirm(args: argparse.Namespace, data_path: Path) -> dict[str, Any]:
+    if args.adoption is not None and args.consultation is None:
+        raise ValueError("an adoption decision requires --consultation")
     repo, common = _repository(args.repo, data_path)
     baseline = _resolve_commit(repo, args.baseline)
     original = _string(
-        args.original_goal.read_text(encoding="utf-8"), "original goal", nonempty=True
+        args.original_goal.read_bytes().decode("utf-8"), "original goal", nonempty=True
     )
     confirmed = _string(
-        args.confirmed_goal.read_text(encoding="utf-8"), "confirmed goal", nonempty=True
+        args.confirmed_goal.read_bytes().decode("utf-8"),
+        "confirmed goal",
+        nonempty=True,
     )
     goal = ConfirmedGoal(
         project_id=args.project_id
@@ -116,8 +136,13 @@ def _confirm(args: argparse.Namespace, data_path: Path) -> dict[str, Any]:
         confirmed_at=_now(),
     )
     with ProjectStore(_database(data_directory(data_path), create=True)) as store:
-        store.confirm_goal(goal, new_project=args.project_id is None)
-    return {"kind": "confirmed_goal", **asdict(goal)}
+        store.confirm_goal(
+            goal,
+            new_project=args.project_id is None,
+            consultation_id=args.consultation,
+            adoption=args.adoption,
+        )
+        return store.show_goal(goal.goal_id)
 
 
 def _prompt(goal: ConfirmedGoal, snapshot_id: str) -> str:
@@ -149,6 +174,13 @@ actionable for a stage implementer, with expected outputs and observable checks.
 """
 
 
+def _validate_timing(args: argparse.Namespace) -> None:
+    for field in ("timeout", "grace"):
+        value = getattr(args, field)
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{field} must be finite and positive")
+
+
 def _plan(
     args: argparse.Namespace, store: ProjectStore, data_path: Path
 ) -> dict[str, Any]:
@@ -157,10 +189,7 @@ def _plan(
         raise ValueError("planner provider must be codex or claude")
     _string(request.model, "planner model", nonempty=True)
     _string(request.effort, "planner effort", nonempty=True)
-    for field in ("timeout", "grace"):
-        value = getattr(args, field)
-        if not math.isfinite(value) or value <= 0:
-            raise ValueError(f"{field} must be finite and positive")
+    _validate_timing(args)
     executable = args.codex_bin if request.provider == "codex" else args.claude_bin
     goal = store.load_goal(args.goal_id)
     repo, common = _repository(Path(goal.repository), data_path)
@@ -228,6 +257,8 @@ def dispatch_project(args: argparse.Namespace) -> dict[str, Any]:
     data_path = args.data_dir.expanduser().resolve()
     if args.project_action == "confirm":
         return _confirm(args, data_path)
+    if args.project_action == "consult":
+        return consult(args, data_path)
     database = _database(data_path)
     with ProjectStore(database) as store:
         if args.project_action == "stage":
@@ -254,11 +285,20 @@ def dispatch_project(args: argparse.Namespace) -> dict[str, Any]:
             return result
         if args.project_action == "plan":
             return _plan(args, store, data_path)
+        if args.project_action == "revise":
+            document = parse_project_plan(
+                strict_json_loads(args.document.read_text(encoding="utf-8"))
+            )
+            identifier = f"plan-{uuid4().hex}"
+            store.revise_plan(identifier, args.plan_id, document, _now())
+            return store.show_plan(identifier)
         identifier = args.version_id
         if identifier.startswith("project-"):
             return store.show_project(identifier)
         if identifier.startswith("goal-"):
-            return {"kind": "confirmed_goal", **asdict(store.load_goal(identifier))}
+            return store.show_goal(identifier)
         if identifier.startswith("plan-"):
             return store.show_plan(identifier)
-        raise ValueError("provide a project, goal, or plan version ID")
+        if identifier.startswith("consultation-"):
+            return store.show_consultation(identifier)
+        raise ValueError("provide a project, consultation, goal, or plan version ID")

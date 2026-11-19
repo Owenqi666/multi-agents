@@ -2,6 +2,31 @@
 
 PM 先确认原话和最终目标。工作台记录 Git 提交，再由显式选定的模型生成阶段计划。每次规划生成独立的计划 ID，按原 ID 可读回。数据使用工作台的 `reviews.sqlite3`，数据目录应在目标仓库和 Git 元数据目录之外。
 
+## 可选的需求咨询
+
+把用户原话保存为 UTF-8 文件 `original.md`。用 `--advisor PROVIDER MODEL EFFORT` 指定一位顾问，或重复该选项指定 Astra 和 Fable 的顺序。每位顾问各运行一个只读回合。第二席使用相同的 Git 提交和快照，读取同一份原话和首席原始草案。已存在的项目可使用 `--project-id PROJECT_ID` 绑定咨询来源。
+
+```sh
+uv run python -m multi_agent --data-dir "$DATA" project consult \
+  --repo "$REPO" --baseline "$BASELINE" --original-goal original.md \
+  --advisor codex gpt-6.2-astra high --advisor claude claude-fable-5-2 high
+uv run python -m multi_agent --data-dir "$DATA" project show "$CONSULTATION_ID"
+uv run python -m multi_agent --data-dir "$DATA" project show "$CONSULTATION_ID" \
+  | jq -j .draft.draft_goal > confirmed.md
+```
+
+咨询返回 `kind` 为 `goal_consultation`，并包含 `consultation_id`、`original_goal`、`baseline_commit`、`source_snapshot_id`、`status`、`seats` 和 `draft`。`draft` 包含可编辑的 `draft_goal`、带冻结文本文件路径的 `background`、`assumptions`、`questions` 和 `remaining_disagreements`。每席有自己的 `request`、`source_snapshot_id`、`advice`、`error`、原生 `evidence` 和开始结束时间。未报告的实际模型和档位以 `null` 表示。第二席失败时，首席的 `advice` 仍可读，整轮 `draft` 为空。`consult` 成功退出 0，失败退出 1，已确认中断退出 130，参数错误退出 2。`project show` 只读已有结果。可显式发起新的咨询。
+
+PM 编辑 `confirmed.md`，用同一仓库、基线和原话确认。已有项目继续传 `--project-id PROJECT_ID`。
+
+```sh
+uv run python -m multi_agent --data-dir "$DATA" project confirm \
+  --repo "$REPO" --baseline "$BASELINE" --original-goal original.md \
+  --confirmed-goal confirmed.md --consultation "$CONSULTATION_ID" --adoption edited
+```
+
+`--adoption accepted` 表示确认文本与草案完全相同，`edited` 表示有改动。省略时按实际文本判定。确认回执的 `consultation` 保留咨询 ID、采纳决定和快照 ID。未指定项目的咨询可用于初次确认，首次采纳后关联同一项目。关联要求咨询完成，并核对原话、Git 基线及仓库。咨询、确认、编辑和查询各自独立，确认调用保存 PM 决定，无模型回合。
+
 ## 从目标到项目计划
 
 准备两个 UTF-8 文件。将需求原话放在 `original.md`，将 PM 最终确认的文本放在 `confirmed.md`。如果直接采纳原话，两个参数可使用同一文件。
@@ -49,6 +74,20 @@ uv run python -m multi_agent --data-dir "$DATA" snapshot "$SOURCE_SNAPSHOT_ID"
 | `monthly-report` | 规划未来按月统计，保留待领取状态。 | 记录报表输入和汇总接口。 | 交付后续可实施的月报说明。 |
 
 每个阶段的字段为 `stage_id`、`title`、`goal`、`approach`、`workflow`、`depends_on`、`acceptance_criteria`、`deliverables`。每个依赖引用同版计划中此前已列出的阶段。阶段任务书以 `plan_id` 和 `stage_id` 为定位依据。
+
+## 发布计划修订
+
+从已完成的计划导出结构化 `document`，编辑后显式提交。工作台校验阶段结构、顺序和依赖，并在原确认目标下生成新 `plan_id`。修订回执中 `origin` 为 `pm`，`source_plan_id` 指向原计划，`planner_request` 和 `evidence` 为空。
+
+```sh
+uv run python -m multi_agent --data-dir "$DATA" project show "$PLAN_ID" \
+  | jq .document > revised-plan.json
+uv run python -m multi_agent --data-dir "$DATA" project revise "$PLAN_ID" \
+  --document revised-plan.json
+uv run python -m multi_agent --data-dir "$DATA" project show "$NEW_PLAN_ID"
+```
+
+原计划、阶段运行、候选和测试审核以原 ID 读回。领取后续阶段时传新计划 ID。若上游阶段及其依赖任务书、架构和共用接口均未修改，工作台可在新计划中复用仍合格的已有上游交付，并在依赖回执保留来源 `plan_id`。当 PM 修改确认目标时，先保存独立的目标版本，再以新 `goal_id` 调用 `project plan`。
 
 ## 直做金额阶段
 

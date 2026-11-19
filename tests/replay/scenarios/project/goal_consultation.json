@@ -1,0 +1,33 @@
+{
+  "events": [
+    {"consultation": "incomplete", "seat": 2, "action": "reserve", "rejected": "preceding consultation seat"},
+    {"consultation": "incomplete", "seat": 1, "action": "finish", "advice": "Premature", "rejected": "not running"},
+    {"consultation": "incomplete", "seat": 1, "action": "reserve"},
+    {"consultation": "incomplete", "seat": 1, "action": "finish", "advice": "Draft one"},
+    {"consultation": "incomplete", "seat": 2, "action": "reserve"},
+    {"consultation": "incomplete", "seat": 1, "action": "finish", "advice": "Late first result", "rejected": "not running"},
+    {"consultation": "incomplete", "seat": 2, "action": "finish", "error": "Second advisor unavailable"},
+    {"consultation": "complete", "seat": 1, "action": "reserve"},
+    {"consultation": "complete", "seat": 1, "action": "finish", "advice": "Draft two"},
+    {"consultation": "complete", "seat": 2, "action": "reserve"},
+    {"consultation": "complete", "seat": 2, "action": "finish", "advice": "Reviewed draft"}
+  ],
+  "history": {
+    "incomplete": {
+      "status": "failed",
+      "draft": null,
+      "seats": [
+        {"status": "succeeded", "advice": {"draft_goal": "Draft one"}, "error": null},
+        {"status": "failed", "advice": null, "error": {"detail": "Second advisor unavailable"}}
+      ]
+    },
+    "complete": {
+      "status": "succeeded",
+      "draft": {"draft_goal": "Reviewed draft"},
+      "seats": [
+        {"status": "succeeded", "advice": {"draft_goal": "Draft two"}, "error": null},
+        {"status": "succeeded", "advice": {"draft_goal": "Reviewed draft"}, "error": null}
+      ]
+    }
+  }
+}

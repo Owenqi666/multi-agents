@@ -185,12 +185,51 @@ def stage_view(store: ProjectStore, database: Path, stage: StageRun) -> dict[str
     }
 
 
+def _prerequisite_run(
+    store: ProjectStore, plan_id: str, stage_id: str
+) -> StageRun | None:
+    current = store.find_stage(plan_id, stage_id)
+    if current is not None:
+        return current
+    plan = store.show_plan(plan_id)
+    document = plan["document"]
+    needed = {stage_id}
+    definitions = {}
+    for item in reversed(document["stages"]):
+        if item["stage_id"] in needed:
+            needed.update(item["depends_on"])
+            definitions[item["stage_id"]] = item
+    while source_id := plan.get("source_plan_id"):
+        if any(
+            store.find_stage(plan["plan_id"], predecessor) is not None
+            for predecessor in needed - {stage_id}
+        ):
+            break
+        source = store.show_plan(source_id)
+        previous = source["document"]
+        previous_stages = {item["stage_id"]: item for item in previous["stages"]}
+        if (
+            source["goal"]["goal_id"] != plan["goal"]["goal_id"]
+            or previous["architecture"] != document["architecture"]
+            or previous["shared_interfaces"] != document["shared_interfaces"]
+            or any(
+                previous_stages.get(key) != value for key, value in definitions.items()
+            )
+        ):
+            break
+        inherited = store.find_stage(source_id, stage_id)
+        if inherited is not None:
+            return inherited
+        plan = source
+    return None
+
+
 def _prerequisites(
     store: ProjectStore, database: Path, plan_id: str, stage: StagePlan
 ) -> tuple[StageDependency, ...]:
     dependencies: list[StageDependency] = []
     for identifier in stage["depends_on"]:
-        run = store.find_stage(plan_id, identifier)
+        run = _prerequisite_run(store, plan_id, identifier)
         if run is None:
             raise ValueError(
                 f"stage {identifier} has no verified delivery for plan {plan_id}"
@@ -207,6 +246,8 @@ def _prerequisites(
             test_attempt=result["test_attempt"],
             review_round_id=result["review_round_id"],
         )
+        if run.plan_id != plan_id:
+            dependency["plan_id"] = run.plan_id
         if run.mode == "delegate":
             integration = result["integration"]
             dependency["integration"] = StageIntegrationProof(

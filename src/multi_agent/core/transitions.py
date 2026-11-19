@@ -2,7 +2,7 @@
 
 from collections.abc import Callable, Mapping
 from dataclasses import replace
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from .events import (
     AttemptStarted,
@@ -233,6 +233,39 @@ def project_plan_status(
             raise ValueError("project plan settlement requires a document or an error")
         return AttemptStatus.SUCCEEDED if document else AttemptStatus.FAILED
     return AttemptStatus.RUNNING
+
+
+type ProjectConsultationSeatStatus = AttemptStatus | Literal["pending"]
+
+
+def project_consultation_status(
+    seats: tuple[ProjectConsultationSeatStatus, ...],
+) -> AttemptStatus:
+    if AttemptStatus.FAILED in seats:
+        return AttemptStatus.FAILED
+    if all(status == AttemptStatus.SUCCEEDED for status in seats):
+        return AttemptStatus.SUCCEEDED
+    return AttemptStatus.RUNNING
+
+
+def project_consultation_seat_status(
+    *, started: bool, finished: bool, advice: bool, error: bool
+) -> ProjectConsultationSeatStatus:
+    if not started:
+        return "pending"
+    return project_plan_status(finished=finished, document=advice, error=error)
+
+
+def require_project_consultation_seat(
+    seats: tuple[ProjectConsultationSeatStatus, ...], number: int, *, settling: bool
+) -> None:
+    if not 1 <= number <= len(seats):
+        raise ValueError(f"unknown consultation seat {number}")
+    if any(status != AttemptStatus.SUCCEEDED for status in seats[: number - 1]):
+        raise ValueError("a preceding consultation seat has not succeeded")
+    expected = AttemptStatus.RUNNING if settling else "pending"
+    if seats[number - 1] != expected:
+        raise ValueError(f"consultation seat {number} is not {expected}")
 
 
 def apply(state: RoundState, envelope: Envelope) -> tuple[RoundState, Disposition]:

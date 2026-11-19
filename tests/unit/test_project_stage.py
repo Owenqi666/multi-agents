@@ -2,6 +2,7 @@
 
 import json
 import sys
+from copy import deepcopy
 
 import pytest
 import test_task_workflow_cli as workflow_helpers
@@ -229,6 +230,8 @@ def test_project_direct_stage(workflow, allowed):
         == "gpt-6.2-sol"
     )
 
+    _check_revised_plan_reuses_unchanged_delivery(workflow, plan, ready, options)
+
     report = workflow_helpers.blocking_report()
     report["findings"][0]["quote"] = workflow_helpers.FIXED_BYTES.decode().strip()
     workflow_helpers.configure(reviewer, report=report)
@@ -241,6 +244,52 @@ def test_project_direct_stage(workflow, allowed):
     newest = workflow_helpers.successful(*prefix, "show", result["stage_run_id"])
     assert newest["tests_passed"] and not newest["review_satisfied"]
     assert newest["review_round_id"] is None
+
+
+def _check_revised_plan_reuses_unchanged_delivery(workflow, plan, delivered, options):
+    prefix = ("--data-dir", workflow.base, "project")
+    new_document = deepcopy(plan["document"])
+    new_document["stages"][1]["acceptance_criteria"] = [
+        "The status reports the next stage"
+    ]
+    source = workflow.base / "revised-plan.json"
+    invalid = deepcopy(new_document)
+    invalid["stages"][1]["depends_on"] = ["unknown"]
+    source.write_text(json.dumps(invalid))
+    denied = workflow_helpers.module_cli(
+        *prefix, "revise", plan["plan_id"], "--document", source
+    )
+    assert denied.returncode == 2 and "does not precede it" in denied.stderr
+    history = workflow_helpers.successful(*prefix, "show", plan["goal"]["project_id"])
+    assert [item["plan_id"] for item in history["plans"]] == [plan["plan_id"]]
+
+    source.write_text(json.dumps(new_document))
+    revised = workflow_helpers.successful(
+        *prefix, "revise", plan["plan_id"], "--document", source
+    )
+    assert revised["source_plan_id"] == plan["plan_id"] and revised["origin"] == "pm"
+    assert revised["goal"] == plan["goal"] and revised["evidence"] is None
+    assert workflow_helpers.successful(*prefix, "show", plan["plan_id"]) == plan
+    assert workflow_helpers.successful(*prefix, "show", revised["plan_id"]) == revised
+    assert (
+        workflow_helpers.successful(*prefix, "stage", "show", delivered["stage_run_id"])
+        == delivered
+    )
+    assert not workflow_helpers.successful(
+        *prefix, "stage", "list", revised["plan_id"]
+    )["stages"]
+    assert "The status reports the next stage" in revised["markdown"]
+    executable = options[options.index("--codex-bin") + 1]
+    status = b'export const status = "next";\n'
+    workflow_helpers.configure(executable, writes={"frontend/status.js": status.hex()})
+    later = workflow_helpers.successful(
+        *prefix, "stage", "start", revised["plan_id"], "later", *options
+    )
+    assert later["plan_id"] == revised["plan_id"] and later["candidate_verified"]
+    assert later["execution_baseline"] == delivered["candidate"]
+    (dependency,) = later["dependencies"]
+    assert dependency["stage_run_id"] == delivered["stage_run_id"]
+    assert dependency["plan_id"] == plan["plan_id"]
 
 
 def test_unprepared_direct_stage_can_explicitly_capture_policy(workflow):

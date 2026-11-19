@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, cast
@@ -141,7 +142,7 @@ async def _capture_events(
             )
 
 
-async def run_project_planner(
+async def _run_project_turn[Document](
     request: PlanningRequest,
     *,
     executable: str,
@@ -150,7 +151,10 @@ async def run_project_planner(
     cwd: Path,
     log_dir: Path,
     prompt: str,
-) -> tuple[ProjectPlan | None, dict[str, Any] | None, dict[str, Any]]:
+    output_schema: dict[str, Any],
+    parse_output: Callable[[object], Document],
+    role: str,
+) -> tuple[Document | None, dict[str, Any] | None, dict[str, Any]]:
     adapter = RuntimeAdapter(
         request.provider,
         executable=executable,
@@ -158,7 +162,7 @@ async def run_project_planner(
         deadline_at=asyncio.get_running_loop().time() + timeout,
         grace=grace,
         log_dir=log_dir,
-        output_schema=_PLAN_SCHEMA,
+        output_schema=output_schema,
     )
     evidence: dict[str, Any] = {
         "cli_version": None,
@@ -186,7 +190,7 @@ async def run_project_planner(
         if environment.models is not None and request.model not in environment.models:
             raise RuntimeFailure(
                 Error(
-                    "selected planner is unavailable",
+                    f"selected {role} is unavailable",
                     FailureCategory.MODEL_UNAVAILABLE,
                     raw_type="environment",
                 )
@@ -198,7 +202,7 @@ async def run_project_planner(
         ):
             raise RuntimeFailure(
                 Error(
-                    "selected effort is unsupported for this planner",
+                    f"selected effort is unsupported for this {role}",
                     raw_type="environment",
                 )
             )
@@ -221,18 +225,18 @@ async def run_project_planner(
         if cancellation_accepted and isinstance(result.terminal, Completed):
             raise RuntimeFailure(
                 Error(
-                    "planner interrupted before publication", FailureCategory.CANCELLED
+                    f"{role} interrupted before publication", FailureCategory.CANCELLED
                 )
             )
         if not isinstance(result.terminal, Completed) or evidence["exit_code"] != 0:
             raise RuntimeFailure(
                 Error(
-                    "planner did not complete with a successful process exit",
+                    f"{role} did not complete with a successful process exit",
                     raw_type="project.runtime",
                 )
             )
         try:
-            document = parse_project_plan(thaw_json(result.terminal.result))
+            document = parse_output(thaw_json(result.terminal.result))
         except ValueError as invalid:
             raise RuntimeFailure(
                 Error(str(invalid), raw_type="project.validation")
@@ -240,10 +244,10 @@ async def run_project_planner(
     except asyncio.CancelledError:
         receipt = adapter.ownership_receipt()
         error = (
-            Error("planner interrupted during preflight", FailureCategory.CANCELLED)
+            Error(f"{role} interrupted during preflight", FailureCategory.CANCELLED)
             if receipt.processes_stopped
             else Error(
-                "planner shutdown could not be confirmed",
+                f"{role} shutdown could not be confirmed",
                 raw_type="adapter.cleanup_incomplete",
             )
         )
@@ -264,7 +268,31 @@ async def run_project_planner(
     ):
         document = None
         error = Error(
-            "planner output, cleanup or logs could not be verified",
+            f"{role} output, cleanup or logs could not be verified",
             raw_type="adapter.cleanup_incomplete",
         )
     return document, asdict(error) if error is not None else None, evidence
+
+
+async def run_project_planner(
+    request: PlanningRequest,
+    *,
+    executable: str,
+    timeout: float,
+    grace: float,
+    cwd: Path,
+    log_dir: Path,
+    prompt: str,
+) -> tuple[ProjectPlan | None, dict[str, Any] | None, dict[str, Any]]:
+    return await _run_project_turn(
+        request,
+        executable=executable,
+        timeout=timeout,
+        grace=grace,
+        cwd=cwd,
+        log_dir=log_dir,
+        prompt=prompt,
+        output_schema=_PLAN_SCHEMA,
+        parse_output=parse_project_plan,
+        role="planner",
+    )

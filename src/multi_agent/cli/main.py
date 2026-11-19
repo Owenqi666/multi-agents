@@ -310,6 +310,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"multi-agent: {error}", file=sys.stderr)
         return 2
     print(json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False))
-    if args.command == "project" and args.project_action == "plan":
+    if args.command == "project" and args.project_action in ("plan", "consult"):
+        if args.project_action == "consult" and any(
+            item["error"] and item["error"]["failure_category"] == "cancelled"
+            for item in output["seats"]
+        ):
+            return 130
         return 0 if output["status"] == "succeeded" else 1
     return 0
