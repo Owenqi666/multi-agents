@@ -1,0 +1,190 @@
+/* Tokens for the workbench, after the 精致写实 relay draft.
+   Material: night first. The plate is dark glass with a hairline edge and a fine measuring
+   grid; finished work is a lit filament, work ahead an unlit groove. The light theme is the
+   same plate printed on fine paper: ink lines, no bloom, an embossed groove.
+   Colour: Claude models share a warm hue (copper, champagne, rose gold), GPT models a cool
+   one (teal, steel blue, indigo); you are ink or white light, the workbench is steel. Status
+   colours (pass, fail, attention) are kept apart from model colours.
+   Type: IBM Plex Sans light for titles and copy over PingFang SC; IBM Plex Mono for ids,
+   hashes, model ids, diffs and logs. Fonts are bundled, nothing loads from the network. */
+
+:root {
+  --bg: #e9eae6;
+  --bg-2: #f3f3f0;
+  --plate: #f7f7f4;
+  --plate-edge: #d6d7d2;
+  --plate-hi: rgba(255, 255, 255, 0.9);
+  --grid: rgba(40, 46, 52, 0.045);
+  --groove: #dcddd8;
+  --groove-in: #eeeeea;
+  --ink: #1d2227;
+  --ink-2: #545c64;
+  --ink-3: #8c939a;
+  --hair: #cfd1cc;
+  --wash: rgba(29, 34, 39, 0.035);
+
+  --tone-opus: #b0602c;
+  --tone-sonnet: #b88a4e;
+  --tone-fable: #a2585a;
+  --tone-sol: #23807b;
+  --tone-astra: #39699b;
+  --tone-terra: #5b5ea8;
+  --tone-you: #23282d;
+  --tone-bench: #7f8790;
+  --tone-unknown: #8c939a;
+
+  --ok: #3f7a45;
+  --ok-wash: rgba(63, 122, 69, 0.09);
+  --fail: #b23a33;
+  --fail-wash: rgba(178, 58, 51, 0.08);
+  --warn: #93700d;
+  --warn-wash: rgba(147, 112, 13, 0.1);
+
+  --glow: 0;
+  --core-hi: rgba(255, 255, 255, 0);
+  --cap-top: #2a3036;
+  --cap-bot: #171b1f;
+  --cap-edge: rgba(0, 0, 0, 0.55);
+  --cap-ink: #f1efe9;
+  --shadow: rgba(30, 34, 38, 0.12);
+  --btn: #fbfbf9;
+  --btn-edge: #d3d5d0;
+  --btn-hi: rgba(255, 255, 255, 0.95);
+  --primary: #1d2227;
+  --primary-ink: #f3f2ee;
+  --code: #fbfbf8;
+  --grain-o: 0.35;
+
+  --font: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", monospace;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0a0d11;
+    --bg-2: #141a21;
+    --plate: #0f141a;
+    --plate-edge: rgba(255, 255, 255, 0.075);
+    --plate-hi: rgba(255, 255, 255, 0.06);
+    --grid: rgba(190, 210, 230, 0.035);
+    --groove: #06080b;
+    --groove-in: #161c23;
+    --ink: #e8e9e6;
+    --ink-2: #9aa3ac;
+    --ink-3: #66717b;
+    --hair: #252d36;
+    --wash: rgba(255, 255, 255, 0.03);
+
+    --tone-opus: #e0915a;
+    --tone-sonnet: #e9c99c;
+    --tone-fable: #e3a59c;
+    --tone-sol: #6cd3cb;
+    --tone-astra: #8db8e8;
+    --tone-terra: #aaa8f0;
+    --tone-you: #eef0f2;
+    --tone-bench: #8794a1;
+    --tone-unknown: #66717b;
+
+    --ok: #8fc48a;
+    --ok-wash: rgba(143, 196, 138, 0.1);
+    --fail: #f08a7e;
+    --fail-wash: rgba(240, 138, 126, 0.1);
+    --warn: #e3c15a;
+    --warn-wash: rgba(227, 193, 90, 0.1);
+
+    --glow: 1;
+    --core-hi: rgba(255, 255, 255, 0.55);
+    --cap-top: #2a323b;
+    --cap-bot: #12171c;
+    --cap-edge: rgba(255, 255, 255, 0.14);
+    --cap-ink: #eef0f1;
+    --shadow: rgba(0, 0, 0, 0.55);
+    --btn: #141a20;
+    --btn-edge: rgba(255, 255, 255, 0.1);
+    --btn-hi: rgba(255, 255, 255, 0.06);
+    --primary: #e9e7e1;
+    --primary-ink: #0d1115;
+    --code: #0b0f14;
+    --grain-o: 0.5;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0a0d11;
+  --bg-2: #141a21;
+  --plate: #0f141a;
+  --plate-edge: rgba(255, 255, 255, 0.075);
+  --plate-hi: rgba(255, 255, 255, 0.06);
+  --grid: rgba(190, 210, 230, 0.035);
+  --groove: #06080b;
+  --groove-in: #161c23;
+  --ink: #e8e9e6;
+  --ink-2: #9aa3ac;
+  --ink-3: #66717b;
+  --hair: #252d36;
+  --wash: rgba(255, 255, 255, 0.03);
+
+  --tone-opus: #e0915a;
+  --tone-sonnet: #e9c99c;
+  --tone-fable: #e3a59c;
+  --tone-sol: #6cd3cb;
+  --tone-astra: #8db8e8;
+  --tone-terra: #aaa8f0;
+  --tone-you: #eef0f2;
+  --tone-bench: #8794a1;
+  --tone-unknown: #66717b;
+
+  --ok: #8fc48a;
+  --ok-wash: rgba(143, 196, 138, 0.1);
+  --fail: #f08a7e;
+  --fail-wash: rgba(240, 138, 126, 0.1);
+  --warn: #e3c15a;
+  --warn-wash: rgba(227, 193, 90, 0.1);
+
+  --glow: 1;
+  --core-hi: rgba(255, 255, 255, 0.55);
+  --cap-top: #2a323b;
+  --cap-bot: #12171c;
+  --cap-edge: rgba(255, 255, 255, 0.14);
+  --cap-ink: #eef0f1;
+  --shadow: rgba(0, 0, 0, 0.55);
+  --btn: #141a20;
+  --btn-edge: rgba(255, 255, 255, 0.1);
+  --btn-hi: rgba(255, 255, 255, 0.06);
+  --primary: #e9e7e1;
+  --primary-ink: #0d1115;
+  --code: #0b0f14;
+  --grain-o: 0.5;
+  color-scheme: dark;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  background: radial-gradient(120% 80% at 50% 0%, var(--bg-2), var(--bg) 70%) fixed, var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+  font-size: 15px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  font-variant-numeric: tabular-nums;
+}
+/* film grain, kept very faint */
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+  opacity: var(--grain-o);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+code, kbd, samp, pre { font-family: var(--mono); }
+:focus-visible { outline: 2px solid var(--ink-2); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}
