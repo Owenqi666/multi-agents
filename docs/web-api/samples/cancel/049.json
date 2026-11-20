@@ -1,0 +1,68 @@
+{
+  "args": {
+    "provider": "codex"
+  },
+  "created_at": "2000-01-01T00:01:06.000000+00:00",
+  "started_at": "2000-01-01T00:01:07.000000+00:00",
+  "finished_at": "2000-01-01T00:01:08.000000+00:00",
+  "cancel_requested_at": null,
+  "stderr_tail": null,
+  "job_id": "10000310000000000000000000000000",
+  "action": "environment.refresh",
+  "state": "finished",
+  "exit_code": null,
+  "result": {
+    "provider": "codex",
+    "observed_at": "2000-01-01T00:01:09.000000+00:00",
+    "source": "runtime_environment_check",
+    "cli_version": "codex-cli 0.169.0",
+    "logged_in": true,
+    "models": [
+      "gpt-6.2-astra",
+      "gpt-6.2-sol",
+      "gpt-6.1-terra",
+      "gpt-6.2-luna",
+      "claude-fable-5-2",
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5"
+    ],
+    "model_efforts": {
+      "gpt-6.2-astra": [
+        "low",
+        "high"
+      ],
+      "gpt-6.2-sol": [
+        "low",
+        "high"
+      ],
+      "gpt-6.1-terra": [
+        "low",
+        "high"
+      ],
+      "gpt-6.2-luna": [
+        "low",
+        "high"
+      ],
+      "claude-fable-5-2": [
+        "low",
+        "high"
+      ],
+      "claude-opus-5-5": [
+        "low",
+        "high"
+      ],
+      "claude-sonnet-5-5": [
+        "low",
+        "high"
+      ],
+      "claude-haiku-5-5": [
+        "low",
+        "high"
+      ]
+    },
+    "error": null
+  },
+  "error": null,
+  "resources": []
+}

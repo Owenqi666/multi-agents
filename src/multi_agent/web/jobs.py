@@ -24,6 +24,7 @@ from multi_agent.adapters.runtime import RuntimeAdapter
 from multi_agent.adapters.runtime_decode import RuntimeFailure, strict_json_loads
 from multi_agent.cli.runner import _environment_value
 
+from .gate import ReadGate
 from .resources import references
 from .workspace import private_directory
 
@@ -33,6 +34,17 @@ _ACTIVE_STATES = {"queued", "running", "cancelling"}
 _FIELDS = ("cli_version", "logged_in", "models", "model_efforts")
 _ARTIFACT = re.compile(r"([0-9a-f]{32})\.(stdout|stderr)")
 _PREVIEW_BYTES = 64 * 1024
+_STDERR_TAIL_BYTES = 8 * 1024
+_RECENT_JOBS = 50
+_RUNS_VERSION = 1
+_RECORD_FIELDS = (
+    "args",
+    "created_at",
+    "started_at",
+    "finished_at",
+    "cancel_requested_at",
+    "stderr_tail",
+)
 
 
 class BusyJob(ValueError):
@@ -43,8 +55,29 @@ class BusyEnvironment(BusyJob):
     pass
 
 
+class BusyCLI(BusyJob):
+    def __init__(self, active_job_id: str) -> None:
+        super().__init__("A CLI job is already active.")
+        self.active_job_id = active_job_id
+
+
 def _private_file(path: str, flags: int) -> int:
     return os.open(path, flags | os.O_NOFOLLOW, 0o600)
+
+
+def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
+    if args is None:
+        return None
+    stored = args.copy()
+    for field in ("original_goal", "confirmed_goal"):
+        if field in args:
+            stored[field] = {"length": len(args[field])}
+    if "document" in args:
+        compact = json.dumps(
+            args["document"], ensure_ascii=False, separators=(",", ":")
+        )
+        stored["document"] = {"length": len(compact)}
+    return stored
 
 
 def _cli_result(
@@ -68,6 +101,13 @@ def _cli_result(
             "message": "The CLI did not return a valid JSON object.",
         }
     return value, None
+
+
+def _stderr_tail(path: Path) -> str:
+    with path.open("rb") as stderr:
+        size = os.fstat(stderr.fileno()).st_size
+        stderr.seek(max(0, size - _STDERR_TAIL_BYTES))
+        return stderr.read(_STDERR_TAIL_BYTES).decode("utf-8", errors="replace")
 
 
 def _seal_artifact(path: Path, artifact_id: str, stream: str) -> dict[str, Any]:
@@ -134,6 +174,8 @@ class EnvironmentJobs:
         self.job_root = data_dir / "web-jobs"
         self.state_path = self.directory / "state.json"
         self.lock = Lock()
+        self._submission = Lock()
+        self.read_gate = ReadGate()
         self.closed = False
         self.active: set[str] = set()
         self.controllers: dict[str, subprocess.Popen[bytes]] = {}
@@ -188,6 +230,9 @@ class EnvironmentJobs:
             self.navigation = {
                 (item["kind"], item["id"]): item for item in state.get("runs", [])
             }
+            upgrade_runs = state.get("runs_version", 0) < _RUNS_VERSION
+            if upgrade_runs:
+                self._upgrade_runs()
         except (KeyError, TypeError, UnicodeError, json.JSONDecodeError):
             raise ValueError("environment state is unreadable") from None
         interrupted = False
@@ -201,8 +246,34 @@ class EnvironmentJobs:
                         "message": "The previous service stopped before observing a result.",
                     },
                 )
-        if interrupted:
+        if interrupted or upgrade_runs:
             self._save()
+
+    def _upgrade_runs(self) -> None:
+        timestamps = {key: row["updated_at"] for key, row in self.navigation.items()}
+        for key, timestamp in timestamps.items():
+            self._register_run(self.navigation[key], timestamp)
+
+        for job in sorted(
+            self.jobs.values(), key=lambda job: job.get("finished_at") or ""
+        ):
+            if job["result"] is None:
+                continue
+            finished_at = job.get("finished_at")
+            if finished_at is None:
+                # Older job records only kept their time on registered runs.
+                related = (
+                    timestamps.get((item["kind"], item["id"]))
+                    for item in job.get("resources", ())
+                )
+                finished_at = min(
+                    (timestamp for timestamp in related if timestamp is not None),
+                    default=None,
+                )
+            for item in references(job["action"], job["result"]):
+                timestamp = timestamps.get((item["kind"], item["id"]), finished_at)
+                if timestamp is not None:
+                    self._register_run(item, timestamp)
 
     def _save(self) -> None:
         state = {
@@ -211,6 +282,7 @@ class EnvironmentJobs:
             "jobs": self.jobs,
             "environments": self.environments,
             "runs": list(self.navigation.values()),
+            "runs_version": _RUNS_VERSION,
         }
         with NamedTemporaryFile(
             mode="w", encoding="utf-8", dir=self.directory, delete=False
@@ -227,16 +299,18 @@ class EnvironmentJobs:
     def close(self) -> None:
         with self.lock:
             self.closed = True
+            self.read_gate.stop_reads()
             for identifier, controller in self.controllers.items():
                 if (
                     self.jobs[identifier]["state"] == "running"
                     and controller.poll() is None
                 ):
                     self._signal_cancel(identifier, controller)
-        # If waiting is interrupted, retain ownership until a later drain
-        # or process exit. Only those workers may still commit results.
+        # Retain ownership until workers and admitted reads finish and any
+        # submission can clean up its private inputs, even if close is retried.
         self.pool.shutdown(wait=True)
-        with self.lock:
+        self.read_gate.wait_for_read()
+        with self._submission, self.lock:
             if self.active or self.controllers:
                 raise RuntimeError("job workers are still active")
             owner, self.owner = self.owner, None
@@ -250,7 +324,22 @@ class EnvironmentJobs:
     def get(self, identifier: str) -> dict[str, Any] | None:
         with self.lock:
             job = self.jobs.get(identifier)
-            return job.copy() if job is not None else None
+            return dict.fromkeys(_RECORD_FIELDS) | job if job is not None else None
+
+    def list_jobs(self) -> dict[str, Any]:
+        with self.lock:
+            # The persisted insertion order breaks ties and orders legacy jobs.
+            ordered = sorted(
+                self.jobs.values(),
+                key=lambda job: job.get("created_at") or "",
+            )
+            return {
+                "items": [
+                    dict.fromkeys(_RECORD_FIELDS) | job
+                    for index, job in enumerate(reversed(ordered))
+                    if index < _RECENT_JOBS or job["state"] in _ACTIVE_STATES
+                ]
+            }
 
     def runs(self, kind: str | None) -> dict[str, Any]:
         with self.lock:
@@ -263,11 +352,33 @@ class EnvironmentJobs:
             "items": sorted(items, key=lambda item: item["updated_at"], reverse=True)
         }
 
-    def _accept(self, identifier: str, action: str) -> None:
+    def _register_run(self, item: dict[str, str], updated_at: str) -> None:
+        key = item["kind"], item["id"]
+        previous = self.navigation.get(key, {})
+        fallback_label = key[0].replace("-", " ").capitalize()
+        label = previous.get("label")
+        if not label or label in (key[1], fallback_label):
+            label = item.get("label")
+        if not label or label == key[1]:
+            label = fallback_label
+        self.navigation[key] = {
+            "kind": key[0],
+            "id": key[1],
+            "label": label,
+            "parent_id": item.get("parent_id", previous.get("parent_id")),
+            "updated_at": updated_at,
+        }
+
+    def _accept(
+        self, identifier: str, action: str, args: dict[str, Any] | None
+    ) -> None:
         self.jobs[identifier] = {
+            **dict.fromkeys(_RECORD_FIELDS),
             "job_id": identifier,
             "action": action,
+            "args": _record_args(args),
             "state": "queued",
+            "created_at": datetime.now(UTC).isoformat(),
             "exit_code": None,
             "result": None,
             "error": None,
@@ -286,41 +397,60 @@ class EnvironmentJobs:
                     "An environment check cannot start for this provider now."
                 )
             identifier = uuid4().hex
-            self._accept(identifier, ACTION)
+            self._accept(identifier, ACTION, {"provider": provider})
             self.active.add(provider)
             self.pool.submit(self._run, provider, identifier)
         return {"job_id": identifier, "state": "queued"}
 
     def start_cli(
-        self, action: str, prepare: Callable[[Path], list[str]]
+        self,
+        action: str,
+        prepare: Callable[[Path], list[str]],
+        *,
+        args: dict[str, Any] | None = None,
     ) -> dict[str, str]:
-        private_directory(self.job_root)
-        identifier = uuid4().hex
-        directory = self.job_root / identifier
-        directory.mkdir(mode=0o700)
-        try:
-            input_dir = directory / "input"
-            input_dir.mkdir(mode=0o700)
-            argv = prepare(input_dir)
+        with self._submission:
+            active = self.read_gate.active_job_id
+            if active is not None:
+                raise BusyCLI(active)
             with self.lock:
                 if self.closed:
                     raise BusyJob("The service is closing.")
-                self._accept(identifier, action)
-                self.pool.submit(self._run_cli, identifier, argv, directory)
-        except BaseException:
-            shutil.rmtree(directory)
-            raise
+            private_directory(self.job_root)
+            identifier = uuid4().hex
+            directory = self.job_root / identifier
+            directory.mkdir(mode=0o700)
+            try:
+                input_dir = directory / "input"
+                input_dir.mkdir(mode=0o700)
+                with self.read_gate.read(
+                    guarded=action == "project.stage.integrate"
+                ) as allowed:
+                    if not allowed:
+                        raise BusyJob("The service is closing.")
+                    argv = prepare(input_dir)
+                with self.lock:
+                    if self.closed:
+                        raise BusyJob("The service is closing.")
+                    self._accept(identifier, action, args)
+                    self.read_gate.begin_job(identifier)
+                    self.pool.submit(self._run_cli, identifier, argv, directory)
+            except BaseException:
+                shutil.rmtree(directory)
+                raise
         return {"job_id": identifier, "state": "queued"}
 
     def _signal_cancel(
         self, identifier: str, controller: subprocess.Popen[bytes]
     ) -> None:
         job = self.jobs[identifier]
-        job["state"] = "cancelling"
+        job.update(
+            state="cancelling", cancel_requested_at=datetime.now(UTC).isoformat()
+        )
         try:
             self._save()
         except OSError:
-            job["state"] = "running"
+            job.update(state="running", cancel_requested_at=None)
             raise
         controller.send_signal(signal.SIGINT)
 
@@ -344,8 +474,10 @@ class EnvironmentJobs:
         exit_code = None
         result = None
         error = None
+        stderr_tail = None
         artifacts: list[dict[str, Any]] = []
         try:
+            self.read_gate.wait_for_read()
             with self.lock:
                 if self.closed:
                     self._interrupt(
@@ -355,7 +487,9 @@ class EnvironmentJobs:
                     )
                     self._save()
                     return
-                self.jobs[identifier]["state"] = "running"
+                self.jobs[identifier].update(
+                    state="running", started_at=datetime.now(UTC).isoformat()
+                )
                 self._save()
                 with (
                     open(directory / "stdout", "xb", opener=_private_file) as stdout,
@@ -371,6 +505,7 @@ class EnvironmentJobs:
                     )
                 self.controllers[identifier] = controller
             exit_code = controller.wait()
+            stderr_tail = _stderr_tail(directory / "stderr")
             result, error = _cli_result(directory / "stdout", exit_code)
             artifacts = [
                 _seal_artifact(directory / stream, f"{identifier}.{stream}", stream)
@@ -391,7 +526,10 @@ class EnvironmentJobs:
             with self.lock:
                 self.controllers.pop(identifier, None)
                 if self.jobs[identifier]["state"] != "interrupted":
-                    self._finish_cli(identifier, exit_code, result, error, artifacts)
+                    self._finish_cli(
+                        identifier, exit_code, result, error, artifacts, stderr_tail
+                    )
+                self.read_gate.finish_job()
 
     def _finish_cli(
         self,
@@ -400,29 +538,24 @@ class EnvironmentJobs:
         result: dict[str, Any] | None,
         error: dict[str, str] | None,
         artifacts: list[dict[str, Any]],
+        stderr_tail: str | None,
     ) -> None:
         job = self.jobs[identifier]
         records = references(job["action"], result) if result is not None else []
+        now = datetime.now(UTC).isoformat()
         job.update(
             state="finished",
+            finished_at=now,
             exit_code=exit_code,
             result=result,
             error=error,
             resources=[{"kind": item["kind"], "id": item["id"]} for item in records],
             artifacts=artifacts,
+            stderr_tail=stderr_tail,
         )
         before = self.navigation.copy()
-        now = datetime.now(UTC).isoformat()
         for item in records:
-            key = item["kind"], item["id"]
-            previous = self.navigation.get(key, {})
-            self.navigation[key] = {
-                "kind": key[0],
-                "id": key[1],
-                "label": item.get("label", previous.get("label", key[1])),
-                "parent_id": item.get("parent_id", previous.get("parent_id")),
-                "updated_at": now,
-            }
+            self._register_run(item, now)
         try:
             self._save()
         except OSError:
@@ -475,7 +608,9 @@ class EnvironmentJobs:
         result = None
         try:
             with self.lock:
-                self.jobs[identifier]["state"] = "running"
+                self.jobs[identifier].update(
+                    state="running", started_at=datetime.now(UTC).isoformat()
+                )
                 self._save()
             fields, error = self._observe(provider, identifier)
             result = {
@@ -497,7 +632,10 @@ class EnvironmentJobs:
                         )
                     else:
                         self.jobs[identifier].update(
-                            state="finished", result=result, error=error
+                            state="finished",
+                            finished_at=datetime.now(UTC).isoformat(),
+                            result=result,
+                            error=error,
                         )
                         if error is None:
                             self.environments[provider] = result

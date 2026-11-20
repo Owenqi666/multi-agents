@@ -1,0 +1,170 @@
+{
+  "kind": "project-plan",
+  "id": "plan-100000b0000000000000000000000000",
+  "data": {
+    "kind": "project_plan",
+    "plan_id": "plan-100000b0000000000000000000000000",
+    "goal": {
+      "project_id": "project-10000080000000000000000000000000",
+      "goal_id": "goal-10000090000000000000000000000000",
+      "repository": "/sample/scenario/repository",
+      "git_common_dir": "/sample/scenario/repository/.git",
+      "baseline_commit": "2000001000000000000000000000000000000000",
+      "original_goal": "Build the amount and summary, then outline monthly reporting.\n",
+      "confirmed_goal": "Build the amount and summary, then outline monthly reporting.\nUse the checked output format.\n",
+      "confirmed_at": "2000-01-01T00:00:18.000000+00:00",
+      "consultation": {
+        "consultation_id": "consultation-10000040000000000000000000000000",
+        "adoption": "edited",
+        "source_snapshot_id": "3000002000000000000000000000000000000000000000000000000000000000"
+      }
+    },
+    "status": "succeeded",
+    "planner_request": {
+      "effort": "low",
+      "model": "claude-fable-5-2",
+      "provider": "claude"
+    },
+    "source_snapshot_id": "3000008000000000000000000000000000000000000000000000000000000000",
+    "prompt_template_version": "project-plan-v2",
+    "started_at": "2000-01-01T00:00:22.000000+00:00",
+    "finished_at": "2000-01-01T00:00:23.000000+00:00",
+    "evidence": {
+      "cli_version": "2.1.325 (Claude Code)",
+      "exit_code": 0,
+      "logs": [
+        {
+          "byte_count": 1202,
+          "closed": true,
+          "healthy": true,
+          "identity": [
+            1,
+            3
+          ],
+          "path": "/sample/scenario/data/logs/projects/plan-100000b0000000000000000000000000/claude-environment-100000c0000000000000000000000000.jsonl",
+          "records": 9,
+          "resource_id": "log-2",
+          "sealed": true,
+          "sha256": "3000009000000000000000000000000000000000000000000000000000000000"
+        },
+        {
+          "byte_count": 6799,
+          "closed": true,
+          "healthy": true,
+          "identity": [
+            1,
+            4
+          ],
+          "path": "/sample/scenario/data/logs/projects/plan-100000b0000000000000000000000000/claude-100000d0000000000000000000000000.jsonl",
+          "records": 8,
+          "resource_id": "log-5",
+          "sealed": true,
+          "sha256": "300000a000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "outputs_complete": true,
+      "processes_stopped": true,
+      "reported_effort": null,
+      "reported_effort_source": null,
+      "reported_model": "actual-claude",
+      "reported_model_source": "result",
+      "resources_released": true,
+      "session_id": "session-2",
+      "usage": [
+        {
+          "counts": {
+            "client_estimated_cost_usd": 0.04,
+            "input_tokens": 11,
+            "output_tokens": 7
+          },
+          "raw_type": "result"
+        }
+      ]
+    },
+    "error": null,
+    "document": {
+      "architecture": "A backend amount and two independent frontend modules.",
+      "shared_interfaces": [
+        "Use the checked output format."
+      ],
+      "stages": [
+        {
+          "acceptance_criteria": [
+            "The named build and test suite passes"
+          ],
+          "approach": "Implement backend/amount.py",
+          "deliverables": [
+            "Implement backend/amount.py"
+          ],
+          "depends_on": [],
+          "goal": "Implement backend/amount.py",
+          "stage_id": "amount",
+          "title": "Stage amount",
+          "workflow": [
+            "Deliver only the selected stage"
+          ]
+        },
+        {
+          "acceptance_criteria": [
+            "The named build and test suite passes"
+          ],
+          "approach": "Implement frontend status and banner",
+          "deliverables": [
+            "Implement frontend status and banner"
+          ],
+          "depends_on": [
+            "amount"
+          ],
+          "goal": "Implement frontend status and banner",
+          "stage_id": "summary",
+          "title": "Stage summary",
+          "workflow": [
+            "Deliver only the selected stage"
+          ]
+        },
+        {
+          "acceptance_criteria": [
+            "The named build and test suite passes"
+          ],
+          "approach": "Outline the monthly report",
+          "deliverables": [
+            "Outline the monthly report"
+          ],
+          "depends_on": [
+            "summary"
+          ],
+          "goal": "Outline the monthly report",
+          "stage_id": "report",
+          "title": "Stage report",
+          "workflow": [
+            "Deliver only the selected stage"
+          ]
+        }
+      ],
+      "title": "Offline project workbench"
+    },
+    "markdown": "# Offline project workbench\n\n## 整体架构\n\nA backend amount and two independent frontend modules.\n\n## 共用接口\n\n- Use the checked output format.\n\n## amount · Stage amount\n\n### 目标\n\nImplement backend/amount.py\n\n### 实现方向\n\nImplement backend/amount.py\n\n### 流程\n\n- Deliver only the selected stage\n\n### 依赖\n\n无\n\n### 验收\n\n- The named build and test suite passes\n\n### 交付物\n\n- Implement backend/amount.py\n\n## summary · Stage summary\n\n### 目标\n\nImplement frontend status and banner\n\n### 实现方向\n\nImplement frontend status and banner\n\n### 流程\n\n- Deliver only the selected stage\n\n### 依赖\n\n- amount\n\n### 验收\n\n- The named build and test suite passes\n\n### 交付物\n\n- Implement frontend status and banner\n\n## report · Stage report\n\n### 目标\n\nOutline the monthly report\n\n### 实现方向\n\nOutline the monthly report\n\n### 流程\n\n- Deliver only the selected stage\n\n### 依赖\n\n- summary\n\n### 验收\n\n- The named build and test suite passes\n\n### 交付物\n\n- Outline the monthly report\n"
+  },
+  "artifacts": [
+    {
+      "artifact_id": "art-WyJwcm9qZWN0LXBsYW4iLCJwbGFuLTEwMDAwMGIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwicGxhbm5lci0xIiwiMzAwMDAwOTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCJd",
+      "key": "planner-1",
+      "coordinates": {
+        "log_index": 1
+      },
+      "stream": "claude-environment-100000c0000000000000000000000000",
+      "byte_count": 1202,
+      "sha256": "3000009000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJwcm9qZWN0LXBsYW4iLCJwbGFuLTEwMDAwMGIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwicGxhbm5lci0yIiwiMzAwMDAwYTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCJd",
+      "key": "planner-2",
+      "coordinates": {
+        "log_index": 2
+      },
+      "stream": "claude-100000d0000000000000000000000000",
+      "byte_count": 6799,
+      "sha256": "300000a000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

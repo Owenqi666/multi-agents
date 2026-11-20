@@ -3,6 +3,8 @@
 import argparse
 from pathlib import Path
 
+import multi_agent
+
 from .server import WorkspaceServer
 from .workspace import Workspace
 
@@ -11,6 +13,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Serve the local workspace API.")
     parser.add_argument("--repository", required=True, type=Path)
     parser.add_argument("--data-dir", required=True, type=Path)
+    parser.add_argument("--frontend-dist", type=Path, metavar="DIR")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--codex-bin", default="codex")
     parser.add_argument("--claude-bin", default="claude")
@@ -35,6 +38,8 @@ def main() -> int:
             runtime_read_paths=tuple(
                 str(path.expanduser().resolve()) for path in args.runtime_read_path
             ),
+            frontend_dist=args.frontend_dist
+            or Path(multi_agent.__file__).resolve().parents[2] / "frontend" / "dist",
         ) as service:
             print(service.origin, flush=True)
             try:

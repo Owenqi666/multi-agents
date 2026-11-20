@@ -210,6 +210,8 @@ def test_web_workspace_git_and_rules(tmp_path, repository, executables):
             "repository",
             "target_branch",
             "head",
+            "branches",
+            "defaults",
             "read_only",
             "presets",
             "environments",
