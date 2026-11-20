@@ -52,7 +52,7 @@ cd frontend && corepack pnpm build
 cd frontend && corepack pnpm run check
 ```
 
-`check` 依次跑类型检查、ESLint 和组件测试，是任务卡 `proposed_tests` 里的 `frontend-check`。它不在 `scripts/verify.sh` 里，单独运行；提交钩子仍然会跑完整的 `scripts/verify.sh`，所以 worktree 要先 `uv sync`。模拟模式的回放测试在找不到样例时跳过。
+`check` 依次跑类型检查、ESLint 和组件测试，是任务卡 `proposed_tests` 里的 `frontend-check`。它不在 `scripts/verify.sh` 里，单独运行；提交钩子仍然会跑完整的 `scripts/verify.sh`，所以 worktree 要先 `uv sync`。组件测试先用 `src/fixtures/` 里按约定形状手写的数据；有 `docs/web-api/samples/` 时（合入 T-0069 之后），`src/test/samples.test.tsx` 再用录制的真实响应渲染同样的状态（退出码 2 没有结果、已请求取消、已取消、已中断、`lock_busy` 的阶段、diff 和日志、未报告的模型、单席和双席、直接和分派、有和没有返工），模拟模式的回放测试也一样，找不到样例时这些测试跳过。
 
 浏览器端到端（`frontend-e2e`）需要 T-0069 的离线联调环境，在合入了它的分支上运行：
 
