@@ -10,6 +10,8 @@ import type {
 const BASE = '2417007646b03301b65b7a38f1af0b1d13ff8b4f';
 const T0 = '2026-11-19T19:02:11Z';
 
+const advice = (draft_goal: string) => ({ draft_goal, background: [], assumptions: [], questions: [], remaining_disagreements: [] });
+
 const astra = { provider: 'codex', model: 'gpt-6.2-astra', effort: 'high' };
 const fable = { provider: 'claude', model: 'claude-fable-5-2', effort: 'high' };
 const sol = { provider: 'codex', model: 'gpt-6.2-sol', effort: 'high' };
@@ -24,16 +26,16 @@ export const consultation: Consultation = {
   started_at: T0,
   finished_at: '2026-11-19T19:07:40Z',
   status: 'succeeded',
-  draft: '本机网页工作台：首页是分工舞台，另有从目标到接受的项目流程页面。',
+  draft: advice('本机网页工作台：首页是分工舞台，另有从目标到接受的项目流程页面。'),
   seats: [
     {
       consultation_id: '7c1e0b5a9d2f4e3a8b6c1d0e9f8a7b6c', number: 1, request: astra,
-      started_at: T0, finished_at: '2026-11-19T19:04:52Z', advice: '先做只读舞台，再做操作页。', error: null,
+      started_at: T0, finished_at: '2026-11-19T19:04:52Z', advice: advice('先做只读舞台，再做操作页。'), error: null,
       evidence: { reported_model: 'gpt-6.2-astra', reported_effort: 'high' }, status: 'succeeded',
     },
     {
       consultation_id: '7c1e0b5a9d2f4e3a8b6c1d0e9f8a7b6c', number: 2, request: fable,
-      started_at: '2026-11-19T19:04:53Z', finished_at: '2026-11-19T19:07:40Z', advice: '同意，并把作业期间的读取规则放进第一版。', error: null,
+      started_at: '2026-11-19T19:04:53Z', finished_at: '2026-11-19T19:07:40Z', advice: advice('同意，并把作业期间的读取规则放进第一版。'), error: null,
       evidence: { reported_model: 'claude-fable-5-2', reported_effort: 'high' }, status: 'succeeded',
     },
   ],
@@ -151,6 +153,7 @@ export const directStage: DirectStage = {
     next_action: null,
   },
   implementation: {
+    planning_run_id: 'pr-5e7a0c3d',
     task_run_id: 'tr-8f2d61b0',
     implementation_attempt: 2,
     phase: 'delivered',
@@ -192,7 +195,7 @@ function leafPlanning(id: string, executor: typeof terra) {
 
 function leafTask(id: string, choice: typeof terra, reported: string) {
   return {
-    task_run_id: id, implementation_attempt: 1, phase: 'delivered', candidate: 'aa11bb2', verification: 'verified',
+    planning_run_id: `p${id}`, task_run_id: id, implementation_attempt: 1, phase: 'delivered', candidate: 'aa11bb2', verification: 'verified',
     attempts: [{ request: { decision: { choice }, started_at: T0, kind: 'task_attempt_started' as const }, runtime: { number: 1, status: 'succeeded', reported_model: reported, reported_effort: 'high' } }],
     tests: [], reviews: [], rework_used: false, next_action: null,
   };

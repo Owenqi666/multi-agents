@@ -130,12 +130,16 @@ export interface StageHandle {
 /** A stage with caption, controls and playback: the relay line or the weave. `handle`
  *  names a window property that exposes goto/play/pause for screenshot checks; `keys`
  *  lets the left and right arrow keys step this stage. */
-export function Stage({ story, kind = 'relay', handle, keys = true, foot }: {
+export function Stage({ story, kind = 'relay', handle, keys = true, foot, autoplay = true, startAt }: {
   story: Story;
   kind?: StageKind;
   handle?: string;
   keys?: boolean;
   foot?: ReactNode;
+  /** Play the handoffs from the first step on load (the specimen); the live home page
+   *  instead opens settled on the latest step. */
+  autoplay?: boolean;
+  startAt?: number;
 }) {
   const refs: PlateRefs = { frame: useRef(null), box: useRef(null), svg: useRef(null), mBaton: useRef(null), mSub: useRef(null) };
   const [state, setState] = useState<PlaybackState>({ index: 0, playing: false });
@@ -144,7 +148,8 @@ export function Stage({ story, kind = 'relay', handle, keys = true, foot }: {
   usePlate(story, refs, true, (r) => {
     const playback = new Playback(r, reduceQuery, setState);
     pb.current = playback;
-    playback.start();
+    if (autoplay) playback.start();
+    else playback.goto(startAt ?? r.count - 1);
     const frame = refs.frame.current!;
     const ro = new ResizeObserver(() => { if (frame.clientWidth !== r.lastFrameWidth) playback.rebuild(); });
     ro.observe(frame);

@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import type { ArtifactPage } from '../api/types';
 import { EmptyState } from './EmptyState';
 
-const bytes = (n: number) => n.toLocaleString('en-US');
+const bytes = (n: number | null | undefined) => (n === null || n === undefined ? '—' : n.toLocaleString('en-US'));
 
 export function readTime(iso: string): string {
   const d = new Date(iso);

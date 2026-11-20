@@ -30,6 +30,13 @@ export interface ApiError {
   details?: Record<string, unknown>;
 }
 
+export interface JobArtifact {
+  artifact_id: string;
+  stream: string;
+  byte_count: number;
+  sha256: string;
+}
+
 export interface Job {
   job_id: Id;
   action: string;
@@ -38,18 +45,83 @@ export interface Job {
   result: Record<string, unknown> | null;
   error: ApiError | null;
   resources?: { kind: string; id: Id }[];
-  artifacts?: Record<string, string> | null;
-  args?: Record<string, unknown>;
+  artifacts?: JobArtifact[] | null;
+  args?: Record<string, unknown> | null;
   created_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
   cancel_requested_at?: string | null;
+  /** Last 8 KiB of stderr once the CLI exited; null while running. */
+  stderr_tail?: string | null;
 }
+
+export const UNFINISHED: readonly JobState[] = ['queued', 'running', 'cancelling'];
+export const isUnfinished = (job: Pick<Job, 'state'>): boolean => UNFINISHED.includes(job.state);
 
 export interface ArtifactRef {
   artifact_id: string;
   key?: string;
-  [coordinate: string]: unknown;
+  coordinates?: Record<string, number | string>;
+  stream?: string;
+  byte_count?: number;
+  sha256?: string;
+}
+
+export interface NextAction {
+  kind: string;
+  detail: string;
+  planning_run_id?: Id | null;
+  task_run_id?: Id | null;
+  implementation_attempt?: number | null;
+  test_attempt?: number | null;
+  review_round_id?: Id | null;
+}
+
+export interface Candidate {
+  family: string;
+  provider: string;
+  model: string;
+  efforts: string[] | null;
+  source?: string;
+  effort_source?: string;
+}
+
+export interface Role {
+  id: string;
+  label: string;
+  families: string[];
+  candidates: Candidate[];
+}
+
+export interface Workspace {
+  repository: string;
+  target_branch: string | null;
+  head: string | null;
+  branches?: { name: string; head: string }[];
+  defaults?: {
+    source: string;
+    stage_mode: 'direct' | 'delegate';
+    sol: { model: string; effort: string };
+    card_review: RoleRequest;
+  };
+  read_only: boolean;
+  presets: { source: string; roles: Role[]; rules: Record<string, unknown> };
+  environments: Record<string, { observed_at: string; logged_in: boolean; cli_version: string | null; error: unknown } | null>;
+}
+
+export interface RunItem {
+  kind: string;
+  id: Id;
+  label: string;
+  parent_id: Id | null;
+  updated_at: string;
+}
+
+export interface Project {
+  kind: 'project';
+  project_id: Id;
+  goals: Goal[];
+  plans: { plan_id: Id; goal_id: Id; started_at: string | null; finished_at: string | null; status: string; origin?: 'pm'; source_plan_id?: Id }[];
 }
 
 export interface Resource<T> {
@@ -61,26 +133,48 @@ export interface Resource<T> {
 }
 
 export interface ArtifactPage {
-  artifact_id: string;
+  artifact_id?: string;
+  stream?: string;
   offset: number;
   next_offset: number | null;
-  byte_count: number;
-  sha256?: string;
+  byte_count: number | null;
+  sha256?: string | null;
+  truncated?: boolean;
   text: string | null;
+  lock_busy?: boolean;
 }
 
 export interface Diff {
-  kind: string;
-  id: Id;
+  baseline?: string | null;
+  candidate?: string | null;
+  parent_candidate?: string | null;
+  snapshot_id?: Id | null;
   diff: string | null;
   unavailable_reason?: string | null;
   unavailable_code?: string | null;
   test_change_paths?: string[] | null;
+  lock_busy?: boolean;
+}
+
+export interface FrozenFile {
+  side: 'baseline' | 'candidate';
+  path: string;
+  text: string | null;
+  oid: string;
+  mode: string;
 }
 
 // ---- Project layer -------------------------------------------------------------------
 
 export type SeatStatus = 'pending' | 'running' | 'succeeded' | 'failed';
+
+export interface Advice {
+  draft_goal: string;
+  background: unknown[];
+  assumptions: unknown[];
+  questions: unknown[];
+  remaining_disagreements: unknown[];
+}
 
 export interface ConsultationSeat {
   consultation_id: Id;
@@ -88,7 +182,7 @@ export interface ConsultationSeat {
   request: RoleRequest;
   started_at: string | null;
   finished_at: string | null;
-  advice: string | null;
+  advice: Advice | null;
   error: unknown;
   evidence: Evidence | null;
   status: SeatStatus;
@@ -103,7 +197,7 @@ export interface Consultation {
   started_at: string | null;
   finished_at: string | null;
   status: 'running' | 'succeeded' | 'failed';
-  draft: string | null;
+  draft: Advice | null;
   seats: ConsultationSeat[];
 }
 
@@ -123,6 +217,10 @@ export interface PlanStage {
   title: string;
   goal: string;
   depends_on: string[];
+  approach?: string;
+  workflow?: string;
+  acceptance_criteria?: unknown[];
+  deliverables?: unknown[];
 }
 
 export interface ProjectPlan {
@@ -135,7 +233,8 @@ export interface ProjectPlan {
   finished_at: string | null;
   evidence: Evidence | null;
   error: unknown;
-  document: { title: string; stages: PlanStage[] } | null;
+  document: { title: string; architecture?: string; shared_interfaces?: unknown; stages: PlanStage[] } | null;
+  markdown?: string | null;
   origin?: 'pm';
   source_plan_id?: Id;
 }
@@ -176,8 +275,9 @@ export interface PlanningView {
   verification: string;
   card: Record<string, unknown> | null;
   attempts: { draft: PlanningAttempt[]; review: PlanningAttempt[] };
-  next_action: string | null;
+  next_action: NextAction | null;
   planning_kind?: 'stage_split';
+  details?: { input?: { card?: { test_refs?: string[] }; frozen_rules?: { rules?: { commands?: { name: string }[] } } } };
   draft_projection?: { executor?: RoleRequest };
 }
 
@@ -256,9 +356,13 @@ export interface ReviewRound {
   test_attempt?: number;
   candidate?: string | null;
   current_eligible?: boolean;
+  confirmation_round_id?: Id | null;
+  verification?: string;
+  source_current?: boolean;
 }
 
 export interface TaskView {
+  planning_run_id: Id;
   task_run_id: Id;
   implementation_attempt: number | null;
   phase: string;
@@ -268,7 +372,9 @@ export interface TaskView {
   tests: TaskTest[];
   reviews: ReviewRound[];
   rework_used: boolean;
-  next_action: string | null;
+  next_action: NextAction | null;
+  budget?: { remaining: number } | null;
+  details?: { input?: { card?: { test_refs?: string[] }; frozen_rules?: { rules?: { commands?: { name: string }[] } } } };
 }
 
 export interface Leaf {
@@ -293,7 +399,7 @@ export interface StageIntegration {
   tests_passed: boolean;
   review_satisfied: boolean;
   evidence: {
-    test: { attempt: number; status: string; candidate: string | null } | null;
+    test: { attempt: number; status: string; candidate: string | CandidateRef | null } | null;
     reviews: ReviewRound[];
     rework: {
       rework_id: Id;
@@ -334,3 +440,37 @@ export interface DelegateStage extends StageRun, StageGates {
 }
 
 export type Stage = DirectStage | DelegateStage;
+
+export interface CandidateRef {
+  ref: string;
+  commit: string;
+  tree: string;
+}
+
+/** A commit id, whether the record gives a bare string or a {ref, commit, tree} object. */
+export function commitOf(c: string | CandidateRef | null | undefined): string | null {
+  if (!c) return null;
+  return typeof c === 'string' ? c : c.commit;
+}
+
+export interface IntegrationRecord {
+  integration_id: Id;
+  status: 'ready' | 'conflicted' | string;
+  verification: string;
+  target_ref: string;
+  target_baseline?: string;
+  target_head?: string;
+  target_is_current: boolean;
+  members: { task_run_id: Id; planning_run_id: Id; attempt: number; task_input?: { card?: { id?: string; goal?: string } } }[];
+  candidate: CandidateRef | null;
+  conflict: unknown;
+  rebased_from: Id | null;
+  test: { attempt: number; status: string; candidate: CandidateRef | string | null } | null;
+  reviews: ReviewRound[];
+  current_eligible: boolean;
+  blocking_findings: unknown[];
+  acceptance: { acceptance_id: Id; accepted_at: string } | null;
+  rework: { rework_id: Id; source_id: Id; child_id: Id | null; result: { status: string } | null } | null;
+  superseded_by: Id | null;
+  source_errors?: string[];
+}

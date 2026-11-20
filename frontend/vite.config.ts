@@ -7,9 +7,15 @@ import react from '@vitejs/plugin-react';
 // to its own address, so both headers are rewritten on the way through.
 const bridge = process.env.BRIDGE_URL;
 
+// Recorded bridge samples drive mock mode and the component tests. They live in the repo at
+// docs/web-api/samples (written by T-0069's recorder); SAMPLES_DIR can point elsewhere.
+const samples = resolve(import.meta.dirname, process.env.SAMPLES_DIR ?? '../docs/web-api/samples');
+
 export default defineConfig({
   plugins: [react()],
+  resolve: { alias: { '@samples': samples } },
   server: {
+    fs: { allow: [import.meta.dirname, samples] },
     host: '127.0.0.1',
     port: 5173,
     strictPort: false,
@@ -30,11 +36,14 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
+        main: resolve(import.meta.dirname, 'index.html'),
         specimen: resolve(import.meta.dirname, 'specimen.html'),
       },
     },
   },
   test: {
-    environment: 'node',
+    environment: 'jsdom',
+    setupFiles: ['src/test/setup.ts'],
+    include: ['src/**/*.test.{ts,tsx}'],
   },
 });

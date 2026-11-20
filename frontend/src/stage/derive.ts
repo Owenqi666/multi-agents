@@ -4,6 +4,7 @@
 // one line, and the rework loop only exists when a rework attempt exists.
 
 import {
+  commitOf,
   nz,
   type Consultation,
   type DelegateStage,
@@ -299,7 +300,7 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
     const test = evidence?.test;
     if (!evidence || !test) return;
     lastEvidence = evidence;
-    beats.push(testBeat(`test-${k + 1}`, k ? '复测' : '测试', { candidate: test.candidate, passed: test.status === 'succeeded', commands: null }, k > 0));
+    beats.push(testBeat(`test-${k + 1}`, k ? '复测' : '测试', { candidate: commitOf(test.candidate), passed: test.status === 'succeeded', commands: null }, k > 0));
     const round = last(evidence.reviews.filter((r) => r.metadata.kind === 'review'));
     if (round) beats.push(reviewBeat(`review-${k + 1}`, k ? '复审' : '代码审核', round, k === 0));
     const rework = evidence.rework;
@@ -339,4 +340,61 @@ function phaseSpans(beats: Beat[]): Span[] {
     else spans.push({ from: i, to: i, label: b.phase });
   });
   return spans;
+}
+
+// ---- While a job runs ----------------------------------------------------------------
+// Locking records cannot be read during a job, so the stage shows where the handoff is from
+// the job's action alone, with the requested seats from its args. Nothing is reported yet,
+// so every model reads 未确认. After the job the stage is read again and redrawn.
+
+type JobLike = { action: string; args?: Record<string, unknown> | null };
+
+const asRequest = (v: unknown): RoleRequest | null => {
+  const r = v as Partial<RoleRequest> | null | undefined;
+  return r && typeof r.model === 'string' ? { provider: String(r.provider ?? ''), model: r.model, effort: String(r.effort ?? '') } : null;
+};
+
+export function runningBeat(job: JobLike): Beat | null {
+  const a = job.args ?? {};
+  const seat = (key: string, role: string, req: unknown): Holder => modelHolder(key, role, asRequest(req), null);
+  const beat = (step: number, title: string, holders: Holder[], fork: Fork = null): Beat => ({
+    id: `running-${job.action}`, step, title, phase: '进行中', holders, fork, carry: null,
+    note: `作业「${title}」正在进行。结束后读回记录，再补画中间各步。`,
+  });
+  switch (job.action) {
+    case 'project.consult': {
+      const advisors = (a.advisors as unknown[] | undefined) ?? [];
+      return beat(1, '需求顾问', advisors.slice(0, 1).map((r, i) => seat(`advisor-${i + 1}`, `顾问 ${i + 1}`, r)));
+    }
+    case 'project.confirm': return beat(2, '确认目标', [YOU]);
+    case 'project.plan': return beat(3, '项目计划', [seat('planner', '规划', a.planner)]);
+    case 'project.revise': return beat(3, '修订计划', [YOU]);
+    case 'project.stage.start': return beat(5, '拟卡、复核和实施', [seat('sol', '阶段负责人', a.sol ? { provider: 'codex', ...(a.sol as object) } : null)]);
+    case 'project.stage.resume': return beat(5, '恢复阶段', [seat('sol', '阶段负责人', null)]);
+    case 'project.stage.leaf': return beat(6, '子卡复核', [seat('card-review', '卡片复核', null)]);
+    case 'task.run': case 'task.retry': case 'task.run_batch':
+      return beat(7, '实施', [seat('impl', '实施', a.implementation)]);
+    case 'project.stage.integrate': case 'integration.create': case 'integration.rebase':
+      return beat(8, '合并', [BENCH]);
+    case 'task.test': case 'integration.test': return beat(9, '测试', [BENCH]);
+    case 'task.review': case 'integration.review': {
+      const seats = ((a.seats as unknown[] | undefined) ?? []).map((r, i) => seat(`seat-${i + 1}`, `审核席位 ${i + 1}`, r));
+      return beat(10, '代码审核', seats.length ? seats : [seat('seat-1', '审核席位', null)], seats.length > 1 ? 'blind' : null);
+    }
+    case 'task.retry_review': case 'integration.retry_review': {
+      const keys = (a.seat_keys as string[] | undefined) ?? ['seat'];
+      return beat(10, '补跑审核', keys.map((k) => seat(k, k, null)), keys.length > 1 ? 'blind' : null);
+    }
+    case 'task.confirm': case 'integration.confirm': return beat(10, '交叉确认', [seat('confirm', '审核席位', null)]);
+    case 'task.rework': case 'integration.rework': return beat(11, '返工', [seat('impl', '原实施者', null)]);
+    case 'integration.accept': return beat(12, '接受', [YOU]);
+    default: return null;
+  }
+}
+
+export function withRunningJob(story: Story, job: JobLike | null): Story {
+  const extra = job ? runningBeat(job) : null;
+  if (!extra) return story;
+  const beats = [...story.beats, extra];
+  return { beats, phases: phaseSpans(beats), loops: story.loops };
 }
