@@ -56,36 +56,72 @@
   "artifacts": [
     {
       "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTEiLCIzMDAwMDIxMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "test-1-1-1",
+      "coordinates": {
+        "test_attempt": 1,
+        "sequence": 1,
+        "log_index": 1
+      },
       "stream": "wire",
       "byte_count": 8531,
       "sha256": "3000021000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "test-1-1-2",
+      "coordinates": {
+        "test_attempt": 1,
+        "sequence": 1,
+        "log_index": 2
+      },
       "stream": "stdout",
       "byte_count": 33,
       "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTMiLCIzMDAwMDA2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "test-1-1-3",
+      "coordinates": {
+        "test_attempt": 1,
+        "sequence": 1,
+        "log_index": 3
+      },
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTEiLCIzMDAwMDIzMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "test-1-2-1",
+      "coordinates": {
+        "test_attempt": 1,
+        "sequence": 2,
+        "log_index": 1
+      },
       "stream": "wire",
-      "byte_count": 8830,
+      "byte_count": 8832,
       "sha256": "3000023000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTIiLCIzMDAwMDI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "test-1-2-2",
+      "coordinates": {
+        "test_attempt": 1,
+        "sequence": 2,
+        "log_index": 2
+      },
       "stream": "stdout",
       "byte_count": 22,
       "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTMiLCIzMDAwMDI1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "test-1-2-3",
+      "coordinates": {
+        "test_attempt": 1,
+        "sequence": 2,
+        "log_index": 3
+      },
       "stream": "stderr",
       "byte_count": 36,
       "sha256": "3000025000000000000000000000000000000000000000000000000000000000"

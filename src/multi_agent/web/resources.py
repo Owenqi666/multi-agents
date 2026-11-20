@@ -22,6 +22,7 @@ from multi_agent.cli.task_cli import view_task
 from multi_agent.cli.task_review_cli import view_task_review
 from multi_agent.cli.task_test_cli import _existing_lease, view_task_test
 from multi_agent.cli.task_test_evidence import inspect_task_test_command
+from multi_agent.core.integration import IntegrationCandidate
 from multi_agent.core.review_input import (
     ExecutedReviewInput,
     IntegrationReviewInput,
@@ -270,17 +271,63 @@ def _empty_diff() -> dict[str, Any]:
     }
 
 
-def lock_busy_diff(kind: str, identifier: str) -> dict[str, Any]:
+def parent_diff_requested(kind: str, query: _Query) -> bool:
+    options = _query(query, {"against"} if kind in LOCKED_DIFF_KINDS else set())
+    if "against" in options and options["against"] != "parent":
+        raise ValueError("against must be parent")
+    return "against" in options
+
+
+def lock_busy_diff(
+    kind: str, identifier: str, *, against_parent: bool = False
+) -> dict[str, Any]:
     _validate_resource_identity(kind, identifier)
-    return _empty_diff() | {
+    result = _empty_diff() | {
         "unavailable_reason": "A CLI job is active.",
         "unavailable_code": "lock_busy",
         "lock_busy": True,
     }
+    if against_parent:
+        result["parent_candidate"] = None
+    return result
 
 
-def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any]:
+def _parent_candidate(
+    workspace: Workspace, kind: str, identifier: str, value: dict[str, Any]
+) -> str | None:
+    if kind == "task":
+        request = value["attempts"][-1]["request"]
+        if request["kind"] != "task_rework_started":
+            return None
+        commit: str = request["source"]["candidate_commit"]
+        return commit
+
+    parent_id = value.get("rebased_from")
+    if parent_id is None:
+        rework = value.get("rework")
+        if rework is None or rework["child_id"] != identifier:
+            return None
+        parent_id = rework["source_id"]
+    database = workspace.data_dir / "reviews.sqlite3"
+    with IntegrationStore.open_readonly(database) as store:
+        parent = store.load_integration(parent_id)
+    if parent.repository != value["repository"]:
+        raise KeyError(parent_id)
+    return (
+        parent.result.commit
+        if isinstance(parent.result, IntegrationCandidate)
+        else None
+    )
+
+
+def read_diff(
+    workspace: Workspace, kind: str, identifier: str, *, against_parent: bool = False
+) -> dict[str, Any]:
     result = _empty_diff()
+    if against_parent:
+        if kind not in LOCKED_DIFF_KINDS:
+            raise ValueError("parent diffs require a task or integration")
+        result["parent_candidate"] = None
     if kind == "snapshot":
         snapshot = _snapshot(workspace, identifier)
         source = review_source(snapshot)
@@ -304,13 +351,26 @@ def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any
         candidate = candidate["commit"] if candidate is not None else None
     result["baseline"] = baseline
     if value["verification"] != "verified" or candidate is None:
-        return result | {"unavailable_reason": "No verified frozen candidate."}
-    if not _COMMIT.fullmatch(baseline) or not _COMMIT.fullmatch(candidate):
+        return result | {
+            "unavailable_reason": "No verified frozen candidate.",
+            "unavailable_code": "not_verified",
+        }
+    start = baseline
+    result["candidate"] = candidate
+    if against_parent:
+        start = _parent_candidate(workspace, kind, identifier, value)
+        if start is None:
+            return result | {
+                "unavailable_reason": "No parent candidate for this revision.",
+                "unavailable_code": "no_parent",
+            }
+        result["parent_candidate"] = start
+    if not _COMMIT.fullmatch(start) or not _COMMIT.fullmatch(candidate):
         raise ValueError("candidate diff requires exact commit identities")
-    diff = _diff(workspace.repository, baseline, candidate)
+    diff = _diff(workspace.repository, start, candidate)
     if len(diff.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         raise ValueError("candidate diff exceeds the preview size limit")
-    return result | {"candidate": candidate, "diff": diff}
+    return result | {"diff": diff}
 
 
 @dataclass(frozen=True, slots=True)
@@ -547,6 +607,23 @@ def _artifact_id(
     return "art-" + base64.urlsafe_b64encode(locator.encode()).decode().rstrip("=")
 
 
+def _artifact_coordinates(key: str) -> dict[str, int]:
+    match key.split("-"):
+        case ["test", attempt, sequence, index]:
+            return {
+                "test_attempt": int(attempt),
+                "sequence": int(sequence),
+                "log_index": int(index),
+            }
+        case ["seat", seat, index]:
+            return {"seat": int(seat), "log_index": int(index)}
+        case ["frozen", index, _stream]:
+            return {"frozen_index": int(index)}
+        case ["planner", index]:
+            return {"log_index": int(index)}
+    raise AssertionError(f"unexpected internal log key {key!r}")
+
+
 def _validate_resource_request(kind: str, identifier: str, query: _Query) -> None:
     _validate_resource_identity(kind, identifier)
     options = _resource_options(kind, query)
@@ -586,6 +663,8 @@ def read_resource(
                 "artifact_id": _artifact_id(
                     kind, identifier, options, key, artifact.sha256
                 ),
+                "key": key,
+                "coordinates": _artifact_coordinates(key),
                 "stream": artifact.stream,
                 "byte_count": artifact.byte_count,
                 "sha256": artifact.sha256,

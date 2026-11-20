@@ -28,7 +28,10 @@ def _begin(api):
         "project.consult", baseline=baseline, original_goal=ORIGINAL, advisors=[FABLE]
     )
     consultation_id = consultation["consultation_id"]
-    api.get(f"resources/consultation/{consultation_id}")
+    consulted = api.get(f"resources/consultation/{consultation_id}")
+    seat_log = consulted["artifacts"][0]
+    assert seat_log["key"] == "seat-1-1", seat_log
+    assert seat_log["coordinates"] == {"seat": 1, "log_index": 1}, seat_log
     goal = api.job(
         "project.confirm",
         baseline=baseline,
@@ -43,7 +46,9 @@ def _begin(api):
     plan = api.job("project.plan", goal_id=goal_id, planner=FABLE)
     plan_id = plan["plan_id"]
     assert plan["status"] == "succeeded", plan
-    api.get(f"resources/project-plan/{plan_id}")
+    planner_log = api.get(f"resources/project-plan/{plan_id}")["artifacts"][0]
+    assert planner_log["key"] == "planner-1", planner_log
+    assert planner_log["coordinates"] == {"log_index": 1}, planner_log
     return plan_id
 
 
@@ -71,9 +76,20 @@ def _direct(api, plan_id):
         f"resources/task-test/{task_id}"
         f"?implementation_attempt=1&test_attempt={suite['test_attempt']}"
     )
-    artifact = next(item for item in tests["artifacts"] if item["stream"] == "stdout")
+    artifact = next(
+        item
+        for item in tests["artifacts"]
+        if item["stream"] == "stdout" and item["coordinates"]["sequence"] == 1
+    )
+    assert artifact["key"] == f"test-{suite['test_attempt']}-1-2", artifact
+    assert artifact["coordinates"] == {
+        "test_attempt": suite["test_attempt"],
+        "sequence": 1,
+        "log_index": 2,
+    }, artifact
     page = api.get(f"artifacts/{artifact['artifact_id']}?offset=0&limit=4096")
     assert page["sha256"] == artifact["sha256"], page
+    assert page["text"] == "Offline build wrote artifact.bin\n", page
     review = api.job(
         "task.review",
         task_run_id=task_id,
@@ -178,7 +194,10 @@ def accept(api):
     assert refused["result"] is None and refused["error"] is not None, refused
     review = _integration_review(api, integration, [OPUS])
     snapshot_id = review["snapshot_id"]
-    api.get(f"resources/snapshot/{snapshot_id}")
+    snapshot = api.get(f"resources/snapshot/{snapshot_id}")
+    frozen = snapshot["artifacts"][0]
+    assert frozen["key"] == "frozen-1-stdout", frozen
+    assert frozen["coordinates"] == {"frozen_index": 1}, frozen
     assert (
         api.get(f"diffs/snapshot/{snapshot_id}")["candidate"]
         == integration["candidate"]["commit"]
@@ -225,6 +244,16 @@ def rework(api):
     repaired_diff = api.get(f"diffs/integration/{child_id}")
     assert repaired_diff["candidate"] == child["candidate"]["commit"], repaired_diff
     assert "frontend/status.js" in repaired_diff["diff"], repaired_diff
+    incremental = api.get(f"diffs/integration/{child_id}?against=parent")
+    assert incremental["parent_candidate"] == integration["candidate"]["commit"], (
+        incremental
+    )
+    assert incremental["candidate"] == child["candidate"]["commit"], incremental
+    assert [
+        line
+        for line in incremental["diff"].splitlines()
+        if line.startswith("diff --git ")
+    ] == ["diff --git a/frontend/status.js b/frontend/status.js"], incremental
     _accept(api, child, repaired["rereview"]["review"])
     api.get("runs")
 

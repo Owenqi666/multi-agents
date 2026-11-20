@@ -34,7 +34,7 @@
       "exit_code": 0,
       "logs": [
         {
-          "byte_count": 1204,
+          "byte_count": 1200,
           "closed": true,
           "healthy": true,
           "identity": [
@@ -48,7 +48,7 @@
           "sha256": "3000009000000000000000000000000000000000000000000000000000000000"
         },
         {
-          "byte_count": 6799,
+          "byte_count": 6791,
           "closed": true,
           "healthy": true,
           "identity": [
@@ -148,14 +148,22 @@
   "artifacts": [
     {
       "artifact_id": "art-WyJwcm9qZWN0LXBsYW4iLCJwbGFuLTEwMDAwMGIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwicGxhbm5lci0xIiwiMzAwMDAwOTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCJd",
+      "key": "planner-1",
+      "coordinates": {
+        "log_index": 1
+      },
       "stream": "claude-environment-100000c0000000000000000000000000",
-      "byte_count": 1204,
+      "byte_count": 1200,
       "sha256": "3000009000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJwcm9qZWN0LXBsYW4iLCJwbGFuLTEwMDAwMGIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwicGxhbm5lci0yIiwiMzAwMDAwYTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCJd",
+      "key": "planner-2",
+      "coordinates": {
+        "log_index": 2
+      },
       "stream": "claude-100000d0000000000000000000000000",
-      "byte_count": 6799,
+      "byte_count": 6791,
       "sha256": "300000a000000000000000000000000000000000000000000000000000000000"
     }
   ]

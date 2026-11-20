@@ -318,7 +318,7 @@
                 ],
                 "logs": [
                   {
-                    "byte_count": 8534,
+                    "byte_count": 8533,
                     "closed": true,
                     "healthy": true,
                     "identity": [
@@ -422,7 +422,7 @@
             "integration_id": "10000340000000000000000000000000",
             "logs": [
               {
-                "byte_count": 8534,
+                "byte_count": 8533,
                 "identity": [
                   1,
                   38
@@ -667,7 +667,7 @@
                 ],
                 "logs": [
                   {
-                    "byte_count": 8831,
+                    "byte_count": 8835,
                     "closed": true,
                     "healthy": true,
                     "identity": [
@@ -771,7 +771,7 @@
             "integration_id": "10000340000000000000000000000000",
             "logs": [
               {
-                "byte_count": 8831,
+                "byte_count": 8835,
                 "identity": [
                   1,
                   41
@@ -1034,24 +1034,40 @@
   "artifacts": [
     {
       "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMS1zdGRvdXQiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "frozen-1-stdout",
+      "coordinates": {
+        "frozen_index": 1
+      },
       "stream": "stdout",
       "byte_count": 33,
       "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMS1zdGRlcnIiLCIzMDAwMDA2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "frozen-1-stderr",
+      "coordinates": {
+        "frozen_index": 1
+      },
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMi1zdGRvdXQiLCIzMDAwMDI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "frozen-2-stdout",
+      "coordinates": {
+        "frozen_index": 2
+      },
       "stream": "stdout",
       "byte_count": 22,
       "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMi1zdGRlcnIiLCIzMDAwMDI1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "key": "frozen-2-stderr",
+      "coordinates": {
+        "frozen_index": 2
+      },
       "stream": "stderr",
       "byte_count": 36,
       "sha256": "3000025000000000000000000000000000000000000000000000000000000000"

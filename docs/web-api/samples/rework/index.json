@@ -628,6 +628,15 @@
   },
   {
     "seq": 52,
+    "method": "GET",
+    "path": "/api/diffs/integration/100003a0000000000000000000000000",
+    "query": "against=parent",
+    "request_body": null,
+    "status": 200,
+    "response_file": "052.json"
+  },
+  {
+    "seq": 53,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -639,21 +648,12 @@
       }
     },
     "status": 202,
-    "response_file": "052.json"
-  },
-  {
-    "seq": 53,
-    "method": "GET",
-    "path": "/api/jobs/100003f0000000000000000000000000",
-    "query": null,
-    "request_body": null,
-    "status": 200,
     "response_file": "053.json"
   },
   {
     "seq": 54,
     "method": "GET",
-    "path": "/api/resources/integration/100003a0000000000000000000000000",
+    "path": "/api/jobs/100003f0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -662,10 +662,19 @@
   {
     "seq": 55,
     "method": "GET",
-    "path": "/api/runs",
+    "path": "/api/resources/integration/100003a0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
     "response_file": "055.json"
+  },
+  {
+    "seq": 56,
+    "method": "GET",
+    "path": "/api/runs",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "056.json"
   }
 ]

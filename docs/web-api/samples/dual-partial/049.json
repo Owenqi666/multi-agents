@@ -473,24 +473,40 @@
   "artifacts": [
     {
       "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0xLXN0ZG91dCIsIjMwMDAwMjIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "key": "frozen-1-stdout",
+      "coordinates": {
+        "frozen_index": 1
+      },
       "stream": "stdout",
       "byte_count": 33,
       "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0xLXN0ZGVyciIsIjMwMDAwMDYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "key": "frozen-1-stderr",
+      "coordinates": {
+        "frozen_index": 1
+      },
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0yLXN0ZG91dCIsIjMwMDAwMjQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "key": "frozen-2-stdout",
+      "coordinates": {
+        "frozen_index": 2
+      },
       "stream": "stdout",
       "byte_count": 22,
       "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
     },
     {
       "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0yLXN0ZGVyciIsIjMwMDAwMjUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "key": "frozen-2-stderr",
+      "coordinates": {
+        "frozen_index": 2
+      },
       "stream": "stderr",
       "byte_count": 36,
       "sha256": "3000025000000000000000000000000000000000000000000000000000000000"

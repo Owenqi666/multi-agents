@@ -17,6 +17,7 @@ from .resources import (
     LOCKED_RESOURCE_KINDS,
     lock_busy_diff,
     lock_busy_resource,
+    parent_diff_requested,
     read_artifact,
     read_diff,
     read_resource,
@@ -231,13 +232,20 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                         return lock_busy_resource(kind, identifier, query)
                     return read_resource(server.workspace, kind, identifier, query)
             case ["api", "diffs", kind, identifier]:
-                _no_query(query)
+                against_parent = parent_diff_requested(kind, query)
                 with server.jobs.read_gate.read(
                     guarded=kind in LOCKED_DIFF_KINDS
                 ) as allowed:
                     if not allowed:
-                        return lock_busy_diff(kind, identifier)
-                    return read_diff(server.workspace, kind, identifier)
+                        return lock_busy_diff(
+                            kind, identifier, against_parent=against_parent
+                        )
+                    return read_diff(
+                        server.workspace,
+                        kind,
+                        identifier,
+                        against_parent=against_parent,
+                    )
             case ["api", "snapshots", identifier, "file"]:
                 return read_snapshot_file(
                     server.workspace, "snapshot", identifier, query
