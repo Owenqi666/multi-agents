@@ -42,7 +42,7 @@
     },
     {
       "name": "离线联调环境（补 6）",
-      "definition": "入口 uv run python tests/unit/web_support/offline_env.py --scenario accept|rework|dual-partial|cancel --port 0 [--frontend-dist DIR]。每次新建临时 Git 仓库、数据目录、HOME 和 CODEX_HOME，用固定路径的一对按状态判断角色的假 CLI（codex、claude 各一，模型目录含六个家族外加 Luna 和 Haiku，其中至少一个型号支持 low，假 CLI 接受 low）启动真实服务，标准输出第一行是服务地址。信号：SIGUSR1 硬停服务和它的 CLI 子进程，再用同一批临时目录、同一端口重启（用来得到 interrupted）；SIGHUP 正常重启（可选）；每次重启后重新打印地址；只有 SIGINT 停止并清理。场景：accept 从目标走到接受，含一个直接阶段和一个两张子卡的分派阶段；rework 首轮审核给一条带文件和行号的阻塞意见，返工后通过；dual-partial 双席审核一席首次失败，补跑后通过，其中一席的假 CLI 不报告模型（读回为 null）；cancel 在实施中途取消，作业经 cancelling 结束为 finished（退出码 130）。录制脚本把每个场景的真实 HTTP 响应写到 docs/web-api/samples/<场景>/：index.json 按顺序列出 {seq, method, path, query, request_body, status, response_file}，响应体在 NNN.json，作业轮询只留状态变化的几次。另外录下：作业运行中对 task、stage、一个 diff 和一个日志页的 lock_busy 读取；资格不够时提交 integration.accept 得到的退出码 2 且 result 为 null；硬停重启后的 interrupted 作业。保存前把 ID、提交 SHA、sha256、时间、临时路径和端口按首次出现的顺序换成稳定占位符，art- 句柄先解码、替换再编码；比较样例时比规范化之后的内容。样例不手改。docs/project-service.md 写明样例格式和规范化规则，并逐场景写明页面上要填的目标、基线、模型、测试命令名和预期结果。"
+      "definition": "入口 uv run python tests/unit/web_support/offline_env.py --scenario accept|rework|dual-partial|cancel --port 0 [--frontend-dist DIR]。每次新建临时 Git 仓库、数据目录、HOME 和 CODEX_HOME，用固定路径的一对按状态判断角色的假 CLI（codex、claude 各一，模型目录含六个家族外加 Luna 和 Haiku，其中至少一个型号支持 low，假 CLI 接受 low）启动真实服务，标准输出第一行是服务地址。信号：SIGUSR1 硬停服务和它的 CLI 子进程，再用同一批临时目录、同一端口重启（用来得到 interrupted）；SIGHUP 正常重启（可选）；每次重启后重新打印地址；只有 SIGINT 停止并清理。场景：accept 从目标走到接受，含一个直接阶段和一个两张子卡的分派阶段；rework 首轮审核给一条带文件和行号的阻塞意见，返工后通过；dual-partial 双席审核一席首次失败，补跑后通过，其中一席的假 CLI 不报告模型（读回为 null）；cancel 在实施中途取消，作业经 cancelling 结束为 finished（退出码 130）。录制脚本把每个场景的真实 HTTP 响应写到 docs/web-api/samples/<场景>/：index.json 按顺序列出 {seq, method, path, query, request_body, status, response_file}，响应体在 NNN.json，作业轮询只留状态变化的几次。另外录下：作业运行中对 task、stage、一个 diff 和一个日志页的 lock_busy 读取；资格不够时提交 integration.accept 得到的退出码 2 且 result 为 null；硬停重启后的 interrupted 作业。保存前把 ID、提交 SHA、sha256、时间、临时路径和端口按首次出现的顺序换成稳定占位符，art- 句柄先解码、替换再编码；比较样例时比规范化之后的内容。样例保留实录 byte_count；仅在重录比对时规范化含动态元数据的日志长度，固定测试输出、分页内容和退出码仍逐值核对。样例不手改。docs/project-service.md 写明样例格式和规范化规则，并逐场景写明页面上要填的目标、基线、模型、测试命令名和预期结果。"
     },
     {
       "name": "历史标签和工作区（补 7，补 8）",
@@ -65,7 +65,7 @@
     "unit：一个 CLI 作业处于 queued、running 或 cancelling 时，第二个 POST /api/jobs 都回 409 busy 和 active_job_id，数据目录下没有新增作业目录；同时 environment.refresh 正常受理。",
     "unit：作业未结束期间，合同里列出的每种抢锁读取都回 200 和 lock_busy:true，响应形状与合同一致（资源 data 为 null，diff 带 unavailable_code lock_busy，日志页 text 为 null），且后端视图函数没有被调用（以替身断言调用次数为 0）；project、consultation、goal、project-plan、project-stages、review、snapshot 照常返回数据。",
     "unit：一个抢锁读取尚未返回时提交作业，子进程要等该读取结束后才启动（以可控替身让读取阻塞并断言启动顺序）。",
-    "unit：task-test 读回的每条日志带 key 和 coordinates（test_attempt、sequence、log_index），能按测试尝试、命令序号和流找到对应日志页；审核和冻结日志的 coordinates 分别是 {seat, log_index} 和 {frozen_index}；artifact_id 与改动前相同。",
+    "unit：task-test 读回的每条日志带 key 和 coordinates（test_attempt、sequence、log_index），能按测试尝试、命令序号和流找到对应日志页；咨询席位和冻结日志的 coordinates 分别是 {seat, log_index} 和 {frozen_index}；artifact_id 与改动前相同。",
     "unit：一次任务返工和一次集成返工之后，against=parent 返回父候选到修订候选的增量和 parent_candidate；同一血缘里非返工产生的集成和首轮候选请求 against=parent 时 unavailable_code 为 no_parent；未核验的候选为 not_verified。",
     "unit：用 Python HTTP 客户端对 offline_env.py 的 accept、rework、dual-partial、cancel 四个场景各启动一次并只经 HTTP 走完预期路径；HOME、CODEX_HOME 都位于临时目录；向 offline_env.py 发 SIGUSR1 后在同一地址读到 interrupted 的作业；重新录制并规范化后的样例与 docs/web-api/samples/ 内容一致，合同列出的额外状态都有样例。",
     "unit：runs 的 label 不等于 ID，修订集成的 parent_id 是源集成，自动返工前的原审核轮出现在 runs；workspace 返回 branches 和带来源的 defaults。",

@@ -1,5 +1,6 @@
 """Project the chosen Git workspace and the six workbench model presets."""
 
+import argparse
 import os
 import re
 import stat
@@ -7,6 +8,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from multi_agent.cli.project_stage import add_stage_parser
 from multi_agent.cli.snapshot import _git, _resolve_commit
 from multi_agent.cli.task_inputs import RULES_PATH, freeze_project_rules
 from multi_agent.core.dispatch import resolve_dispatch
@@ -111,6 +113,8 @@ class Workspace:
             "repository": str(self.repository),
             "target_branch": branch or None,
             "head": head,
+            "branches": _branches(self.repository),
+            "defaults": _stage_defaults(),
             "read_only": False,
             "presets": {
                 "source": "workbench_model_presets",
@@ -128,6 +132,42 @@ class Workspace:
             },
             "environments": environments,
         }
+
+
+def _branches(repository: Path) -> list[dict[str, str]]:
+    prefix = "refs/heads/"
+    refs = _git(
+        repository,
+        "for-each-ref",
+        "--sort=refname",
+        "--format=%(refname)%00%(objectname)",
+        prefix,
+    )
+    return [
+        {
+            "name": name.decode("utf-8").removeprefix(prefix),
+            "head": head.decode("ascii"),
+        }
+        for name, head in (line.split(b"\0") for line in refs.splitlines())
+    ]
+
+
+def _stage_defaults() -> dict[str, Any]:
+    parser = argparse.ArgumentParser()
+    add_stage_parser(parser.add_subparsers(required=True))
+    args = parser.parse_args(["stage", "start", "plan", "stage"])
+    model, effort = args.sol
+    provider, review_model, review_effort = args.card_review
+    return {
+        "source": "cli_default",
+        "stage_mode": args.mode,
+        "sol": {"model": model, "effort": effort},
+        "card_review": {
+            "provider": provider,
+            "model": review_model,
+            "effort": review_effort,
+        },
+    }
 
 
 def _latest_models(provider: str, catalog: list[str]) -> dict[str, str]:

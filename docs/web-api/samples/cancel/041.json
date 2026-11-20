@@ -1,0 +1,10 @@
+{
+  "baseline": null,
+  "candidate": null,
+  "snapshot_id": null,
+  "diff": null,
+  "test_change_paths": [],
+  "unavailable_reason": "A CLI job is active.",
+  "unavailable_code": "lock_busy",
+  "lock_busy": true
+}

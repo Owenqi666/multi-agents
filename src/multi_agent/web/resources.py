@@ -7,6 +7,7 @@ import json
 import os
 import re
 import stat
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,7 @@ from multi_agent.cli.task_cli import view_task
 from multi_agent.cli.task_review_cli import view_task_review
 from multi_agent.cli.task_test_cli import _existing_lease, view_task_test
 from multi_agent.cli.task_test_evidence import inspect_task_test_command
+from multi_agent.core.integration import IntegrationCandidate
 from multi_agent.core.review_input import (
     ExecutedReviewInput,
     IntegrationReviewInput,
@@ -30,6 +32,7 @@ from multi_agent.core.review_input import (
 from multi_agent.store.integration_store import IntegrationStore
 from multi_agent.store.project_store import ProjectStore
 
+from .gate import ReadGate
 from .workspace import Workspace
 
 _IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
@@ -48,6 +51,10 @@ _HISTORY = {"plan", "task", "task-review", "integration", "review"}
 _KINDS = _HISTORY | set(_PROJECT_SCHEMA) | {"task-test", "snapshot"}
 _ARTIFACT_PAGE = 65_536
 _ARTIFACT_LIMIT = 128 * 1024 * 1024
+LOCKED_RESOURCE_KINDS = frozenset(
+    {"task", "task-test", "task-review", "integration", "stage", "plan"}
+)
+LOCKED_DIFF_KINDS = frozenset({"task", "integration"})
 
 type _Query = dict[str, list[str]]
 
@@ -68,9 +75,13 @@ def _number(value: str, label: str, *, minimum: int = 1) -> int:
     return int(value)
 
 
-def _scope(workspace: Workspace, kind: str, identifier: str) -> tuple[Path, str]:
+def _validate_resource_identity(kind: str, identifier: str) -> None:
     if kind not in _KINDS or not _IDENTITY.fullmatch(identifier):
         raise ValueError("invalid resource kind or identifier")
+
+
+def _scope(workspace: Workspace, kind: str, identifier: str) -> tuple[Path, str]:
+    _validate_resource_identity(kind, identifier)
     database = workspace.data_dir / "reviews.sqlite3"
     if database.is_symlink():
         raise ValueError("workspace database must be a regular file")
@@ -147,16 +158,29 @@ def require_owned(workspace: Workspace, kind: str, identifier: str) -> None:
         _owned(store, common, kind, identifier)
 
 
-def _resource_data(
-    workspace: Workspace, kind: str, identifier: str, query: _Query
-) -> dict[str, Any]:
+def _resource_options(kind: str, query: _Query) -> dict[str, str]:
     allowed = {"history"} if kind in _HISTORY else set()
     if kind == "task-test":
         allowed = {"implementation_attempt", "test_attempt"}
     options = _query(query, allowed)
-    history = options.get("history")
-    if history is not None and history != "1":
+    if "history" in options and options["history"] != "1":
         raise ValueError("history must be 1")
+    return options
+
+
+def _test_attempts(options: dict[str, str]) -> tuple[int, int | None]:
+    implementation = _number(
+        options.get("implementation_attempt", ""), "implementation_attempt"
+    )
+    test = options.get("test_attempt")
+    return implementation, _number(test, "test_attempt") if test is not None else None
+
+
+def _resource_data(
+    workspace: Workspace, kind: str, identifier: str, query: _Query
+) -> dict[str, Any]:
+    options = _resource_options(kind, query)
+    history = "history" in options
     database, common = _scope(workspace, kind, identifier)
     with _ResourceStore.open_readonly(database) as store:
         _owned(store, common, kind, identifier)
@@ -169,33 +193,25 @@ def _resource_data(
                         store,
                         record,
                         target_current=result["target_is_current"],
-                        history=bool(history),
+                        history=history,
                     )
                 )
             return result
         if kind == "review":
-            return view_round(store, identifier, history=bool(history))
+            return view_round(store, identifier, history=history)
         if kind == "snapshot":
             value = _read_snapshot(store, identifier)
             return {"snapshot_id": value.snapshot_id, "input": value.to_dict()}
 
     if kind == "plan":
-        return view_task(database, planning_run_id=identifier, history=bool(history))
+        return view_task(database, planning_run_id=identifier, history=history)
     if kind == "task":
-        return view_task(database, task_run_id=identifier, history=bool(history))
+        return view_task(database, task_run_id=identifier, history=history)
     if kind == "task-review":
-        return view_task_review(database, identifier, history=bool(history))
+        return view_task_review(database, identifier, history=history)
     if kind == "task-test":
-        attempt = _number(
-            options.get("implementation_attempt", ""), "implementation_attempt"
-        )
-        test = options.get("test_attempt")
-        return view_task_test(
-            database,
-            identifier,
-            attempt,
-            test_attempt=_number(test, "test_attempt") if test is not None else None,
-        )
+        attempt, test = _test_attempts(options)
+        return view_task_test(database, identifier, attempt, test_attempt=test)
     with ProjectStore.open_readonly(database) as projects:
         match kind:
             case "project":
@@ -245,14 +261,73 @@ def read_snapshot_file(
     raise KeyError(path)
 
 
-def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any]:
-    result: dict[str, Any] = {
+def _empty_diff() -> dict[str, Any]:
+    return {
         "baseline": None,
         "candidate": None,
         "snapshot_id": None,
         "diff": None,
         "test_change_paths": [],
     }
+
+
+def parent_diff_requested(kind: str, query: _Query) -> bool:
+    options = _query(query, {"against"} if kind in LOCKED_DIFF_KINDS else set())
+    if "against" in options and options["against"] != "parent":
+        raise ValueError("against must be parent")
+    return "against" in options
+
+
+def lock_busy_diff(
+    kind: str, identifier: str, *, against_parent: bool = False
+) -> dict[str, Any]:
+    _validate_resource_identity(kind, identifier)
+    result = _empty_diff() | {
+        "unavailable_reason": "A CLI job is active.",
+        "unavailable_code": "lock_busy",
+        "lock_busy": True,
+    }
+    if against_parent:
+        result["parent_candidate"] = None
+    return result
+
+
+def _parent_candidate(
+    workspace: Workspace, kind: str, identifier: str, value: dict[str, Any]
+) -> str | None:
+    if kind == "task":
+        request = value["attempts"][-1]["request"]
+        if request["kind"] != "task_rework_started":
+            return None
+        commit: str = request["source"]["candidate_commit"]
+        return commit
+
+    parent_id = value.get("rebased_from")
+    if parent_id is None:
+        rework = value.get("rework")
+        if rework is None or rework["child_id"] != identifier:
+            return None
+        parent_id = rework["source_id"]
+    database = workspace.data_dir / "reviews.sqlite3"
+    with IntegrationStore.open_readonly(database) as store:
+        parent = store.load_integration(parent_id)
+    if parent.repository != value["repository"]:
+        raise KeyError(parent_id)
+    return (
+        parent.result.commit
+        if isinstance(parent.result, IntegrationCandidate)
+        else None
+    )
+
+
+def read_diff(
+    workspace: Workspace, kind: str, identifier: str, *, against_parent: bool = False
+) -> dict[str, Any]:
+    result = _empty_diff()
+    if against_parent:
+        if kind not in LOCKED_DIFF_KINDS:
+            raise ValueError("parent diffs require a task or integration")
+        result["parent_candidate"] = None
     if kind == "snapshot":
         snapshot = _snapshot(workspace, identifier)
         source = review_source(snapshot)
@@ -265,7 +340,7 @@ def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any
             if isinstance(snapshot, IntegrationReviewInput)
             else [],
         }
-    if kind not in {"task", "integration"}:
+    if kind not in LOCKED_DIFF_KINDS:
         raise ValueError("diffs require a task, integration or snapshot")
     value = _resource_data(workspace, kind, identifier, {})
     candidate = value["candidate"]
@@ -276,13 +351,26 @@ def read_diff(workspace: Workspace, kind: str, identifier: str) -> dict[str, Any
         candidate = candidate["commit"] if candidate is not None else None
     result["baseline"] = baseline
     if value["verification"] != "verified" or candidate is None:
-        return result | {"unavailable_reason": "No verified frozen candidate."}
-    if not _COMMIT.fullmatch(baseline) or not _COMMIT.fullmatch(candidate):
+        return result | {
+            "unavailable_reason": "No verified frozen candidate.",
+            "unavailable_code": "not_verified",
+        }
+    start = baseline
+    result["candidate"] = candidate
+    if against_parent:
+        start = _parent_candidate(workspace, kind, identifier, value)
+        if start is None:
+            return result | {
+                "unavailable_reason": "No parent candidate for this revision.",
+                "unavailable_code": "no_parent",
+            }
+        result["parent_candidate"] = start
+    if not _COMMIT.fullmatch(start) or not _COMMIT.fullmatch(candidate):
         raise ValueError("candidate diff requires exact commit identities")
-    diff = _diff(workspace.repository, baseline, candidate)
+    diff = _diff(workspace.repository, start, candidate)
     if len(diff.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         raise ValueError("candidate diff exceeds the preview size limit")
-    return result | {"candidate": candidate, "diff": diff}
+    return result | {"diff": diff}
 
 
 @dataclass(frozen=True, slots=True)
@@ -519,6 +607,41 @@ def _artifact_id(
     return "art-" + base64.urlsafe_b64encode(locator.encode()).decode().rstrip("=")
 
 
+def _artifact_coordinates(key: str) -> dict[str, int]:
+    match key.split("-"):
+        case ["test", attempt, sequence, index]:
+            return {
+                "test_attempt": int(attempt),
+                "sequence": int(sequence),
+                "log_index": int(index),
+            }
+        case ["seat", seat, index]:
+            return {"seat": int(seat), "log_index": int(index)}
+        case ["frozen", index, _stream]:
+            return {"frozen_index": int(index)}
+        case ["planner", index]:
+            return {"log_index": int(index)}
+    raise AssertionError(f"unexpected internal log key {key!r}")
+
+
+def _validate_resource_request(kind: str, identifier: str, query: _Query) -> None:
+    _validate_resource_identity(kind, identifier)
+    options = _resource_options(kind, query)
+    if kind == "task-test":
+        _test_attempts(options)
+
+
+def lock_busy_resource(kind: str, identifier: str, query: _Query) -> dict[str, Any]:
+    _validate_resource_request(kind, identifier, query)
+    return {
+        "kind": kind,
+        "id": identifier,
+        "data": None,
+        "artifacts": [],
+        "lock_busy": True,
+    }
+
+
 def read_resource(
     workspace: Workspace, kind: str, identifier: str, query: _Query
 ) -> dict[str, Any]:
@@ -540,6 +663,8 @@ def read_resource(
                 "artifact_id": _artifact_id(
                     kind, identifier, options, key, artifact.sha256
                 ),
+                "key": key,
+                "coordinates": _artifact_coordinates(key),
                 "stream": artifact.stream,
                 "byte_count": artifact.byte_count,
                 "sha256": artifact.sha256,
@@ -550,7 +675,11 @@ def read_resource(
 
 
 def read_artifact(
-    workspace: Workspace, artifact_id: str, query: _Query
+    workspace: Workspace,
+    artifact_id: str,
+    query: _Query,
+    *,
+    gate: ReadGate | None = None,
 ) -> dict[str, Any]:
     options = _query(query, {"offset", "limit"})
     offset = _number(options.get("offset", "0"), "offset", minimum=0)
@@ -581,25 +710,43 @@ def read_artifact(
     except (ValueError, TypeError, UnicodeError, binascii.Error) as error:
         raise KeyError(artifact_id) from error
 
-    data = _resource_data(workspace, kind, identifier, selection)
-    artifact = _artifacts(workspace, kind, identifier, data).get(key)
-    if artifact is None or artifact.sha256 != digest:
-        raise KeyError(artifact_id)
-    source = artifact.source
-    part = (
-        _sealed_bytes(
-            workspace,
-            source,
-            artifact.sha256,
-            limit=_ARTIFACT_LIMIT,
-            size=artifact.byte_count,
-            identity=artifact.identity,
-            offset=offset,
-            length=limit,
-        )
-        if isinstance(source, Path)
-        else source[offset : offset + limit]
+    admission = (
+        gate.read(guarded=kind in LOCKED_RESOURCE_KINDS)
+        if gate is not None
+        else nullcontext(True)
     )
+    with admission as allowed:
+        if not allowed:
+            _validate_resource_request(kind, identifier, selection)
+            return {
+                "stream": None,
+                "text": None,
+                "offset": offset,
+                "next_offset": None,
+                "byte_count": None,
+                "sha256": None,
+                "truncated": None,
+                "lock_busy": True,
+            }
+        data = _resource_data(workspace, kind, identifier, selection)
+        artifact = _artifacts(workspace, kind, identifier, data).get(key)
+        if artifact is None or artifact.sha256 != digest:
+            raise KeyError(artifact_id)
+        source = artifact.source
+        part = (
+            _sealed_bytes(
+                workspace,
+                source,
+                artifact.sha256,
+                limit=_ARTIFACT_LIMIT,
+                size=artifact.byte_count,
+                identity=artifact.identity,
+                offset=offset,
+                length=limit,
+            )
+            if isinstance(source, Path)
+            else source[offset : offset + limit]
+        )
     next_offset = offset + len(part)
     return {
         "stream": artifact.stream,
@@ -612,15 +759,34 @@ def read_artifact(
     }
 
 
+def _result_field(value: object, key: str) -> object:
+    return value.get(key) if isinstance(value, dict) else None
+
+
+def _first_result_line(*values: object) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip().splitlines()[0].strip()
+    return None
+
+
 def references(action: str, result: object) -> list[dict[str, str]]:
     """Collect explicit product IDs from normal and partially successful results."""
     items: dict[tuple[str, str], dict[str, str]] = {}
+    revised_integrations: dict[str, str] = {}
 
-    def remember(kind: str, identifier: object, parent_id: object = None) -> None:
+    def remember(
+        kind: str,
+        identifier: object,
+        parent_id: object = None,
+        label: str | None = None,
+    ) -> None:
         if isinstance(identifier, str) and _IDENTITY.fullmatch(identifier):
             record = items.setdefault(
                 (kind, identifier), {"kind": kind, "id": identifier}
             )
+            if label is not None:
+                record.setdefault("label", label)
             if (
                 isinstance(parent_id, str)
                 and _IDENTITY.fullmatch(parent_id)
@@ -632,34 +798,65 @@ def references(action: str, result: object) -> list[dict[str, str]]:
         if not isinstance(value, dict):
             return
         goal = value.get("goal")
+        goal_label = _first_result_line(
+            value.get("confirmed_goal"), value.get("original_goal")
+        )
+        plan_goal_label = _first_result_line(
+            _result_field(goal, "confirmed_goal"), _result_field(goal, "original_goal")
+        )
+        project_label = goal_label if value.get("goal_id") else None
+        planning = value.get("planning")
+        source = _result_field(value.get("details"), "input")
+        card_label = _first_result_line(
+            value.get("card_id"),
+            _result_field(value.get("card"), "id"),
+            _result_field(_result_field(source, "card"), "id"),
+            _result_field(_result_field(planning, "card"), "id"),
+        )
+        stage_label = _first_result_line(value.get("stage_id"))
+        task_label = card_label or _first_result_line(
+            value.get("requirements"), _result_field(source, "requirements")
+        )
+        planning_label = (
+            stage_label
+            if _result_field(planning, "planning_kind") == "stage_split"
+            else task_label
+        )
+        target = value.get("target_ref")
+        branch_label = _first_result_line(
+            target.removeprefix("refs/heads/") if isinstance(target, str) else None
+        )
         review_parent = (
             value.get("task_run_id") or value.get("integration_id") or parent
         )
-        for field, kind, owner in (
-            ("project_id", "project", None),
-            ("consultation_id", "consultation", value.get("project_id")),
-            ("goal_id", "goal", value.get("project_id")),
+        for field, kind, owner, label in (
+            ("project_id", "project", None, project_label),
+            ("consultation_id", "consultation", value.get("project_id"), goal_label),
+            ("goal_id", "goal", value.get("project_id"), goal_label),
             (
                 "plan_id",
                 "project-plan",
-                goal.get("goal_id") if isinstance(goal, dict) else None,
+                _result_field(goal, "goal_id"),
+                plan_goal_label,
             ),
-            ("stage_run_id", "stage", value.get("plan_id")),
-            ("planning_run_id", "plan", value.get("stage_run_id")),
-            ("task_run_id", "task", value.get("planning_run_id")),
+            ("stage_run_id", "stage", value.get("plan_id"), stage_label),
+            ("planning_run_id", "plan", value.get("stage_run_id"), planning_label),
+            ("task_run_id", "task", value.get("planning_run_id"), task_label),
             (
                 "integration_id",
                 "integration",
-                value.get("stage_run_id") or value.get("rebased_from"),
+                value.get("rebased_from") or value.get("stage_run_id"),
+                branch_label,
             ),
-            ("snapshot_id", "snapshot", value.get("round_id")),
+            ("snapshot_id", "snapshot", value.get("round_id"), None),
             (
                 "source_snapshot_id",
                 "snapshot",
                 value.get("consultation_id") or value.get("plan_id"),
+                None,
             ),
         ):
-            remember(kind, value.get(field), owner)
+            remember(kind, value.get(field), owner, label)
         review_kind = (
             "task-review"
             if action.startswith("task.") or value.get("task_run_id") is not None
@@ -671,8 +868,25 @@ def references(action: str, result: object) -> list[dict[str, str]]:
             "confirmation_round_id",
             "assessment_round_id",
             "source_review_round_id",
+            "final_review_round_id",
         ):
             remember(review_kind, value.get(field), review_parent)
+        rework = value.get("rework")
+        source_id = _result_field(rework, "source_id")
+        if isinstance(source_id, str) and _IDENTITY.fullmatch(source_id):
+            child_id = _result_field(rework, "child_id")
+            if (
+                isinstance(child_id, str)
+                and _IDENTITY.fullmatch(child_id)
+                and source_id != child_id
+            ):
+                revised_integrations[child_id] = source_id
+                remember("integration", child_id)
+            remember(
+                "review",
+                _result_field(_result_field(rework, "request"), "review_round_id"),
+                source_id,
+            )
         for field in (
             "goal",
             "consultation",
@@ -685,13 +899,16 @@ def references(action: str, result: object) -> list[dict[str, str]]:
             "acceptance",
             "integration",
             "implementation",
+            "workflow",
         ):
             visit(value.get(field), review_parent)
         for field in ("tasks", "leaves", "reviews"):
             children = value.get(field)
             if isinstance(children, list):
                 for child in children:
-                    visit(child)
+                    visit(child, review_parent)
 
     visit(result)
+    for child_id, source_id in revised_integrations.items():
+        items["integration", child_id]["parent_id"] = source_id
     return list(items.values())

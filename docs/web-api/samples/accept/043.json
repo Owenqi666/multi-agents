@@ -1,0 +1,35 @@
+{
+  "args": {
+    "integration_id": "10000340000000000000000000000000",
+    "round_id": "100001a0000000000000000000000000"
+  },
+  "created_at": "2000-01-01T00:01:07.000000+00:00",
+  "started_at": "2000-01-01T00:01:08.000000+00:00",
+  "finished_at": "2000-01-01T00:01:09.000000+00:00",
+  "cancel_requested_at": null,
+  "stderr_tail": "multi-agent: integration requires its current review round\n",
+  "job_id": "10000350000000000000000000000000",
+  "action": "integration.accept",
+  "state": "finished",
+  "exit_code": 2,
+  "result": null,
+  "error": {
+    "code": "cli_failed",
+    "message": "The CLI exited unsuccessfully."
+  },
+  "resources": [],
+  "artifacts": [
+    {
+      "artifact_id": "10000350000000000000000000000000.stdout",
+      "stream": "stdout",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "10000350000000000000000000000000.stderr",
+      "stream": "stderr",
+      "byte_count": 59,
+      "sha256": "300004a000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

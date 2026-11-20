@@ -1,0 +1,273 @@
+{
+  "args": {
+    "integration_id": "10000340000000000000000000000000",
+    "seats": [
+      {
+        "provider": "claude",
+        "model": "claude-opus-5-5",
+        "effort": "low"
+      }
+    ],
+    "auto_rework": false
+  },
+  "created_at": "2000-01-01T00:01:10.000000+00:00",
+  "started_at": "2000-01-01T00:01:11.000000+00:00",
+  "finished_at": "2000-01-01T00:01:12.000000+00:00",
+  "cancel_requested_at": null,
+  "stderr_tail": "",
+  "job_id": "10000360000000000000000000000000",
+  "action": "integration.review",
+  "state": "finished",
+  "exit_code": 1,
+  "result": {
+    "operation": "review",
+    "integration_id": "10000340000000000000000000000000",
+    "test_attempt": 1,
+    "review": {
+      "round_id": "10000370000000000000000000000000",
+      "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
+      "prompt_template_version": "integration-review-v1",
+      "metadata": {
+        "kind": "review",
+        "created_at": "2000-01-01T00:01:13.000000+00:00",
+        "timeout": 180,
+        "grace": 2,
+        "executables": {
+          "claude": "/sample/scenario/bin/claude"
+        },
+        "parent_round_id": null
+      },
+      "status": "ready_for_assessment",
+      "seats": [
+        {
+          "key": "seat-1",
+          "provider": "claude",
+          "requested_model": "claude-opus-5-5",
+          "requested_effort": "low",
+          "current_attempt": 1,
+          "attempts": [
+            {
+              "number": 1,
+              "status": "succeeded",
+              "failure_category": null,
+              "detail": null,
+              "retry_after": null,
+              "session_id": "session-12",
+              "reported_model": "actual-claude",
+              "reported_effort": null,
+              "reported_model_source": {
+                "event_type": "completed",
+                "raw_type": "result"
+              },
+              "reported_effort_source": null,
+              "reported_model_status": "reported",
+              "reported_effort_status": "未确认",
+              "result": {
+                "summary": "The summary still exposes the draft status.",
+                "findings": [
+                  {
+                    "id": "status-blocker",
+                    "severity": "P1",
+                    "category": "correctness",
+                    "side": "candidate",
+                    "path": "frontend/status.js",
+                    "line_start": 1,
+                    "line_end": 1,
+                    "quote": "export const status = \"draft\";",
+                    "title": "Status is still draft",
+                    "impact": "The summary does not display the ready state.",
+                    "rationale": "The candidate still returns the draft value."
+                  }
+                ]
+              },
+              "exit_code": 0
+            }
+          ]
+        }
+      ],
+      "execution": {
+        "seat-1": {
+          "1": {
+            "elapsed_seconds": 0.002,
+            "environment": {
+              "cli_version": "2.1.325 (Claude Code)",
+              "logged_in": true,
+              "model_efforts": null,
+              "models": null
+            },
+            "finished_at": "2000-01-01T00:01:14.000000+00:00",
+            "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-1/1",
+            "started_at": "2000-01-01T00:01:15.000000+00:00",
+            "workspace_unchanged": true
+          }
+        }
+      },
+      "assessment": {
+        "status": "needs_rework",
+        "reasons": [
+          "blocking_findings_present"
+        ],
+        "missing_seats": [],
+        "reports": {
+          "seat-1": {
+            "summary": "The summary still exposes the draft status.",
+            "findings": [
+              {
+                "id": "status-blocker",
+                "severity": "P1",
+                "category": "correctness",
+                "side": "candidate",
+                "path": "frontend/status.js",
+                "line_start": 1,
+                "line_end": 1,
+                "quote": "export const status = \"draft\";",
+                "title": "Status is still draft",
+                "impact": "The summary does not display the ready state.",
+                "rationale": "The candidate still returns the draft value.",
+                "reference_status": "verified",
+                "reference_reason": "complete_lines_match"
+              }
+            ]
+          }
+        },
+        "groups": [
+          {
+            "location": {
+              "side": "candidate",
+              "path": "frontend/status.js",
+              "line_start": 1,
+              "line_end": 1,
+              "category": "correctness"
+            },
+            "members": [
+              {
+                "seat": "seat-1",
+                "finding": {
+                  "id": "status-blocker",
+                  "severity": "P1",
+                  "category": "correctness",
+                  "side": "candidate",
+                  "path": "frontend/status.js",
+                  "line_start": 1,
+                  "line_end": 1,
+                  "quote": "export const status = \"draft\";",
+                  "title": "Status is still draft",
+                  "impact": "The summary does not display the ready state.",
+                  "rationale": "The candidate still returns the draft value.",
+                  "reference_status": "verified",
+                  "reference_reason": "complete_lines_match"
+                }
+              }
+            ],
+            "confirmations": [],
+            "blocking": true,
+            "independent_reports": {
+              "seat-1": "reported"
+            }
+          }
+        ],
+        "tests": {
+          "source": "workbench_executed",
+          "executed_by_workbench": true,
+          "status": "passed",
+          "integration_id": "10000340000000000000000000000000",
+          "test_attempt": 1,
+          "test_evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000",
+          "required_commands": [
+            {
+              "sequence": 1,
+              "name": "build",
+              "argv": [
+                "/sample/python/bin/python3.12",
+                "checks/build.py"
+              ]
+            },
+            {
+              "sequence": 2,
+              "name": "test",
+              "argv": [
+                "/sample/python/bin/python3.12",
+                "checks/test.py"
+              ]
+            }
+          ],
+          "commands": [
+            {
+              "sequence": 1,
+              "name": "build",
+              "reported_exit_code": 0,
+              "exit_code": 0,
+              "stop_scope": "command-request-and-owned-runtime-v1",
+              "output_scope": "server-emitted-notifications-v1",
+              "stdout": {
+                "byte_count": 33,
+                "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+              },
+              "stderr": {
+                "byte_count": 0,
+                "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+              }
+            },
+            {
+              "sequence": 2,
+              "name": "test",
+              "reported_exit_code": 0,
+              "exit_code": 0,
+              "stop_scope": "command-request-and-owned-runtime-v1",
+              "output_scope": "server-emitted-notifications-v1",
+              "stdout": {
+                "byte_count": 22,
+                "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+              },
+              "stderr": {
+                "byte_count": 36,
+                "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+              }
+            }
+          ],
+          "missing_commands": [],
+          "mismatched_records": [],
+          "failed_records": []
+        }
+      },
+      "confirmation_round_id": null,
+      "confirmations": [],
+      "unanswered_confirmations": [],
+      "assessment_scope": "historical_frozen_input",
+      "source_current": true,
+      "verification": "verified",
+      "current_eligible": false,
+      "test_attempt": 1,
+      "source_errors": []
+    }
+  },
+  "error": null,
+  "resources": [
+    {
+      "kind": "integration",
+      "id": "10000340000000000000000000000000"
+    },
+    {
+      "kind": "snapshot",
+      "id": "300004f000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "kind": "review",
+      "id": "10000370000000000000000000000000"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "10000360000000000000000000000000.stdout",
+      "stream": "stdout",
+      "byte_count": 5116,
+      "sha256": "3000050000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "10000360000000000000000000000000.stderr",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

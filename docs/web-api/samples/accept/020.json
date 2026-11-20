@@ -1,0 +1,7 @@
+{
+  "baseline": "2000001000000000000000000000000000000000",
+  "candidate": "2000002000000000000000000000000000000000",
+  "snapshot_id": null,
+  "diff": "diff --git a/backend/amount.py b/backend/amount.py\nindex 2000005000000000000000000000000000000000..2000006000000000000000000000000000000000 100644\n--- a/backend/amount.py\n+++ b/backend/amount.py\n@@ -1 +1 @@\n-AMOUNT = 0\n+AMOUNT = 1\n",
+  "test_change_paths": []
+}

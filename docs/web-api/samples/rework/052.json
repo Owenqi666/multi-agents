@@ -1,0 +1,8 @@
+{
+  "baseline": "2000002000000000000000000000000000000000",
+  "candidate": "2000011000000000000000000000000000000000",
+  "snapshot_id": null,
+  "diff": "diff --git a/frontend/status.js b/frontend/status.js\nindex 200000d000000000000000000000000000000000..2000013000000000000000000000000000000000 100644\n--- a/frontend/status.js\n+++ b/frontend/status.js\n@@ -1 +1 @@\n-export const status = \"draft\";\n+export const status = \"ready\";\n",
+  "test_change_paths": [],
+  "parent_candidate": "200000b000000000000000000000000000000000"
+}

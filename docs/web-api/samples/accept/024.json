@@ -1,0 +1,9 @@
+{
+  "stream": "stdout",
+  "text": "Offline build wrote artifact.bin\n",
+  "offset": 0,
+  "next_offset": null,
+  "byte_count": 33,
+  "sha256": "3000022000000000000000000000000000000000000000000000000000000000",
+  "truncated": false
+}

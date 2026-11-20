@@ -1,0 +1,147 @@
+{
+  "scenario": "rework",
+  "finished_at": "2026-11-20T21:27:24.334Z",
+  "api_requests": 158,
+  "locking_reads": 17,
+  "lock_violations": [],
+  "job_posts": 18,
+  "jobs": [
+    {
+      "action": "environment.refresh",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "environment.refresh",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.consult",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.confirm",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.plan",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.start",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.test",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.review",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.start",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.leaf",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.leaf",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.run",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.run",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.integrate",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "integration.test",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "integration.review",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "integration.rework",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "integration.accept",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    }
+  ],
+  "result": "passed",
+  "same_page_after_refresh": "http://127.0.0.1:63956/integrations/af25dacd58f749079494b4afae8486e1"
+}
