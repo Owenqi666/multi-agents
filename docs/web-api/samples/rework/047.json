@@ -1,0 +1,7 @@
+{
+  "side": "candidate",
+  "path": "frontend/status.js",
+  "text": "export const status = \"draft\";\n",
+  "oid": "200000d000000000000000000000000000000000",
+  "mode": "100644"
+}

@@ -1,0 +1,43 @@
+{
+  "kind": "project-stages",
+  "id": "plan-100000b0000000000000000000000000",
+  "data": {
+    "kind": "project_stages",
+    "plan_id": "plan-100000b0000000000000000000000000",
+    "stages": [
+      {
+        "stage_run_id": "stage-100000f0000000000000000000000000",
+        "plan_id": "plan-100000b0000000000000000000000000",
+        "stage_id": "amount",
+        "planning_run_id": "10000100000000000000000000000000",
+        "mode": "direct",
+        "execution_baseline": "2000001000000000000000000000000000000000",
+        "dependencies": [],
+        "created_at": "2000-01-01T00:00:27.000000+00:00",
+        "dispatch_error": null
+      },
+      {
+        "stage_run_id": "stage-100001c0000000000000000000000000",
+        "plan_id": "plan-100000b0000000000000000000000000",
+        "stage_id": "summary",
+        "planning_run_id": "100001d0000000000000000000000000",
+        "mode": "delegate",
+        "execution_baseline": "2000002000000000000000000000000000000000",
+        "dependencies": [
+          {
+            "candidate": "2000002000000000000000000000000000000000",
+            "implementation_attempt": 1,
+            "review_round_id": "100001a0000000000000000000000000",
+            "stage_id": "amount",
+            "stage_run_id": "stage-100000f0000000000000000000000000",
+            "task_run_id": "10000110000000000000000000000000",
+            "test_attempt": 1
+          }
+        ],
+        "created_at": "2000-01-01T00:00:44.000000+00:00",
+        "dispatch_error": null
+      }
+    ]
+  },
+  "artifacts": []
+}

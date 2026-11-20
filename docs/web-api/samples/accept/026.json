@@ -1,0 +1,225 @@
+{
+  "args": {
+    "task_run_id": "10000110000000000000000000000000",
+    "implementation_attempt": 1,
+    "test_attempt": 1,
+    "seats": [
+      {
+        "provider": "claude",
+        "model": "claude-opus-5-5",
+        "effort": "low"
+      }
+    ],
+    "auto_rework": false
+  },
+  "created_at": "2000-01-01T00:00:35.000000+00:00",
+  "started_at": "2000-01-01T00:00:36.000000+00:00",
+  "finished_at": "2000-01-01T00:00:37.000000+00:00",
+  "cancel_requested_at": null,
+  "stderr_tail": "",
+  "job_id": "10000190000000000000000000000000",
+  "action": "task.review",
+  "state": "finished",
+  "exit_code": 0,
+  "result": {
+    "round_id": "100001a0000000000000000000000000",
+    "snapshot_id": "3000026000000000000000000000000000000000000000000000000000000000",
+    "prompt_template_version": "executed-review-v2",
+    "metadata": {
+      "kind": "review",
+      "created_at": "2000-01-01T00:00:38.000000+00:00",
+      "timeout": 180,
+      "grace": 2,
+      "executables": {
+        "codex": "/sample/scenario/bin/codex",
+        "claude": "/sample/scenario/bin/claude"
+      },
+      "parent_round_id": null,
+      "repository": "/sample/scenario/repository",
+      "directory": "/sample/scenario/data/web-run-10000190000000000000000000000000",
+      "directory_identity": [
+        1,
+        17
+      ],
+      "automatic_rework": false
+    },
+    "status": "ready_for_assessment",
+    "seats": [
+      {
+        "key": "reviewer-1",
+        "provider": "claude",
+        "requested_model": "claude-opus-5-5",
+        "requested_effort": "low",
+        "current_attempt": 1,
+        "attempts": [
+          {
+            "number": 1,
+            "status": "succeeded",
+            "failure_category": null,
+            "detail": null,
+            "retry_after": null,
+            "session_id": "session-6",
+            "reported_model": "actual-claude",
+            "reported_effort": null,
+            "reported_model_source": {
+              "event_type": "completed",
+              "raw_type": "result"
+            },
+            "reported_effort_source": null,
+            "reported_model_status": "reported",
+            "reported_effort_status": "未确认",
+            "result": {
+              "summary": "The offline candidate is ready.",
+              "findings": []
+            },
+            "exit_code": 0
+          }
+        ]
+      }
+    ],
+    "execution": {
+      "reviewer-1": {
+        "1": {
+          "elapsed_seconds": 0.001,
+          "environment": {
+            "cli_version": "2.1.325 (Claude Code)",
+            "logged_in": true,
+            "model_efforts": null,
+            "models": null
+          },
+          "finished_at": "2000-01-01T00:00:39.000000+00:00",
+          "log_dir": "/sample/scenario/data/web-run-10000190000000000000000000000000/logs/100001a0000000000000000000000000/reviewer-1/1",
+          "started_at": "2000-01-01T00:00:40.000000+00:00",
+          "workspace_unchanged": true
+        }
+      }
+    },
+    "assessment": {
+      "status": "ready",
+      "reasons": [],
+      "missing_seats": [],
+      "reports": {
+        "reviewer-1": {
+          "summary": "The offline candidate is ready.",
+          "findings": []
+        }
+      },
+      "groups": [],
+      "tests": {
+        "source": "workbench_executed",
+        "executed_by_workbench": true,
+        "status": "passed",
+        "task_run_id": "10000110000000000000000000000000",
+        "implementation_attempt": 1,
+        "test_attempt": 1,
+        "required_commands": [
+          {
+            "sequence": 1,
+            "name": "build",
+            "argv": [
+              "/sample/python/bin/python3.12",
+              "checks/build.py"
+            ]
+          },
+          {
+            "sequence": 2,
+            "name": "test",
+            "argv": [
+              "/sample/python/bin/python3.12",
+              "checks/test.py"
+            ]
+          }
+        ],
+        "commands": [
+          {
+            "sequence": 1,
+            "name": "build",
+            "reported_exit_code": 0,
+            "exit_code": 0,
+            "stop_scope": "command-request-and-owned-runtime-v1",
+            "output_scope": "server-emitted-notifications-v1",
+            "stdout": {
+              "byte_count": 33,
+              "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+            },
+            "stderr": {
+              "byte_count": 0,
+              "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+            }
+          },
+          {
+            "sequence": 2,
+            "name": "test",
+            "reported_exit_code": 0,
+            "exit_code": 0,
+            "stop_scope": "command-request-and-owned-runtime-v1",
+            "output_scope": "server-emitted-notifications-v1",
+            "stdout": {
+              "byte_count": 22,
+              "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+            },
+            "stderr": {
+              "byte_count": 36,
+              "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+            }
+          }
+        ],
+        "missing_commands": [],
+        "mismatched_records": [],
+        "failed_records": []
+      }
+    },
+    "confirmation_round_id": null,
+    "confirmations": [],
+    "unanswered_confirmations": [],
+    "assessment_scope": "historical_frozen_input",
+    "source_current": true,
+    "verification": "verified",
+    "current_eligible": true,
+    "task_run_id": "10000110000000000000000000000000",
+    "implementation_attempt": 1,
+    "test_attempt": 1,
+    "candidate": "2000002000000000000000000000000000000000",
+    "assessment_round_id": "100001a0000000000000000000000000",
+    "source_errors": [],
+    "workflow": {
+      "source_review_round_id": "100001a0000000000000000000000000",
+      "enabled": false,
+      "stage": "initial_review",
+      "outcome": "disabled",
+      "reason": "Automatic rework is disabled for this invocation.",
+      "rework": null,
+      "tests": null,
+      "final_review_round_id": null
+    }
+  },
+  "error": null,
+  "resources": [
+    {
+      "kind": "task",
+      "id": "10000110000000000000000000000000"
+    },
+    {
+      "kind": "snapshot",
+      "id": "3000026000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "kind": "task-review",
+      "id": "100001a0000000000000000000000000"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "10000190000000000000000000000000.stdout",
+      "stream": "stdout",
+      "byte_count": 5578,
+      "sha256": "3000027000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "10000190000000000000000000000000.stderr",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

@@ -1,0 +1,302 @@
+{
+  "repository": "/sample/scenario/repository",
+  "target_branch": "main",
+  "head": "2000001000000000000000000000000000000000",
+  "read_only": false,
+  "presets": {
+    "source": "workbench_model_presets",
+    "models": [
+      {
+        "family": "Astra",
+        "provider": "codex",
+        "model": "gpt-6.2-astra",
+        "efforts": null
+      },
+      {
+        "family": "Sol",
+        "provider": "codex",
+        "model": "gpt-6.2-sol",
+        "efforts": null
+      },
+      {
+        "family": "Terra",
+        "provider": "codex",
+        "model": "gpt-6.1-terra",
+        "efforts": null
+      },
+      {
+        "family": "Fable",
+        "provider": "claude",
+        "model": "claude-fable-5-2",
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      {
+        "family": "Opus",
+        "provider": "claude",
+        "model": "claude-opus-5-5",
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      },
+      {
+        "family": "Sonnet",
+        "provider": "claude",
+        "model": "claude-sonnet-5-5",
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh",
+          "max"
+        ]
+      }
+    ],
+    "roles": [
+      {
+        "id": "advisor",
+        "label": "需求顾问",
+        "families": [
+          "Astra",
+          "Fable"
+        ],
+        "candidates": [
+          {
+            "family": "Fable",
+            "provider": "claude",
+            "model": "claude-fable-5-2",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          }
+        ]
+      },
+      {
+        "id": "planner",
+        "label": "项目规划",
+        "families": [
+          "Astra",
+          "Fable"
+        ],
+        "candidates": [
+          {
+            "family": "Fable",
+            "provider": "claude",
+            "model": "claude-fable-5-2",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          }
+        ]
+      },
+      {
+        "id": "stage_lead",
+        "label": "阶段负责人",
+        "families": [
+          "Sol"
+        ],
+        "candidates": []
+      },
+      {
+        "id": "implementation",
+        "label": "实施",
+        "families": [
+          "Sol",
+          "Terra",
+          "Sonnet"
+        ],
+        "candidates": [
+          {
+            "family": "Sonnet",
+            "provider": "claude",
+            "model": "claude-sonnet-5-5",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          }
+        ]
+      },
+      {
+        "id": "fallback",
+        "label": "实施备选",
+        "families": [
+          "Sol",
+          "Terra",
+          "Sonnet"
+        ],
+        "candidates": [
+          {
+            "family": "Sonnet",
+            "provider": "claude",
+            "model": "claude-sonnet-5-5",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          }
+        ]
+      },
+      {
+        "id": "review",
+        "label": "独立审核",
+        "families": [
+          "Astra",
+          "Sol",
+          "Terra",
+          "Fable",
+          "Opus",
+          "Sonnet"
+        ],
+        "candidates": [
+          {
+            "family": "Fable",
+            "provider": "claude",
+            "model": "claude-fable-5-2",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          },
+          {
+            "family": "Opus",
+            "provider": "claude",
+            "model": "claude-opus-5-5",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          },
+          {
+            "family": "Sonnet",
+            "provider": "claude",
+            "model": "claude-sonnet-5-5",
+            "efforts": [
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "source": "workbench_preset",
+            "effort_source": "workbench_preset"
+          }
+        ]
+      }
+    ],
+    "rules": {
+      "status": "available",
+      "source": ".multi-agent/rules.yaml",
+      "baseline_commit": "2000001000000000000000000000000000000000",
+      "rules_hash": "3000001000000000000000000000000000000000000000000000000000000000",
+      "protected_paths": [
+        "checks/**",
+        ".agents/**"
+      ],
+      "implementation": [
+        {
+          "paths": [
+            "frontend/**"
+          ],
+          "provider": "claude",
+          "implementation_provider": "claude-code",
+          "allowed_models": [
+            "claude-sonnet-5-5"
+          ],
+          "default_model": "claude-sonnet-5-5",
+          "default_effort": "low",
+          "effective": {
+            "paths": [
+              "frontend/**"
+            ],
+            "provider": "claude",
+            "allowed_models": [
+              "claude-sonnet-5-5"
+            ],
+            "matched_paths": [
+              "frontend/**"
+            ],
+            "error": null
+          }
+        },
+        {
+          "paths": [
+            "backend/amount.py"
+          ],
+          "provider": "codex",
+          "implementation_provider": "codex",
+          "allowed_models": [
+            "gpt-6.2-sol"
+          ],
+          "default_model": "gpt-6.2-sol",
+          "default_effort": "low",
+          "effective": {
+            "paths": [
+              "backend/amount.py"
+            ],
+            "provider": "codex",
+            "allowed_models": [
+              "gpt-6.2-sol"
+            ],
+            "matched_paths": [
+              "backend/amount.py"
+            ],
+            "error": null
+          }
+        }
+      ],
+      "default_implementation": null,
+      "task_types": [],
+      "applies_to": [
+        "implementation",
+        "fallback"
+      ],
+      "error": null
+    }
+  },
+  "environments": {
+    "codex": null,
+    "claude": null
+  }
+}

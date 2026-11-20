@@ -1,0 +1,628 @@
+[
+  {
+    "seq": 1,
+    "method": "GET",
+    "path": "/api/workspace",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "001.json"
+  },
+  {
+    "seq": 2,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "environment.refresh",
+      "args": {
+        "provider": "codex"
+      }
+    },
+    "status": 202,
+    "response_file": "002.json"
+  },
+  {
+    "seq": 3,
+    "method": "GET",
+    "path": "/api/jobs/10000010000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "003.json"
+  },
+  {
+    "seq": 4,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "environment.refresh",
+      "args": {
+        "provider": "claude"
+      }
+    },
+    "status": 202,
+    "response_file": "004.json"
+  },
+  {
+    "seq": 5,
+    "method": "GET",
+    "path": "/api/jobs/10000020000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "005.json"
+  },
+  {
+    "seq": 6,
+    "method": "GET",
+    "path": "/api/workspace",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "006.json"
+  },
+  {
+    "seq": 7,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.consult",
+      "args": {
+        "baseline": "2000001000000000000000000000000000000000",
+        "original_goal": "Build the amount and summary, then outline monthly reporting.\n",
+        "advisors": [
+          {
+            "provider": "claude",
+            "model": "claude-fable-5-2",
+            "effort": "low"
+          }
+        ]
+      }
+    },
+    "status": 202,
+    "response_file": "007.json"
+  },
+  {
+    "seq": 8,
+    "method": "GET",
+    "path": "/api/jobs/10000030000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "008.json"
+  },
+  {
+    "seq": 9,
+    "method": "GET",
+    "path": "/api/resources/consultation/consultation-10000040000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "009.json"
+  },
+  {
+    "seq": 10,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.confirm",
+      "args": {
+        "baseline": "2000001000000000000000000000000000000000",
+        "original_goal": "Build the amount and summary, then outline monthly reporting.\n",
+        "confirmed_goal": "Build the amount and summary, then outline monthly reporting.\nUse the checked output format.\n",
+        "consultation_id": "consultation-10000040000000000000000000000000",
+        "adoption": "edited"
+      }
+    },
+    "status": 202,
+    "response_file": "010.json"
+  },
+  {
+    "seq": 11,
+    "method": "GET",
+    "path": "/api/jobs/10000070000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "011.json"
+  },
+  {
+    "seq": 12,
+    "method": "GET",
+    "path": "/api/resources/goal/goal-10000090000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "012.json"
+  },
+  {
+    "seq": 13,
+    "method": "GET",
+    "path": "/api/resources/project/project-10000080000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "013.json"
+  },
+  {
+    "seq": 14,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.plan",
+      "args": {
+        "goal_id": "goal-10000090000000000000000000000000",
+        "planner": {
+          "provider": "claude",
+          "model": "claude-fable-5-2",
+          "effort": "low"
+        }
+      }
+    },
+    "status": 202,
+    "response_file": "014.json"
+  },
+  {
+    "seq": 15,
+    "method": "GET",
+    "path": "/api/jobs/100000a0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "015.json"
+  },
+  {
+    "seq": 16,
+    "method": "GET",
+    "path": "/api/resources/project-plan/plan-100000b0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "016.json"
+  },
+  {
+    "seq": 17,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.stage.start",
+      "args": {
+        "plan_id": "plan-100000b0000000000000000000000000",
+        "stage_id": "amount",
+        "mode": "direct",
+        "sol": {
+          "model": "gpt-6.2-sol",
+          "effort": "low"
+        },
+        "card_review": {
+          "provider": "claude",
+          "model": "claude-opus-5-5",
+          "effort": "low"
+        }
+      }
+    },
+    "status": 202,
+    "response_file": "017.json"
+  },
+  {
+    "seq": 18,
+    "method": "GET",
+    "path": "/api/jobs/100000e0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "018.json"
+  },
+  {
+    "seq": 19,
+    "method": "GET",
+    "path": "/api/resources/task/10000110000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "019.json"
+  },
+  {
+    "seq": 20,
+    "method": "GET",
+    "path": "/api/diffs/task/10000110000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "020.json"
+  },
+  {
+    "seq": 21,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "task.test",
+      "args": {
+        "task_run_id": "10000110000000000000000000000000",
+        "implementation_attempt": 1,
+        "commands": [
+          "build",
+          "test"
+        ],
+        "declaration_source": "PM"
+      }
+    },
+    "status": 202,
+    "response_file": "021.json"
+  },
+  {
+    "seq": 22,
+    "method": "GET",
+    "path": "/api/jobs/10000180000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "022.json"
+  },
+  {
+    "seq": 23,
+    "method": "GET",
+    "path": "/api/resources/task-test/10000110000000000000000000000000",
+    "query": "implementation_attempt=1&test_attempt=1",
+    "request_body": null,
+    "status": 200,
+    "response_file": "023.json"
+  },
+  {
+    "seq": 24,
+    "method": "GET",
+    "path": "/api/artifacts/art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+    "query": "offset=0&limit=4096",
+    "request_body": null,
+    "status": 200,
+    "response_file": "024.json"
+  },
+  {
+    "seq": 25,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "task.review",
+      "args": {
+        "task_run_id": "10000110000000000000000000000000",
+        "implementation_attempt": 1,
+        "test_attempt": 1,
+        "seats": [
+          {
+            "provider": "claude",
+            "model": "claude-opus-5-5",
+            "effort": "low"
+          }
+        ],
+        "auto_rework": false
+      }
+    },
+    "status": 202,
+    "response_file": "025.json"
+  },
+  {
+    "seq": 26,
+    "method": "GET",
+    "path": "/api/jobs/10000190000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "026.json"
+  },
+  {
+    "seq": 27,
+    "method": "GET",
+    "path": "/api/resources/stage/stage-100000f0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "027.json"
+  },
+  {
+    "seq": 28,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.stage.start",
+      "args": {
+        "plan_id": "plan-100000b0000000000000000000000000",
+        "stage_id": "summary",
+        "mode": "delegate",
+        "sol": {
+          "model": "gpt-6.2-sol",
+          "effort": "low"
+        },
+        "card_review": {
+          "provider": "claude",
+          "model": "claude-opus-5-5",
+          "effort": "low"
+        }
+      }
+    },
+    "status": 202,
+    "response_file": "028.json"
+  },
+  {
+    "seq": 29,
+    "method": "GET",
+    "path": "/api/jobs/100001b0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "029.json"
+  },
+  {
+    "seq": 30,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.stage.leaf",
+      "args": {
+        "stage_run_id": "stage-100001c0000000000000000000000000",
+        "card_id": "T-0800",
+        "implementation": {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "effort": "low"
+        },
+        "review_only": true
+      }
+    },
+    "status": 202,
+    "response_file": "030.json"
+  },
+  {
+    "seq": 31,
+    "method": "GET",
+    "path": "/api/jobs/10000210000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "031.json"
+  },
+  {
+    "seq": 32,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "project.stage.leaf",
+      "args": {
+        "stage_run_id": "stage-100001c0000000000000000000000000",
+        "card_id": "T-0801",
+        "implementation": {
+          "provider": "claude-code",
+          "model": "claude-sonnet-5-5",
+          "effort": "low"
+        },
+        "review_only": true
+      }
+    },
+    "status": 202,
+    "response_file": "032.json"
+  },
+  {
+    "seq": 33,
+    "method": "GET",
+    "path": "/api/jobs/10000260000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "033.json"
+  },
+  {
+    "seq": 34,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "task.run",
+      "args": {
+        "planning_run_id": "10000220000000000000000000000000"
+      }
+    },
+    "status": 202,
+    "response_file": "034.json"
+  },
+  {
+    "seq": 35,
+    "method": "GET",
+    "path": "/api/jobs/100002b0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "035.json"
+  },
+  {
+    "seq": 36,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "environment.refresh",
+      "args": {
+        "provider": "codex"
+      }
+    },
+    "status": 202,
+    "response_file": "036.json"
+  },
+  {
+    "seq": 37,
+    "method": "GET",
+    "path": "/api/jobs/100002c0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "037.json"
+  },
+  {
+    "seq": 38,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "task.run",
+      "args": {
+        "planning_run_id": "10000270000000000000000000000000"
+      }
+    },
+    "status": 409,
+    "response_file": "038.json"
+  },
+  {
+    "seq": 39,
+    "method": "GET",
+    "path": "/api/resources/task/10000110000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "039.json"
+  },
+  {
+    "seq": 40,
+    "method": "GET",
+    "path": "/api/resources/stage/stage-100001c0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "040.json"
+  },
+  {
+    "seq": 41,
+    "method": "GET",
+    "path": "/api/diffs/task/10000110000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "041.json"
+  },
+  {
+    "seq": 42,
+    "method": "GET",
+    "path": "/api/artifacts/art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+    "query": "offset=0&limit=4096",
+    "request_body": null,
+    "status": 200,
+    "response_file": "042.json"
+  },
+  {
+    "seq": 43,
+    "method": "POST",
+    "path": "/api/jobs/100002b0000000000000000000000000/cancel",
+    "query": null,
+    "request_body": {},
+    "status": 202,
+    "response_file": "043.json"
+  },
+  {
+    "seq": 44,
+    "method": "GET",
+    "path": "/api/jobs/100002b0000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "044.json"
+  },
+  {
+    "seq": 45,
+    "method": "GET",
+    "path": "/api/resources/plan/10000220000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "045.json"
+  },
+  {
+    "seq": 46,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "task.run",
+      "args": {
+        "planning_run_id": "10000270000000000000000000000000"
+      }
+    },
+    "status": 202,
+    "response_file": "046.json"
+  },
+  {
+    "seq": 47,
+    "method": "GET",
+    "path": "/api/jobs/10000300000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "047.json"
+  },
+  {
+    "seq": 48,
+    "method": "POST",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": {
+      "action": "environment.refresh",
+      "args": {
+        "provider": "codex"
+      }
+    },
+    "status": 202,
+    "response_file": "048.json"
+  },
+  {
+    "seq": 49,
+    "method": "GET",
+    "path": "/api/jobs/10000310000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "049.json"
+  },
+  {
+    "seq": 50,
+    "method": "GET",
+    "path": "/api/jobs/10000300000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "050.json"
+  },
+  {
+    "seq": 51,
+    "method": "GET",
+    "path": "/api/resources/plan/10000270000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "051.json"
+  },
+  {
+    "seq": 52,
+    "method": "GET",
+    "path": "/api/resources/task/10000320000000000000000000000000",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "052.json"
+  },
+  {
+    "seq": 53,
+    "method": "GET",
+    "path": "/api/jobs",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "053.json"
+  }
+]

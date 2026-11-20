@@ -1,0 +1,118 @@
+{
+  "args": {
+    "integration_id": "10000340000000000000000000000000"
+  },
+  "created_at": "2000-01-01T00:01:07.000000+00:00",
+  "started_at": "2000-01-01T00:01:08.000000+00:00",
+  "finished_at": "2000-01-01T00:01:09.000000+00:00",
+  "cancel_requested_at": null,
+  "stderr_tail": "",
+  "job_id": "10000350000000000000000000000000",
+  "action": "integration.test",
+  "state": "finished",
+  "exit_code": 0,
+  "result": {
+    "operation": "test",
+    "integration_id": "10000340000000000000000000000000",
+    "test": {
+      "attempt": 1,
+      "status": "succeeded",
+      "candidate": {
+        "ref": "refs/multi-agent/integrations/10000340000000000000000000000000",
+        "commit": "200000b000000000000000000000000000000000",
+        "tree": "200000c000000000000000000000000000000000"
+      },
+      "rules_baseline": "2000002000000000000000000000000000000000",
+      "rules_blob": "2000003000000000000000000000000000000000",
+      "rules_hash": "3000001000000000000000000000000000000000000000000000000000000000",
+      "required_commands": [
+        {
+          "name": "build",
+          "executable": "/sample/python/bin/python3.12",
+          "args": [
+            "checks/build.py"
+          ]
+        },
+        {
+          "name": "test",
+          "executable": "/sample/python/bin/python3.12",
+          "args": [
+            "checks/test.py"
+          ]
+        }
+      ],
+      "unexecuted_commands": [],
+      "unconfirmed_commands": [],
+      "directory": "/sample/scenario/data/web-run-10000350000000000000000000000000",
+      "result": {
+        "status": "succeeded",
+        "process_stopped": true,
+        "commands": [
+          {
+            "sequence": 1,
+            "command": {
+              "name": "build",
+              "executable": "/sample/python/bin/python3.12",
+              "args": [
+                "checks/build.py"
+              ]
+            },
+            "request_attempted": true,
+            "request_settled": true,
+            "reported_exit_code": 0,
+            "exit_code": 0,
+            "process_stopped": true,
+            "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/command-1/execution.json",
+            "manifest_sha256": "300004a000000000000000000000000000000000000000000000000000000000",
+            "qualified": true,
+            "reason": null
+          },
+          {
+            "sequence": 2,
+            "command": {
+              "name": "test",
+              "executable": "/sample/python/bin/python3.12",
+              "args": [
+                "checks/test.py"
+              ]
+            },
+            "request_attempted": true,
+            "request_settled": true,
+            "reported_exit_code": 0,
+            "exit_code": 0,
+            "process_stopped": true,
+            "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/command-2/execution.json",
+            "manifest_sha256": "300004b000000000000000000000000000000000000000000000000000000000",
+            "qualified": true,
+            "reason": null
+          }
+        ],
+        "reason": null,
+        "preparation_path": "/sample/scenario/data/web-run-10000350000000000000000000000000/context/integration-test.json",
+        "preparation_sha256": "300004c000000000000000000000000000000000000000000000000000000000"
+      },
+      "evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  "error": null,
+  "resources": [
+    {
+      "kind": "integration",
+      "id": "10000340000000000000000000000000"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "10000350000000000000000000000000.stdout",
+      "stream": "stdout",
+      "byte_count": 2691,
+      "sha256": "300004e000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "10000350000000000000000000000000.stderr",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

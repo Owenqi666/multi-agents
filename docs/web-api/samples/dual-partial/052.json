@@ -1,0 +1,644 @@
+{
+  "kind": "integration",
+  "id": "10000340000000000000000000000000",
+  "data": {
+    "operation": "show",
+    "integration_id": "10000340000000000000000000000000",
+    "status": "ready",
+    "verification": "verified",
+    "repository": "/sample/scenario/repository/.git",
+    "target_ref": "refs/heads/multi-agent/stages/stage-100001c0000000000000000000000000",
+    "target_baseline": "2000002000000000000000000000000000000000",
+    "target_head": "2000002000000000000000000000000000000000",
+    "target_is_current": true,
+    "members": [
+      {
+        "task_run_id": "10000270000000000000000000000000",
+        "planning_run_id": "10000220000000000000000000000000",
+        "attempt": 1,
+        "task_input": {
+          "card": {
+            "schema_version": 1,
+            "id": "T-0800",
+            "goal": "Deliver frontend/status.js",
+            "baseline_commit": "2000002000000000000000000000000000000000",
+            "write_scope": [
+              "frontend/status.js"
+            ],
+            "depends_on": [],
+            "interface_contracts": [],
+            "deliverables": [
+              "The updated frontend/status.js"
+            ],
+            "acceptance_criteria": [
+              "The named build and test suite passes"
+            ],
+            "test_refs": [
+              "build",
+              "test"
+            ],
+            "open_questions": [],
+            "proposed_tests": []
+          },
+          "frozen_rules": {
+            "repository": "/sample/scenario/repository/.git",
+            "baseline_commit": "2000002000000000000000000000000000000000",
+            "blob_oid": "2000003000000000000000000000000000000000",
+            "raw_text": "{\n  \"version\": 1,\n  \"commands\": {\n    \"build\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/build.py\"\n      ]\n    },\n    \"test\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/test.py\"\n      ]\n    }\n  },\n  \"protected_paths\": [\n    \"checks/**\",\n    \".agents/**\"\n  ],\n  \"implementation\": [\n    {\n      \"paths\": [\n        \"frontend/**\"\n      ],\n      \"provider\": \"claude-code\",\n      \"default_model\": \"claude-sonnet-5-5\",\n      \"default_effort\": \"low\"\n    },\n    {\n      \"paths\": [\n        \"backend/amount.py\"\n      ],\n      \"provider\": \"codex\",\n      \"default_model\": \"gpt-6.2-sol\",\n      \"default_effort\": \"low\"\n    }\n  ]\n}\n",
+            "rules": {
+              "version": 1,
+              "commands": [
+                {
+                  "name": "build",
+                  "executable": "/sample/python/bin/python3.12",
+                  "args": [
+                    "checks/build.py"
+                  ]
+                },
+                {
+                  "name": "test",
+                  "executable": "/sample/python/bin/python3.12",
+                  "args": [
+                    "checks/test.py"
+                  ]
+                }
+              ],
+              "protected_paths": [
+                "checks/**",
+                ".agents/**"
+              ],
+              "implementation": [
+                {
+                  "paths": [
+                    "frontend/**"
+                  ],
+                  "config": {
+                    "provider": "claude-code",
+                    "default_model": "claude-sonnet-5-5",
+                    "default_effort": "low",
+                    "allowed_models": [
+                      "claude-sonnet-5-5"
+                    ]
+                  }
+                },
+                {
+                  "paths": [
+                    "backend/amount.py"
+                  ],
+                  "config": {
+                    "provider": "codex",
+                    "default_model": "gpt-6.2-sol",
+                    "default_effort": "low",
+                    "allowed_models": [
+                      "gpt-6.2-sol"
+                    ]
+                  }
+                }
+              ],
+              "default_implementation": null,
+              "task_types": []
+            }
+          },
+          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}",
+          "created_at": "2000-01-01T00:00:53.000000+00:00"
+        },
+        "delivery": {
+          "baseline": "2000002000000000000000000000000000000000",
+          "candidate": "2000007000000000000000000000000000000000",
+          "changed_paths": [
+            "frontend/status.js"
+          ],
+          "digest": "3000037000000000000000000000000000000000000000000000000000000000",
+          "ref": "refs/multi-agent/candidates/10000280000000000000000000000000",
+          "tree": "2000008000000000000000000000000000000000"
+        },
+        "external_dependencies": []
+      },
+      {
+        "task_run_id": "10000300000000000000000000000000",
+        "planning_run_id": "100002b0000000000000000000000000",
+        "attempt": 1,
+        "task_input": {
+          "card": {
+            "schema_version": 1,
+            "id": "T-0801",
+            "goal": "Deliver frontend/banner.js",
+            "baseline_commit": "2000002000000000000000000000000000000000",
+            "write_scope": [
+              "frontend/banner.js"
+            ],
+            "depends_on": [],
+            "interface_contracts": [],
+            "deliverables": [
+              "The updated frontend/banner.js"
+            ],
+            "acceptance_criteria": [
+              "The named build and test suite passes"
+            ],
+            "test_refs": [
+              "build",
+              "test"
+            ],
+            "open_questions": [],
+            "proposed_tests": []
+          },
+          "frozen_rules": {
+            "repository": "/sample/scenario/repository/.git",
+            "baseline_commit": "2000002000000000000000000000000000000000",
+            "blob_oid": "2000003000000000000000000000000000000000",
+            "raw_text": "{\n  \"version\": 1,\n  \"commands\": {\n    \"build\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/build.py\"\n      ]\n    },\n    \"test\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/test.py\"\n      ]\n    }\n  },\n  \"protected_paths\": [\n    \"checks/**\",\n    \".agents/**\"\n  ],\n  \"implementation\": [\n    {\n      \"paths\": [\n        \"frontend/**\"\n      ],\n      \"provider\": \"claude-code\",\n      \"default_model\": \"claude-sonnet-5-5\",\n      \"default_effort\": \"low\"\n    },\n    {\n      \"paths\": [\n        \"backend/amount.py\"\n      ],\n      \"provider\": \"codex\",\n      \"default_model\": \"gpt-6.2-sol\",\n      \"default_effort\": \"low\"\n    }\n  ]\n}\n",
+            "rules": {
+              "version": 1,
+              "commands": [
+                {
+                  "name": "build",
+                  "executable": "/sample/python/bin/python3.12",
+                  "args": [
+                    "checks/build.py"
+                  ]
+                },
+                {
+                  "name": "test",
+                  "executable": "/sample/python/bin/python3.12",
+                  "args": [
+                    "checks/test.py"
+                  ]
+                }
+              ],
+              "protected_paths": [
+                "checks/**",
+                ".agents/**"
+              ],
+              "implementation": [
+                {
+                  "paths": [
+                    "frontend/**"
+                  ],
+                  "config": {
+                    "provider": "claude-code",
+                    "default_model": "claude-sonnet-5-5",
+                    "default_effort": "low",
+                    "allowed_models": [
+                      "claude-sonnet-5-5"
+                    ]
+                  }
+                },
+                {
+                  "paths": [
+                    "backend/amount.py"
+                  ],
+                  "config": {
+                    "provider": "codex",
+                    "default_model": "gpt-6.2-sol",
+                    "default_effort": "low",
+                    "allowed_models": [
+                      "gpt-6.2-sol"
+                    ]
+                  }
+                }
+              ],
+              "default_implementation": null,
+              "task_types": []
+            }
+          },
+          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
+          "created_at": "2000-01-01T00:01:02.000000+00:00"
+        },
+        "delivery": {
+          "baseline": "2000002000000000000000000000000000000000",
+          "candidate": "2000009000000000000000000000000000000000",
+          "changed_paths": [
+            "frontend/banner.js"
+          ],
+          "digest": "3000044000000000000000000000000000000000000000000000000000000000",
+          "ref": "refs/multi-agent/candidates/10000310000000000000000000000000",
+          "tree": "200000a000000000000000000000000000000000"
+        },
+        "external_dependencies": []
+      }
+    ],
+    "applied": [
+      "10000270000000000000000000000000",
+      "10000300000000000000000000000000"
+    ],
+    "candidate": {
+      "ref": "refs/multi-agent/integrations/10000340000000000000000000000000",
+      "commit": "200000b000000000000000000000000000000000",
+      "tree": "200000c000000000000000000000000000000000"
+    },
+    "conflict": null,
+    "source_errors": [],
+    "rebased_from": null,
+    "test": {
+      "attempt": 1,
+      "status": "succeeded",
+      "candidate": {
+        "ref": "refs/multi-agent/integrations/10000340000000000000000000000000",
+        "commit": "200000b000000000000000000000000000000000",
+        "tree": "200000c000000000000000000000000000000000"
+      },
+      "rules_baseline": "2000002000000000000000000000000000000000",
+      "rules_blob": "2000003000000000000000000000000000000000",
+      "rules_hash": "3000001000000000000000000000000000000000000000000000000000000000",
+      "required_commands": [
+        {
+          "name": "build",
+          "executable": "/sample/python/bin/python3.12",
+          "args": [
+            "checks/build.py"
+          ]
+        },
+        {
+          "name": "test",
+          "executable": "/sample/python/bin/python3.12",
+          "args": [
+            "checks/test.py"
+          ]
+        }
+      ],
+      "unexecuted_commands": [],
+      "unconfirmed_commands": [],
+      "directory": "/sample/scenario/data/web-run-10000350000000000000000000000000",
+      "result": {
+        "status": "succeeded",
+        "process_stopped": true,
+        "commands": [
+          {
+            "sequence": 1,
+            "command": {
+              "name": "build",
+              "executable": "/sample/python/bin/python3.12",
+              "args": [
+                "checks/build.py"
+              ]
+            },
+            "request_attempted": true,
+            "request_settled": true,
+            "reported_exit_code": 0,
+            "exit_code": 0,
+            "process_stopped": true,
+            "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/command-1/execution.json",
+            "manifest_sha256": "300004a000000000000000000000000000000000000000000000000000000000",
+            "qualified": true,
+            "reason": null
+          },
+          {
+            "sequence": 2,
+            "command": {
+              "name": "test",
+              "executable": "/sample/python/bin/python3.12",
+              "args": [
+                "checks/test.py"
+              ]
+            },
+            "request_attempted": true,
+            "request_settled": true,
+            "reported_exit_code": 0,
+            "exit_code": 0,
+            "process_stopped": true,
+            "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/command-2/execution.json",
+            "manifest_sha256": "300004b000000000000000000000000000000000000000000000000000000000",
+            "qualified": true,
+            "reason": null
+          }
+        ],
+        "reason": null,
+        "preparation_path": "/sample/scenario/data/web-run-10000350000000000000000000000000/context/integration-test.json",
+        "preparation_sha256": "300004c000000000000000000000000000000000000000000000000000000000"
+      },
+      "evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000"
+    },
+    "test_evidence_verification": "verified",
+    "test_source_errors": [],
+    "reviews": [
+      {
+        "round_id": "10000370000000000000000000000000",
+        "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
+        "prompt_template_version": "integration-review-v1",
+        "metadata": {
+          "kind": "review",
+          "created_at": "2000-01-01T00:01:13.000000+00:00",
+          "timeout": 180,
+          "grace": 2,
+          "executables": {
+            "codex": "/sample/scenario/bin/codex",
+            "claude": "/sample/scenario/bin/claude"
+          },
+          "parent_round_id": null
+        },
+        "status": "ready_for_assessment",
+        "seats": [
+          {
+            "key": "seat-1",
+            "provider": "claude",
+            "requested_model": "claude-opus-5-5",
+            "requested_effort": "low",
+            "current_attempt": 2,
+            "attempts": [
+              {
+                "number": 1,
+                "status": "failed",
+                "failure_category": "model_unavailable",
+                "detail": "unknown model",
+                "retry_after": null,
+                "session_id": "session-12",
+                "reported_model": null,
+                "reported_effort": null,
+                "reported_model_source": null,
+                "reported_effort_source": null,
+                "reported_model_status": "未确认",
+                "reported_effort_status": "未确认",
+                "result": null,
+                "exit_code": 0
+              },
+              {
+                "number": 2,
+                "status": "succeeded",
+                "failure_category": null,
+                "detail": null,
+                "retry_after": null,
+                "session_id": "session-14",
+                "reported_model": "actual-claude",
+                "reported_effort": null,
+                "reported_model_source": {
+                  "event_type": "completed",
+                  "raw_type": "result"
+                },
+                "reported_effort_source": null,
+                "reported_model_status": "reported",
+                "reported_effort_status": "未确认",
+                "result": {
+                  "summary": "The offline candidate is ready.",
+                  "findings": []
+                },
+                "exit_code": 0
+              }
+            ]
+          },
+          {
+            "key": "seat-2",
+            "provider": "codex",
+            "requested_model": "gpt-6.2-astra",
+            "requested_effort": "low",
+            "current_attempt": 1,
+            "attempts": [
+              {
+                "number": 1,
+                "status": "succeeded",
+                "failure_category": null,
+                "detail": null,
+                "retry_after": null,
+                "session_id": "thread-13",
+                "reported_model": null,
+                "reported_effort": null,
+                "reported_model_source": null,
+                "reported_effort_source": null,
+                "reported_model_status": "未确认",
+                "reported_effort_status": "未确认",
+                "result": {
+                  "summary": "The offline candidate is ready.",
+                  "findings": []
+                },
+                "exit_code": 0
+              }
+            ]
+          }
+        ],
+        "execution": {
+          "seat-1": {
+            "1": {
+              "elapsed_seconds": 0.002,
+              "environment": {
+                "cli_version": "2.1.325 (Claude Code)",
+                "logged_in": true,
+                "model_efforts": null,
+                "models": null
+              },
+              "finished_at": "2000-01-01T00:01:14.000000+00:00",
+              "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-1/1",
+              "started_at": "2000-01-01T00:01:15.000000+00:00",
+              "workspace_unchanged": true
+            },
+            "2": {
+              "elapsed_seconds": 0.004,
+              "environment": {
+                "cli_version": "2.1.325 (Claude Code)",
+                "logged_in": true,
+                "model_efforts": null,
+                "models": null
+              },
+              "finished_at": "2000-01-01T00:01:30.000000+00:00",
+              "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-1/2",
+              "started_at": "2000-01-01T00:01:31.000000+00:00",
+              "workspace_unchanged": true
+            }
+          },
+          "seat-2": {
+            "1": {
+              "elapsed_seconds": 0.003,
+              "environment": {
+                "cli_version": "codex-cli 0.169.0",
+                "logged_in": true,
+                "model_efforts": {
+                  "claude-fable-5-2": [
+                    "low",
+                    "high"
+                  ],
+                  "claude-haiku-5-5": [
+                    "low",
+                    "high"
+                  ],
+                  "claude-opus-5-5": [
+                    "low",
+                    "high"
+                  ],
+                  "claude-sonnet-5-5": [
+                    "low",
+                    "high"
+                  ],
+                  "gpt-6.1-terra": [
+                    "low",
+                    "high"
+                  ],
+                  "gpt-6.2-astra": [
+                    "low",
+                    "high"
+                  ],
+                  "gpt-6.2-luna": [
+                    "low",
+                    "high"
+                  ],
+                  "gpt-6.2-sol": [
+                    "low",
+                    "high"
+                  ]
+                },
+                "models": [
+                  "gpt-6.2-astra",
+                  "gpt-6.2-sol",
+                  "gpt-6.1-terra",
+                  "gpt-6.2-luna",
+                  "claude-fable-5-2",
+                  "claude-opus-5-5",
+                  "claude-sonnet-5-5",
+                  "claude-haiku-5-5"
+                ]
+              },
+              "finished_at": "2000-01-01T00:01:16.000000+00:00",
+              "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-2/1",
+              "started_at": "2000-01-01T00:01:17.000000+00:00",
+              "workspace_unchanged": true
+            }
+          }
+        },
+        "assessment": {
+          "status": "ready",
+          "reasons": [],
+          "missing_seats": [],
+          "reports": {
+            "seat-1": {
+              "summary": "The offline candidate is ready.",
+              "findings": []
+            },
+            "seat-2": {
+              "summary": "The offline candidate is ready.",
+              "findings": []
+            }
+          },
+          "groups": [],
+          "tests": {
+            "source": "workbench_executed",
+            "executed_by_workbench": true,
+            "status": "passed",
+            "integration_id": "10000340000000000000000000000000",
+            "test_attempt": 1,
+            "test_evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000",
+            "required_commands": [
+              {
+                "sequence": 1,
+                "name": "build",
+                "argv": [
+                  "/sample/python/bin/python3.12",
+                  "checks/build.py"
+                ]
+              },
+              {
+                "sequence": 2,
+                "name": "test",
+                "argv": [
+                  "/sample/python/bin/python3.12",
+                  "checks/test.py"
+                ]
+              }
+            ],
+            "commands": [
+              {
+                "sequence": 1,
+                "name": "build",
+                "reported_exit_code": 0,
+                "exit_code": 0,
+                "stop_scope": "command-request-and-owned-runtime-v1",
+                "output_scope": "server-emitted-notifications-v1",
+                "stdout": {
+                  "byte_count": 33,
+                  "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+                },
+                "stderr": {
+                  "byte_count": 0,
+                  "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+                }
+              },
+              {
+                "sequence": 2,
+                "name": "test",
+                "reported_exit_code": 0,
+                "exit_code": 0,
+                "stop_scope": "command-request-and-owned-runtime-v1",
+                "output_scope": "server-emitted-notifications-v1",
+                "stdout": {
+                  "byte_count": 22,
+                  "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+                },
+                "stderr": {
+                  "byte_count": 36,
+                  "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+                }
+              }
+            ],
+            "missing_commands": [],
+            "mismatched_records": [],
+            "failed_records": []
+          }
+        },
+        "confirmation_round_id": null,
+        "confirmations": [],
+        "unanswered_confirmations": [],
+        "assessment_scope": "historical_frozen_input",
+        "source_current": true,
+        "verification": "verified",
+        "current_eligible": false,
+        "test_attempt": 1,
+        "source_errors": []
+      }
+    ],
+    "current_eligible": false,
+    "blocking_findings": [],
+    "acceptance": {
+      "acceptance_id": "100003a0000000000000000000000000",
+      "integration_id": "10000340000000000000000000000000",
+      "target_ref": "refs/heads/multi-agent/stages/stage-100001c0000000000000000000000000",
+      "target_baseline": "2000002000000000000000000000000000000000",
+      "candidate": {
+        "ref": "refs/multi-agent/integrations/10000340000000000000000000000000",
+        "commit": "200000b000000000000000000000000000000000",
+        "tree": "200000c000000000000000000000000000000000"
+      },
+      "test_attempt": 1,
+      "test_evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000",
+      "review_round_id": "10000370000000000000000000000000",
+      "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
+      "review_checkpoint_hash": "3000052000000000000000000000000000000000000000000000000000000000",
+      "accepted_at": "2000-01-01T00:01:40.000000+00:00"
+    },
+    "rework": null,
+    "superseded_by": null
+  },
+  "artifacts": [
+    {
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMSIsIjMwMDAwNTQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "wire",
+      "byte_count": 8530,
+      "sha256": "3000054000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMiIsIjMwMDAwMjIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "stdout",
+      "byte_count": 33,
+      "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMyIsIjMwMDAwMDYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMSIsIjMwMDAwNTUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "wire",
+      "byte_count": 8831,
+      "sha256": "3000055000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMiIsIjMwMDAwMjQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "stdout",
+      "byte_count": 22,
+      "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMyIsIjMwMDAwMjUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "stderr",
+      "byte_count": 36,
+      "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

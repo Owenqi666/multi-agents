@@ -1,0 +1,17 @@
+{
+  "args": {
+    "planning_run_id": "10000270000000000000000000000000"
+  },
+  "created_at": "2000-01-01T00:01:04.000000+00:00",
+  "started_at": "2000-01-01T00:01:05.000000+00:00",
+  "finished_at": null,
+  "cancel_requested_at": null,
+  "stderr_tail": null,
+  "job_id": "10000300000000000000000000000000",
+  "action": "task.run",
+  "state": "running",
+  "exit_code": null,
+  "result": null,
+  "error": null,
+  "resources": []
+}

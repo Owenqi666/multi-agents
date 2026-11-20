@@ -1,0 +1,124 @@
+{
+  "kind": "consultation",
+  "id": "consultation-10000040000000000000000000000000",
+  "data": {
+    "kind": "goal_consultation",
+    "consultation_id": "consultation-10000040000000000000000000000000",
+    "repository": "/sample/scenario/repository",
+    "git_common_dir": "/sample/scenario/repository/.git",
+    "baseline_commit": "2000001000000000000000000000000000000000",
+    "original_goal": "Build the amount and summary, then outline monthly reporting.\n",
+    "project_id": null,
+    "source_snapshot_id": "3000002000000000000000000000000000000000000000000000000000000000",
+    "started_at": "2000-01-01T00:00:12.000000+00:00",
+    "status": "succeeded",
+    "finished_at": "2000-01-01T00:00:13.000000+00:00",
+    "draft": {
+      "assumptions": [],
+      "background": [
+        {
+          "claim": "The repository has a workflow",
+          "path": "AGENTS.md"
+        }
+      ],
+      "draft_goal": "Build the amount and summary, then outline monthly reporting.\n",
+      "questions": [],
+      "remaining_disagreements": []
+    },
+    "seats": [
+      {
+        "consultation_id": "consultation-10000040000000000000000000000000",
+        "number": 1,
+        "request": {
+          "effort": "low",
+          "model": "claude-fable-5-2",
+          "provider": "claude"
+        },
+        "prompt_template_version": "project-advice-v1",
+        "started_at": "2000-01-01T00:00:14.000000+00:00",
+        "finished_at": "2000-01-01T00:00:13.000000+00:00",
+        "advice": {
+          "assumptions": [],
+          "background": [
+            {
+              "claim": "The repository has a workflow",
+              "path": "AGENTS.md"
+            }
+          ],
+          "draft_goal": "Build the amount and summary, then outline monthly reporting.\n",
+          "questions": [],
+          "remaining_disagreements": []
+        },
+        "error": null,
+        "evidence": {
+          "cli_version": "2.1.325 (Claude Code)",
+          "exit_code": 0,
+          "logs": [
+            {
+              "byte_count": 1201,
+              "closed": true,
+              "healthy": true,
+              "identity": [
+                1,
+                1
+              ],
+              "path": "/sample/scenario/data/logs/consultations/consultation-10000040000000000000000000000000/seat-1/claude-environment-10000050000000000000000000000000.jsonl",
+              "records": 9,
+              "resource_id": "log-2",
+              "sealed": true,
+              "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
+            },
+            {
+              "byte_count": 3648,
+              "closed": true,
+              "healthy": true,
+              "identity": [
+                1,
+                2
+              ],
+              "path": "/sample/scenario/data/logs/consultations/consultation-10000040000000000000000000000000/seat-1/claude-10000060000000000000000000000000.jsonl",
+              "records": 8,
+              "resource_id": "log-5",
+              "sealed": true,
+              "sha256": "3000004000000000000000000000000000000000000000000000000000000000"
+            }
+          ],
+          "outputs_complete": true,
+          "processes_stopped": true,
+          "reported_effort": null,
+          "reported_effort_source": null,
+          "reported_model": "actual-claude",
+          "reported_model_source": "result",
+          "resources_released": true,
+          "session_id": "session-1",
+          "usage": [
+            {
+              "counts": {
+                "client_estimated_cost_usd": 0.04,
+                "input_tokens": 11,
+                "output_tokens": 7
+              },
+              "raw_type": "result"
+            }
+          ]
+        },
+        "source_snapshot_id": "3000002000000000000000000000000000000000000000000000000000000000",
+        "status": "succeeded"
+      }
+    ]
+  },
+  "artifacts": [
+    {
+      "artifact_id": "art-WyJjb25zdWx0YXRpb24iLCJjb25zdWx0YXRpb24tMTAwMDAwNDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJzZWF0LTEtMSIsIjMwMDAwMDMwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "claude-environment-10000050000000000000000000000000",
+      "byte_count": 1201,
+      "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJjb25zdWx0YXRpb24iLCJjb25zdWx0YXRpb24tMTAwMDAwNDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJzZWF0LTEtMiIsIjMwMDAwMDQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "stream": "claude-10000060000000000000000000000000",
+      "byte_count": 3648,
+      "sha256": "3000004000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

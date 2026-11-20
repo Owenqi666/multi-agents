@@ -1,0 +1,94 @@
+{
+  "kind": "task-test",
+  "id": "10000110000000000000000000000000",
+  "data": {
+    "task_run_id": "10000110000000000000000000000000",
+    "implementation_attempt": 1,
+    "test_attempt": 1,
+    "candidate": "2000002000000000000000000000000000000000",
+    "phase": "succeeded",
+    "verification": "verified",
+    "source_current": true,
+    "commands": [
+      {
+        "sequence": 1,
+        "name": "build",
+        "status": "passed",
+        "reported_exit_code": 0,
+        "exit_code": 0,
+        "verification": "verified",
+        "logs": {
+          "stdout": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-1/stdout.bin",
+          "stderr": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-1/stderr.bin",
+          "wire": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-1/wire.jsonl"
+        }
+      },
+      {
+        "sequence": 2,
+        "name": "test",
+        "status": "passed",
+        "reported_exit_code": 0,
+        "exit_code": 0,
+        "verification": "verified",
+        "logs": {
+          "stdout": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-2/stdout.bin",
+          "stderr": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-2/stderr.bin",
+          "wire": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-2/wire.jsonl"
+        }
+      }
+    ],
+    "details": {
+      "is_current": true,
+      "finished": true,
+      "cancel_requested": false,
+      "declaration_source": "PM",
+      "input_hash": "300001f000000000000000000000000000000000000000000000000000000000",
+      "retained_root": "/sample/scenario/data/web-run-10000180000000000000000000000000",
+      "stop_scope": "command-request-and-owned-runtime-v1",
+      "output_scope": "server-emitted-notifications-v1",
+      "command_group_gone": null,
+      "all_descendants_stopped": null,
+      "producer_stdout_eof": null,
+      "producer_stderr_eof": null,
+      "verification_errors": []
+    }
+  },
+  "artifacts": [
+    {
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTEiLCIzMDAwMDIxMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "wire",
+      "byte_count": 8531,
+      "sha256": "3000021000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stdout",
+      "byte_count": 33,
+      "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTMiLCIzMDAwMDA2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTEiLCIzMDAwMDIzMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "wire",
+      "byte_count": 8830,
+      "sha256": "3000023000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTIiLCIzMDAwMDI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stdout",
+      "byte_count": 22,
+      "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTMiLCIzMDAwMDI1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stderr",
+      "byte_count": 36,
+      "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

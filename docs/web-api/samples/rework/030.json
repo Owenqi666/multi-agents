@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "job_unavailable",
+    "message": "the stage needs a verified candidate for every delegated leaf"
+  }
+}

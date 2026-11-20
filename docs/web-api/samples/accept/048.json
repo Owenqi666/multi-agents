@@ -1,0 +1,1060 @@
+{
+  "kind": "snapshot",
+  "id": "3000050000000000000000000000000000000000000000000000000000000000",
+  "data": {
+    "snapshot_id": "3000050000000000000000000000000000000000000000000000000000000000",
+    "input": {
+      "source": {
+        "repository": "/sample/scenario/repository/.git",
+        "baseline": "2000002000000000000000000000000000000000",
+        "candidate": "200000b000000000000000000000000000000000",
+        "diff": "diff --git a/frontend/banner.js b/frontend/banner.js\nindex 200000d000000000000000000000000000000000..200000e000000000000000000000000000000000 100644\n--- a/frontend/banner.js\n+++ b/frontend/banner.js\n@@ -1 +1 @@\n-export const banner = \"initial\";\n+export const banner = \"welcome\";\ndiff --git a/frontend/status.js b/frontend/status.js\nindex 200000f000000000000000000000000000000000..2000010000000000000000000000000000000000 100644\n--- a/frontend/status.js\n+++ b/frontend/status.js\n@@ -1 +1 @@\n-export const status = \"initial\";\n+export const status = \"ready\";\n",
+        "requirements": "[T-0800]\nImplement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}\n\n[T-0801]\nImplement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
+        "acceptance": [
+          "[T-0800] The named build and test suite passes",
+          "[T-0801] The named build and test suite passes"
+        ],
+        "tests": [],
+        "files": [
+          {
+            "side": "baseline",
+            "path": ".multi-agent/rules.yaml",
+            "text": "{\n  \"version\": 1,\n  \"commands\": {\n    \"build\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/build.py\"\n      ]\n    },\n    \"test\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/test.py\"\n      ]\n    }\n  },\n  \"protected_paths\": [\n    \"checks/**\",\n    \".agents/**\"\n  ],\n  \"implementation\": [\n    {\n      \"paths\": [\n        \"frontend/**\"\n      ],\n      \"provider\": \"claude-code\",\n      \"default_model\": \"claude-sonnet-5-5\",\n      \"default_effort\": \"low\"\n    },\n    {\n      \"paths\": [\n        \"backend/amount.py\"\n      ],\n      \"provider\": \"codex\",\n      \"default_model\": \"gpt-6.2-sol\",\n      \"default_effort\": \"low\"\n    }\n  ]\n}\n",
+            "oid": "2000003000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "baseline",
+            "path": "AGENTS.md",
+            "text": "Synthetic offline workspace for the project flow.\n",
+            "oid": "2000011000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "baseline",
+            "path": "backend/amount.py",
+            "text": "AMOUNT = 1\n",
+            "oid": "2000006000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "baseline",
+            "path": "checks/build.py",
+            "text": "from pathlib import Path\nPath('artifact.bin').write_bytes(Path('frontend/status.js').read_bytes())\nprint('Offline build wrote artifact.bin')\n",
+            "oid": "2000012000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "baseline",
+            "path": "checks/test.py",
+            "text": "import sys\nfrom pathlib import Path\nassert Path('backend/amount.py').read_text() == 'AMOUNT = 1\\n'\nassert Path('artifact.bin').read_text() in ('export const status = \"initial\";\\n', 'export const status = \"draft\";\\n', 'export const status = \"ready\";\\n')\nif Path('artifact.bin').read_text() != 'export const status = \"initial\";\\n':\n    assert Path('frontend/banner.js').read_text() == 'export const banner = \"welcome\";\\n'\nprint('Offline checks passed')\nprint('Offline independent test diagnostic', file=sys.stderr)\n",
+            "oid": "2000013000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "baseline",
+            "path": "frontend/banner.js",
+            "text": "export const banner = \"initial\";\n",
+            "oid": "200000d000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "baseline",
+            "path": "frontend/status.js",
+            "text": "export const status = \"initial\";\n",
+            "oid": "200000f000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": ".multi-agent/rules.yaml",
+            "text": "{\n  \"version\": 1,\n  \"commands\": {\n    \"build\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/build.py\"\n      ]\n    },\n    \"test\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/test.py\"\n      ]\n    }\n  },\n  \"protected_paths\": [\n    \"checks/**\",\n    \".agents/**\"\n  ],\n  \"implementation\": [\n    {\n      \"paths\": [\n        \"frontend/**\"\n      ],\n      \"provider\": \"claude-code\",\n      \"default_model\": \"claude-sonnet-5-5\",\n      \"default_effort\": \"low\"\n    },\n    {\n      \"paths\": [\n        \"backend/amount.py\"\n      ],\n      \"provider\": \"codex\",\n      \"default_model\": \"gpt-6.2-sol\",\n      \"default_effort\": \"low\"\n    }\n  ]\n}\n",
+            "oid": "2000003000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": "AGENTS.md",
+            "text": "Synthetic offline workspace for the project flow.\n",
+            "oid": "2000011000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": "backend/amount.py",
+            "text": "AMOUNT = 1\n",
+            "oid": "2000006000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": "checks/build.py",
+            "text": "from pathlib import Path\nPath('artifact.bin').write_bytes(Path('frontend/status.js').read_bytes())\nprint('Offline build wrote artifact.bin')\n",
+            "oid": "2000012000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": "checks/test.py",
+            "text": "import sys\nfrom pathlib import Path\nassert Path('backend/amount.py').read_text() == 'AMOUNT = 1\\n'\nassert Path('artifact.bin').read_text() in ('export const status = \"initial\";\\n', 'export const status = \"draft\";\\n', 'export const status = \"ready\";\\n')\nif Path('artifact.bin').read_text() != 'export const status = \"initial\";\\n':\n    assert Path('frontend/banner.js').read_text() == 'export const banner = \"welcome\";\\n'\nprint('Offline checks passed')\nprint('Offline independent test diagnostic', file=sys.stderr)\n",
+            "oid": "2000013000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": "frontend/banner.js",
+            "text": "export const banner = \"welcome\";\n",
+            "oid": "200000e000000000000000000000000000000000",
+            "mode": "100644"
+          },
+          {
+            "side": "candidate",
+            "path": "frontend/status.js",
+            "text": "export const status = \"ready\";\n",
+            "oid": "2000010000000000000000000000000000000000",
+            "mode": "100644"
+          }
+        ],
+        "required_tests": []
+      },
+      "integration_id": "10000340000000000000000000000000",
+      "test_attempt": 1,
+      "test_evidence_hash": "300004e000000000000000000000000000000000000000000000000000000000",
+      "commands": [
+        {
+          "manifest": {
+            "actual_result": {
+              "cancel_accepted": false,
+              "environment": {
+                "cli_version": "codex-cli 0.169.0",
+                "logged_in": null,
+                "model_efforts": null,
+                "models": null
+              },
+              "exit_code": 0,
+              "exit_code_provenance": "codex-v0.169.0-runtime-normalized",
+              "observations": {
+                "isolation_root": "/sample/scenario/tmp/multi-agent-test-codex-00000001",
+                "policy_audit": {
+                  "config": {
+                    "agents": {
+                      "enabled": false
+                    },
+                    "allow_login_shell": false,
+                    "approval_policy": "never",
+                    "cli_auth_credentials_store": "file",
+                    "cloud": {
+                      "skills": {
+                        "enabled": false
+                      }
+                    },
+                    "default_permissions": "multi-agent-independent-tests",
+                    "features": {
+                      "agent_message_board": false,
+                      "agent_message_board_mcp": false,
+                      "api_key_cyber_access_programs": false,
+                      "api_key_model_discovery": false,
+                      "apps": false,
+                      "auth_elicitation": false,
+                      "background_paginated_rollout_migration": false,
+                      "browser_use": false,
+                      "code_mode": false,
+                      "codex_apps_mcp_2026_07_28": false,
+                      "computer_use": false,
+                      "connectors": false,
+                      "context_management": false,
+                      "daybreak_program_propagation": false,
+                      "external_agent_memory_import": false,
+                      "hooks": false,
+                      "image_generation": false,
+                      "js_repl": false,
+                      "mcp_2026_07_28": false,
+                      "mcp_connection_sharing": false,
+                      "mcp_lazy_stdio_startup": false,
+                      "memories": false,
+                      "memory_tool": false,
+                      "mentions_v2": false,
+                      "multi_agent": false,
+                      "multi_agent_v2": false,
+                      "multi_env_copy_file": false,
+                      "plugins": false,
+                      "recommended_plugins": false,
+                      "remote_control": false,
+                      "remote_plugin": false,
+                      "shell_snapshot": false,
+                      "shell_snapshot_v2": false,
+                      "skill_search": false,
+                      "skip_host_skill_discovery": true,
+                      "token_budget": false,
+                      "tool_suggest": false,
+                      "windows_sandbox_service": false,
+                      "workspace_dependencies": false
+                    },
+                    "history": {
+                      "persistence": "none"
+                    },
+                    "include_apps_instructions": false,
+                    "include_collaboration_mode_instructions": false,
+                    "include_environment_context": false,
+                    "include_environment_context_time": false,
+                    "memories": {
+                      "dedicated_tools": false,
+                      "generate_memories": false,
+                      "use_memories": false
+                    },
+                    "orchestrator": {
+                      "mcp": {
+                        "enabled": false
+                      }
+                    },
+                    "permissions": {
+                      "multi-agent-independent-tests": {
+                        "filesystem": {
+                          "/sample/scenario/codex-home": "deny",
+                          "/sample/scenario/data/reviews.sqlite3": "deny",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/checkout": "write",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/checkout/.git": "read",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/context": "deny",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/logs": "deny",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/scratch": "write",
+                          "/sample/scenario/home/.aws": "deny",
+                          "/sample/scenario/home/.claude": "deny",
+                          "/sample/scenario/home/.codex": "deny",
+                          "/sample/scenario/home/.config": "deny",
+                          "/sample/scenario/home/.ssh": "deny",
+                          "/sample/scenario/repository/.git": "deny",
+                          "/sample/scenario/tmp/multi-agent-test-codex-00000001": "deny",
+                          ":minimal": "read"
+                        },
+                        "network": {
+                          "enabled": false
+                        }
+                      }
+                    },
+                    "plugins": {
+                      "_default": {
+                        "enabled": false
+                      }
+                    },
+                    "project_doc_fallback_filenames": [],
+                    "project_doc_max_bytes": 0,
+                    "shell_environment_policy": {
+                      "inherit": "none",
+                      "set": {
+                        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"
+                      }
+                    },
+                    "skills": {
+                      "bundled": {
+                        "enabled": false
+                      },
+                      "include_instructions": false
+                    },
+                    "web_search": "disabled"
+                  },
+                  "layers": [
+                    {
+                      "file": "/sample/scenario/tmp/multi-agent-test-codex-00000001/codex/config.toml",
+                      "type": "user"
+                    }
+                  ],
+                  "requirements": null
+                },
+                "version": "codex-cli 0.169.0"
+              },
+              "output_limit_reached": false,
+              "problems": [],
+              "process_id": "10000390000000000000000000000000",
+              "receipt": {
+                "acquisitions": [
+                  {
+                    "kind": "log",
+                    "number": 1,
+                    "outcome": "published",
+                    "resource_id": "log-1"
+                  },
+                  {
+                    "kind": "log",
+                    "number": 2,
+                    "outcome": "published",
+                    "resource_id": "log-2"
+                  },
+                  {
+                    "kind": "log",
+                    "number": 3,
+                    "outcome": "published",
+                    "resource_id": "log-3"
+                  },
+                  {
+                    "kind": "isolation",
+                    "number": 4,
+                    "outcome": "published",
+                    "resource_id": "isolation-4"
+                  },
+                  {
+                    "kind": "process",
+                    "number": 5,
+                    "outcome": "published",
+                    "resource_id": "process-5"
+                  },
+                  {
+                    "kind": "process",
+                    "number": 6,
+                    "outcome": "published",
+                    "resource_id": "process-6"
+                  }
+                ],
+                "directories": [],
+                "isolations": [
+                  {
+                    "pending_spawns": 0,
+                    "process_count": 2,
+                    "removed": true,
+                    "resource_id": "isolation-4",
+                    "root": "/sample/scenario/tmp/multi-agent-test-codex-00000001",
+                    "unknown_spawns": 0,
+                    "unstopped_processes": 0
+                  }
+                ],
+                "logs": [
+                  {
+                    "byte_count": 8534,
+                    "closed": true,
+                    "healthy": true,
+                    "identity": [
+                      1,
+                      38
+                    ],
+                    "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-1/wire.jsonl",
+                    "records": 19,
+                    "resource_id": "log-1",
+                    "sealed": true,
+                    "sha256": "3000052000000000000000000000000000000000000000000000000000000000"
+                  },
+                  {
+                    "byte_count": 33,
+                    "closed": true,
+                    "healthy": true,
+                    "identity": [
+                      1,
+                      39
+                    ],
+                    "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-1/stdout.bin",
+                    "records": 1,
+                    "resource_id": "log-2",
+                    "sealed": true,
+                    "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+                  },
+                  {
+                    "byte_count": 0,
+                    "closed": true,
+                    "healthy": true,
+                    "identity": [
+                      1,
+                      40
+                    ],
+                    "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-1/stderr.bin",
+                    "records": 0,
+                    "resource_id": "log-3",
+                    "sealed": true,
+                    "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+                  }
+                ],
+                "operations": [
+                  {
+                    "active": false,
+                    "kind": "test-command",
+                    "number": 1
+                  }
+                ],
+                "owner_id": "100003a0000000000000000000000000",
+                "processes": [
+                  {
+                    "exit_code": 0,
+                    "group_gone": true,
+                    "label": "codex",
+                    "owns_group": true,
+                    "pid": 1,
+                    "readers_settled": true,
+                    "resource_id": "process-5",
+                    "stderr_eof": true,
+                    "stdout_eof": true,
+                    "watcher_settled": true
+                  },
+                  {
+                    "exit_code": 0,
+                    "group_gone": true,
+                    "label": "codex",
+                    "owns_group": true,
+                    "pid": 2,
+                    "readers_settled": true,
+                    "resource_id": "process-6",
+                    "stderr_eof": true,
+                    "stdout_eof": true,
+                    "watcher_settled": true
+                  }
+                ]
+              },
+              "reported_exit_code": 0,
+              "request_attempted": true,
+              "request_id": 4,
+              "request_settled": true,
+              "response": {
+                "exitCode": 0,
+                "stderr": "",
+                "stdout": ""
+              },
+              "sequence": 1,
+              "stderr_cap_reached": null,
+              "stderr_received_bytes": 0,
+              "stdout_cap_reached": false,
+              "stdout_received_bytes": 33,
+              "timeout_observed": false
+            },
+            "candidate": "200000b000000000000000000000000000000000",
+            "command": {
+              "args": [
+                "checks/build.py"
+              ],
+              "executable": "/sample/python/bin/python3.12",
+              "name": "build"
+            },
+            "integration_id": "10000340000000000000000000000000",
+            "logs": [
+              {
+                "byte_count": 8534,
+                "identity": [
+                  1,
+                  38
+                ],
+                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-1/wire.jsonl",
+                "sha256": "3000052000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "byte_count": 33,
+                "identity": [
+                  1,
+                  39
+                ],
+                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-1/stdout.bin",
+                "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "byte_count": 0,
+                "identity": [
+                  1,
+                  40
+                ],
+                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-1/stderr.bin",
+                "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+              }
+            ],
+            "output_scope": "server-emitted-notifications-v1",
+            "preparation_sha256": "300004d000000000000000000000000000000000000000000000000000000000",
+            "process_stopped": true,
+            "qualified": true,
+            "sequence": 1,
+            "stop_scope": "command-request-and-owned-runtime-v1",
+            "test_attempt": 1,
+            "validation_error": null,
+            "version": 1
+          },
+          "stdout": {
+            "content": {
+              "hex": "4f66666c696e65206275696c642077726f74652061727469666163742e62696e0a"
+            }
+          },
+          "stderr": {
+            "content": {
+              "hex": ""
+            }
+          }
+        },
+        {
+          "manifest": {
+            "actual_result": {
+              "cancel_accepted": false,
+              "environment": {
+                "cli_version": "codex-cli 0.169.0",
+                "logged_in": null,
+                "model_efforts": null,
+                "models": null
+              },
+              "exit_code": 0,
+              "exit_code_provenance": "codex-v0.169.0-runtime-normalized",
+              "observations": {
+                "isolation_root": "/sample/scenario/tmp/multi-agent-test-codex-00000002",
+                "policy_audit": {
+                  "config": {
+                    "agents": {
+                      "enabled": false
+                    },
+                    "allow_login_shell": false,
+                    "approval_policy": "never",
+                    "cli_auth_credentials_store": "file",
+                    "cloud": {
+                      "skills": {
+                        "enabled": false
+                      }
+                    },
+                    "default_permissions": "multi-agent-independent-tests",
+                    "features": {
+                      "agent_message_board": false,
+                      "agent_message_board_mcp": false,
+                      "api_key_cyber_access_programs": false,
+                      "api_key_model_discovery": false,
+                      "apps": false,
+                      "auth_elicitation": false,
+                      "background_paginated_rollout_migration": false,
+                      "browser_use": false,
+                      "code_mode": false,
+                      "codex_apps_mcp_2026_07_28": false,
+                      "computer_use": false,
+                      "connectors": false,
+                      "context_management": false,
+                      "daybreak_program_propagation": false,
+                      "external_agent_memory_import": false,
+                      "hooks": false,
+                      "image_generation": false,
+                      "js_repl": false,
+                      "mcp_2026_07_28": false,
+                      "mcp_connection_sharing": false,
+                      "mcp_lazy_stdio_startup": false,
+                      "memories": false,
+                      "memory_tool": false,
+                      "mentions_v2": false,
+                      "multi_agent": false,
+                      "multi_agent_v2": false,
+                      "multi_env_copy_file": false,
+                      "plugins": false,
+                      "recommended_plugins": false,
+                      "remote_control": false,
+                      "remote_plugin": false,
+                      "shell_snapshot": false,
+                      "shell_snapshot_v2": false,
+                      "skill_search": false,
+                      "skip_host_skill_discovery": true,
+                      "token_budget": false,
+                      "tool_suggest": false,
+                      "windows_sandbox_service": false,
+                      "workspace_dependencies": false
+                    },
+                    "history": {
+                      "persistence": "none"
+                    },
+                    "include_apps_instructions": false,
+                    "include_collaboration_mode_instructions": false,
+                    "include_environment_context": false,
+                    "include_environment_context_time": false,
+                    "memories": {
+                      "dedicated_tools": false,
+                      "generate_memories": false,
+                      "use_memories": false
+                    },
+                    "orchestrator": {
+                      "mcp": {
+                        "enabled": false
+                      }
+                    },
+                    "permissions": {
+                      "multi-agent-independent-tests": {
+                        "filesystem": {
+                          "/sample/scenario/codex-home": "deny",
+                          "/sample/scenario/data/reviews.sqlite3": "deny",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/checkout": "write",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/checkout/.git": "read",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/context": "deny",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/logs": "deny",
+                          "/sample/scenario/data/web-run-10000360000000000000000000000000/scratch": "write",
+                          "/sample/scenario/home/.aws": "deny",
+                          "/sample/scenario/home/.claude": "deny",
+                          "/sample/scenario/home/.codex": "deny",
+                          "/sample/scenario/home/.config": "deny",
+                          "/sample/scenario/home/.ssh": "deny",
+                          "/sample/scenario/repository/.git": "deny",
+                          "/sample/scenario/tmp/multi-agent-test-codex-00000002": "deny",
+                          ":minimal": "read"
+                        },
+                        "network": {
+                          "enabled": false
+                        }
+                      }
+                    },
+                    "plugins": {
+                      "_default": {
+                        "enabled": false
+                      }
+                    },
+                    "project_doc_fallback_filenames": [],
+                    "project_doc_max_bytes": 0,
+                    "shell_environment_policy": {
+                      "inherit": "none",
+                      "set": {
+                        "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"
+                      }
+                    },
+                    "skills": {
+                      "bundled": {
+                        "enabled": false
+                      },
+                      "include_instructions": false
+                    },
+                    "web_search": "disabled"
+                  },
+                  "layers": [
+                    {
+                      "file": "/sample/scenario/tmp/multi-agent-test-codex-00000002/codex/config.toml",
+                      "type": "user"
+                    }
+                  ],
+                  "requirements": null
+                },
+                "version": "codex-cli 0.169.0"
+              },
+              "output_limit_reached": false,
+              "problems": [],
+              "process_id": "100003b0000000000000000000000000",
+              "receipt": {
+                "acquisitions": [
+                  {
+                    "kind": "log",
+                    "number": 1,
+                    "outcome": "published",
+                    "resource_id": "log-1"
+                  },
+                  {
+                    "kind": "log",
+                    "number": 2,
+                    "outcome": "published",
+                    "resource_id": "log-2"
+                  },
+                  {
+                    "kind": "log",
+                    "number": 3,
+                    "outcome": "published",
+                    "resource_id": "log-3"
+                  },
+                  {
+                    "kind": "isolation",
+                    "number": 4,
+                    "outcome": "published",
+                    "resource_id": "isolation-4"
+                  },
+                  {
+                    "kind": "process",
+                    "number": 5,
+                    "outcome": "published",
+                    "resource_id": "process-5"
+                  },
+                  {
+                    "kind": "process",
+                    "number": 6,
+                    "outcome": "published",
+                    "resource_id": "process-6"
+                  }
+                ],
+                "directories": [],
+                "isolations": [
+                  {
+                    "pending_spawns": 0,
+                    "process_count": 2,
+                    "removed": true,
+                    "resource_id": "isolation-4",
+                    "root": "/sample/scenario/tmp/multi-agent-test-codex-00000002",
+                    "unknown_spawns": 0,
+                    "unstopped_processes": 0
+                  }
+                ],
+                "logs": [
+                  {
+                    "byte_count": 8831,
+                    "closed": true,
+                    "healthy": true,
+                    "identity": [
+                      1,
+                      41
+                    ],
+                    "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-2/wire.jsonl",
+                    "records": 20,
+                    "resource_id": "log-1",
+                    "sealed": true,
+                    "sha256": "3000053000000000000000000000000000000000000000000000000000000000"
+                  },
+                  {
+                    "byte_count": 22,
+                    "closed": true,
+                    "healthy": true,
+                    "identity": [
+                      1,
+                      42
+                    ],
+                    "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-2/stdout.bin",
+                    "records": 1,
+                    "resource_id": "log-2",
+                    "sealed": true,
+                    "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+                  },
+                  {
+                    "byte_count": 36,
+                    "closed": true,
+                    "healthy": true,
+                    "identity": [
+                      1,
+                      43
+                    ],
+                    "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-2/stderr.bin",
+                    "records": 1,
+                    "resource_id": "log-3",
+                    "sealed": true,
+                    "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+                  }
+                ],
+                "operations": [
+                  {
+                    "active": false,
+                    "kind": "test-command",
+                    "number": 1
+                  }
+                ],
+                "owner_id": "100003c0000000000000000000000000",
+                "processes": [
+                  {
+                    "exit_code": 0,
+                    "group_gone": true,
+                    "label": "codex",
+                    "owns_group": true,
+                    "pid": 3,
+                    "readers_settled": true,
+                    "resource_id": "process-5",
+                    "stderr_eof": true,
+                    "stdout_eof": true,
+                    "watcher_settled": true
+                  },
+                  {
+                    "exit_code": 0,
+                    "group_gone": true,
+                    "label": "codex",
+                    "owns_group": true,
+                    "pid": 4,
+                    "readers_settled": true,
+                    "resource_id": "process-6",
+                    "stderr_eof": true,
+                    "stdout_eof": true,
+                    "watcher_settled": true
+                  }
+                ]
+              },
+              "reported_exit_code": 0,
+              "request_attempted": true,
+              "request_id": 4,
+              "request_settled": true,
+              "response": {
+                "exitCode": 0,
+                "stderr": "",
+                "stdout": ""
+              },
+              "sequence": 2,
+              "stderr_cap_reached": false,
+              "stderr_received_bytes": 36,
+              "stdout_cap_reached": false,
+              "stdout_received_bytes": 22,
+              "timeout_observed": false
+            },
+            "candidate": "200000b000000000000000000000000000000000",
+            "command": {
+              "args": [
+                "checks/test.py"
+              ],
+              "executable": "/sample/python/bin/python3.12",
+              "name": "test"
+            },
+            "integration_id": "10000340000000000000000000000000",
+            "logs": [
+              {
+                "byte_count": 8831,
+                "identity": [
+                  1,
+                  41
+                ],
+                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-2/wire.jsonl",
+                "sha256": "3000053000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "byte_count": 22,
+                "identity": [
+                  1,
+                  42
+                ],
+                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-2/stdout.bin",
+                "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+              },
+              {
+                "byte_count": 36,
+                "identity": [
+                  1,
+                  43
+                ],
+                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/command-2/stderr.bin",
+                "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+              }
+            ],
+            "output_scope": "server-emitted-notifications-v1",
+            "preparation_sha256": "300004d000000000000000000000000000000000000000000000000000000000",
+            "process_stopped": true,
+            "qualified": true,
+            "sequence": 2,
+            "stop_scope": "command-request-and-owned-runtime-v1",
+            "test_attempt": 1,
+            "validation_error": null,
+            "version": 1
+          },
+          "stdout": {
+            "content": {
+              "hex": "4f66666c696e6520636865636b73207061737365640a"
+            }
+          },
+          "stderr": {
+            "content": {
+              "hex": "4f66666c696e6520696e646570656e64656e74207465737420646961676e6f737469630a"
+            }
+          }
+        }
+      ],
+      "members": [
+        {
+          "task_run_id": "10000270000000000000000000000000",
+          "planning_run_id": "10000220000000000000000000000000",
+          "attempt": 1,
+          "task_input": {
+            "card": {
+              "schema_version": 1,
+              "id": "T-0800",
+              "goal": "Deliver frontend/status.js",
+              "baseline_commit": "2000002000000000000000000000000000000000",
+              "write_scope": [
+                "frontend/status.js"
+              ],
+              "depends_on": [],
+              "interface_contracts": [],
+              "deliverables": [
+                "The updated frontend/status.js"
+              ],
+              "acceptance_criteria": [
+                "The named build and test suite passes"
+              ],
+              "test_refs": [
+                "build",
+                "test"
+              ],
+              "open_questions": [],
+              "proposed_tests": []
+            },
+            "frozen_rules": {
+              "repository": "/sample/scenario/repository/.git",
+              "baseline_commit": "2000002000000000000000000000000000000000",
+              "blob_oid": "2000003000000000000000000000000000000000",
+              "raw_text": "{\n  \"version\": 1,\n  \"commands\": {\n    \"build\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/build.py\"\n      ]\n    },\n    \"test\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/test.py\"\n      ]\n    }\n  },\n  \"protected_paths\": [\n    \"checks/**\",\n    \".agents/**\"\n  ],\n  \"implementation\": [\n    {\n      \"paths\": [\n        \"frontend/**\"\n      ],\n      \"provider\": \"claude-code\",\n      \"default_model\": \"claude-sonnet-5-5\",\n      \"default_effort\": \"low\"\n    },\n    {\n      \"paths\": [\n        \"backend/amount.py\"\n      ],\n      \"provider\": \"codex\",\n      \"default_model\": \"gpt-6.2-sol\",\n      \"default_effort\": \"low\"\n    }\n  ]\n}\n",
+              "rules": {
+                "version": 1,
+                "commands": [
+                  {
+                    "name": "build",
+                    "executable": "/sample/python/bin/python3.12",
+                    "args": [
+                      "checks/build.py"
+                    ]
+                  },
+                  {
+                    "name": "test",
+                    "executable": "/sample/python/bin/python3.12",
+                    "args": [
+                      "checks/test.py"
+                    ]
+                  }
+                ],
+                "protected_paths": [
+                  "checks/**",
+                  ".agents/**"
+                ],
+                "implementation": [
+                  {
+                    "paths": [
+                      "frontend/**"
+                    ],
+                    "config": {
+                      "provider": "claude-code",
+                      "default_model": "claude-sonnet-5-5",
+                      "default_effort": "low",
+                      "allowed_models": [
+                        "claude-sonnet-5-5"
+                      ]
+                    }
+                  },
+                  {
+                    "paths": [
+                      "backend/amount.py"
+                    ],
+                    "config": {
+                      "provider": "codex",
+                      "default_model": "gpt-6.2-sol",
+                      "default_effort": "low",
+                      "allowed_models": [
+                        "gpt-6.2-sol"
+                      ]
+                    }
+                  }
+                ],
+                "default_implementation": null,
+                "task_types": []
+              }
+            },
+            "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}",
+            "created_at": "2000-01-01T00:00:53.000000+00:00"
+          },
+          "delivery": {
+            "baseline": "2000002000000000000000000000000000000000",
+            "candidate": "2000007000000000000000000000000000000000",
+            "changed_paths": [
+              "frontend/status.js"
+            ],
+            "digest": "3000037000000000000000000000000000000000000000000000000000000000",
+            "ref": "refs/multi-agent/candidates/10000280000000000000000000000000",
+            "tree": "2000008000000000000000000000000000000000"
+          },
+          "external_dependencies": []
+        },
+        {
+          "task_run_id": "10000300000000000000000000000000",
+          "planning_run_id": "100002b0000000000000000000000000",
+          "attempt": 1,
+          "task_input": {
+            "card": {
+              "schema_version": 1,
+              "id": "T-0801",
+              "goal": "Deliver frontend/banner.js",
+              "baseline_commit": "2000002000000000000000000000000000000000",
+              "write_scope": [
+                "frontend/banner.js"
+              ],
+              "depends_on": [],
+              "interface_contracts": [],
+              "deliverables": [
+                "The updated frontend/banner.js"
+              ],
+              "acceptance_criteria": [
+                "The named build and test suite passes"
+              ],
+              "test_refs": [
+                "build",
+                "test"
+              ],
+              "open_questions": [],
+              "proposed_tests": []
+            },
+            "frozen_rules": {
+              "repository": "/sample/scenario/repository/.git",
+              "baseline_commit": "2000002000000000000000000000000000000000",
+              "blob_oid": "2000003000000000000000000000000000000000",
+              "raw_text": "{\n  \"version\": 1,\n  \"commands\": {\n    \"build\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/build.py\"\n      ]\n    },\n    \"test\": {\n      \"executable\": \"/sample/python/bin/python3.12\",\n      \"args\": [\n        \"checks/test.py\"\n      ]\n    }\n  },\n  \"protected_paths\": [\n    \"checks/**\",\n    \".agents/**\"\n  ],\n  \"implementation\": [\n    {\n      \"paths\": [\n        \"frontend/**\"\n      ],\n      \"provider\": \"claude-code\",\n      \"default_model\": \"claude-sonnet-5-5\",\n      \"default_effort\": \"low\"\n    },\n    {\n      \"paths\": [\n        \"backend/amount.py\"\n      ],\n      \"provider\": \"codex\",\n      \"default_model\": \"gpt-6.2-sol\",\n      \"default_effort\": \"low\"\n    }\n  ]\n}\n",
+              "rules": {
+                "version": 1,
+                "commands": [
+                  {
+                    "name": "build",
+                    "executable": "/sample/python/bin/python3.12",
+                    "args": [
+                      "checks/build.py"
+                    ]
+                  },
+                  {
+                    "name": "test",
+                    "executable": "/sample/python/bin/python3.12",
+                    "args": [
+                      "checks/test.py"
+                    ]
+                  }
+                ],
+                "protected_paths": [
+                  "checks/**",
+                  ".agents/**"
+                ],
+                "implementation": [
+                  {
+                    "paths": [
+                      "frontend/**"
+                    ],
+                    "config": {
+                      "provider": "claude-code",
+                      "default_model": "claude-sonnet-5-5",
+                      "default_effort": "low",
+                      "allowed_models": [
+                        "claude-sonnet-5-5"
+                      ]
+                    }
+                  },
+                  {
+                    "paths": [
+                      "backend/amount.py"
+                    ],
+                    "config": {
+                      "provider": "codex",
+                      "default_model": "gpt-6.2-sol",
+                      "default_effort": "low",
+                      "allowed_models": [
+                        "gpt-6.2-sol"
+                      ]
+                    }
+                  }
+                ],
+                "default_implementation": null,
+                "task_types": []
+              }
+            },
+            "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
+            "created_at": "2000-01-01T00:01:02.000000+00:00"
+          },
+          "delivery": {
+            "baseline": "2000002000000000000000000000000000000000",
+            "candidate": "2000009000000000000000000000000000000000",
+            "changed_paths": [
+              "frontend/banner.js"
+            ],
+            "digest": "3000044000000000000000000000000000000000000000000000000000000000",
+            "ref": "refs/multi-agent/candidates/10000310000000000000000000000000",
+            "tree": "200000a000000000000000000000000000000000"
+          },
+          "external_dependencies": []
+        }
+      ],
+      "test_change_paths": [],
+      "version": 1,
+      "kind": "executed_integration_review"
+    }
+  },
+  "artifacts": [
+    {
+      "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMS1zdGRvdXQiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stdout",
+      "byte_count": 33,
+      "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMS1zdGRlcnIiLCIzMDAwMDA2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMi1zdGRvdXQiLCIzMDAwMDI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stdout",
+      "byte_count": 22,
+      "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "art-WyJzbmFwc2hvdCIsIjMwMDAwNTAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJmcm96ZW4tMi1zdGRlcnIiLCIzMDAwMDI1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "stream": "stderr",
+      "byte_count": 36,
+      "sha256": "3000025000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}
