@@ -28,6 +28,14 @@ export interface JobBadgeInfo {
   label: string;
 }
 
+/** Some actions end a cancellation with exit code 1 and say so in their receipt: a cancelled
+ *  project.plan reports result.status "failed" with error.failure_category "cancelled". */
+export function cancelledInResult(result: Record<string, unknown> | null): boolean {
+  if (!result) return false;
+  const error = result.error as { failure_category?: string } | null | undefined;
+  return error?.failure_category === 'cancelled' || result.failure_category === 'cancelled' || result.status === 'cancelled';
+}
+
 /** Job state in words. A finished job is judged by its exit code together with the domain
  *  state read back afterwards; error being null does not mean success. */
 export function jobBadge(job: Pick<Job, 'state' | 'exit_code' | 'result' | 'error'>): JobBadgeInfo {
@@ -41,7 +49,7 @@ export function jobBadge(job: Pick<Job, 'state' | 'exit_code' | 'result' | 'erro
     case 'interrupted':
       return { tone: 'warn', label: '已中断' };
     case 'finished':
-      if (job.exit_code === 130 || job.error?.code === 'cli_cancelled') return { tone: 'muted', label: '已取消' };
+      if (job.exit_code === 130 || job.error?.code === 'cli_cancelled' || cancelledInResult(job.result)) return { tone: 'muted', label: '已取消' };
       if (job.exit_code === 2 && job.result === null) return { tone: 'fail', label: '被拒绝' };
       if (job.exit_code === 0 || (job.exit_code === null && job.error === null)) return { tone: 'ok', label: '已结束' };
       if (job.exit_code === 1 && job.result !== null) return { tone: 'warn', label: '结果不满足' };

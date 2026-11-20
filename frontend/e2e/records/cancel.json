@@ -1,0 +1,122 @@
+{
+  "scenario": "cancel",
+  "finished_at": "2026-11-20T21:26:11.965Z",
+  "api_requests": 120,
+  "locking_reads": 9,
+  "lock_violations": [],
+  "job_posts": 13,
+  "jobs": [
+    {
+      "action": "environment.refresh",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "environment.refresh",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.consult",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.confirm",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.plan",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.start",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.test",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.review",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.start",
+      "states": [
+        "queued",
+        "running",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.leaf",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "project.stage.leaf",
+      "states": [
+        "queued",
+        "finished"
+      ]
+    },
+    {
+      "action": "task.run",
+      "states": [
+        "queued",
+        "running",
+        "cancelling",
+        "finished"
+      ]
+    },
+    {
+      "action": "environment.refresh",
+      "states": [
+        "finished"
+      ]
+    },
+    {
+      "action": "task.run",
+      "states": [
+        "queued",
+        "running",
+        "interrupted"
+      ]
+    },
+    {
+      "action": "environment.refresh",
+      "states": [
+        "finished"
+      ]
+    }
+  ],
+  "result": "passed",
+  "same_page_after_refresh": "http://127.0.0.1:63780/jobs/79f3c7d28e8642abb5f1cc736d29e9d1"
+}

@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from 'react';
 import { jobs, useJobs } from '../api/jobs';
+import { useReadsInFlight } from '../api/reads';
 import { errorText } from '../api/transport';
 import type { Job } from '../api/types';
 import { actionLabel } from '../app/labels';
@@ -21,12 +22,15 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
   /** Ask before submitting (actions that create something new). */
   confirm?: string;
 }) {
-  const { active, submitting } = useJobs();
+  const { active, submitting, settling } = useJobs();
+  const reading = useReadsInFlight() > 0 || settling;
   const [mine, setMine] = useState<string | null>(null);
   const [problem, setProblem] = useState<ReactNode>(null);
   const running = mine !== null && active?.job_id === mine;
   const busyElsewhere = !running && (active !== null || submitting !== null);
-  const blocked = disabled || busyElsewhere || running || submitting === action;
+  // While the page is still reading (just after a job, or on arrival) its buttons may come from
+  // the state before; wait for the reading so nothing is submitted twice.
+  const blocked = disabled || busyElsewhere || running || submitting === action || reading;
 
   const click = async (): Promise<void> => {
     const a = args();

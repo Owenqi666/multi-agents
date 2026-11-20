@@ -71,7 +71,7 @@ function Body({ it }: { it: IntegrationRecord }) {
             <ActionButton action="integration.rework" primary label="按阻塞意见返工（每条谱系一次）" args={() => ({ integration_id: it.integration_id, round_id: last.round_id })}
               onDone={(job) => { const id = (job.result?.child_id as string | undefined) ?? job.resources?.find((r) => r.kind === 'integration' && r.id !== it.integration_id)?.id; if (id) navigate(to('integrations', id)); }} />
           ) : null}
-          {it.rework?.child_id ? <Link className="btn" href={to('integrations', it.rework.child_id)}>打开返工后的集成</Link> : null}
+          {it.rework?.child_id && it.rework.child_id !== it.integration_id ? <Link className="btn" href={to('integrations', it.rework.child_id)}>打开返工后的集成</Link> : null}
         </div>
       </Section>
 

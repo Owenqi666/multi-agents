@@ -23,6 +23,8 @@ export interface JobCenterState {
   submitting: string | null;
   /** The first GET /api/jobs has answered. */
   ready: boolean;
+  /** A job just ended; pages are about to read again, so actions wait a moment. */
+  settling: boolean;
 }
 
 export type SubmitResult = { job: Job } | { busy: string | null };
@@ -30,7 +32,8 @@ export type SubmitResult = { job: Job } | { busy: string | null };
 const POLL_MS = 1000;
 
 export class JobCenter {
-  private state: JobCenterState = { active: null, environment: {}, recent: [], generation: 0, submitting: null, ready: false };
+  private state: JobCenterState = { active: null, environment: {}, recent: [], generation: 0, submitting: null, ready: false, settling: false };
+  private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
   private watched = new Map<string, Job>();
   private waiters = new Map<string, ((job: Job) => void)[]>();
@@ -49,7 +52,7 @@ export class JobCenter {
     this.timer = null;
     this.watched.clear();
     this.waiters.clear();
-    this.set({ active: null, environment: {}, recent: [], generation: 0, submitting: null, ready: false });
+    this.set({ active: null, environment: {}, recent: [], generation: 0, submitting: null, ready: false, settling: false });
   }
 
   private set(patch: Partial<JobCenterState>): void {
@@ -151,6 +154,9 @@ export class JobCenter {
     patch.recent = recent;
     if (!unfinished) {
       patch.generation = this.state.generation + 1;
+      patch.settling = true;
+      if (this.settleTimer) clearTimeout(this.settleTimer);
+      this.settleTimer = setTimeout(() => { this.settleTimer = null; this.set({ settling: false }); }, 400);
       this.watched.delete(job.job_id);
       for (const resolve of this.waiters.get(job.job_id) ?? []) resolve(job);
       this.waiters.delete(job.job_id);

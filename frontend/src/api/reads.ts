@@ -5,8 +5,8 @@
 // - locking reads go out one at a time, never in parallel;
 // - other records may be re-read while a job runs, at most every 5 seconds.
 
-import { useEffect, useRef, useState } from 'react';
-import { useJobs } from './jobs';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { jobs, useJobs } from './jobs';
 
 export interface ReadState<T> {
   data: T | null;
@@ -24,6 +24,18 @@ interface Cached {
 }
 
 const cache = new Map<string, Cached>();
+
+// Reads in flight, so actions can wait until the page shows the state after a job instead of
+// offering a button from the reading before it.
+let inflight = 0;
+const inflightListeners = new Set<() => void>();
+function setInflight(delta: number): void {
+  inflight += delta;
+  inflightListeners.forEach((l) => l());
+}
+export function useReadsInFlight(): number {
+  return useSyncExternalStore((l) => { inflightListeners.add(l); return () => inflightListeners.delete(l); }, () => inflight);
+}
 let chain: Promise<unknown> = Promise.resolve();
 
 function serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -48,10 +60,12 @@ export interface ReadOptions {
 }
 
 const POLL_MS = 5000;
+const HELD = Symbol('lock held');
 
 export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: ReadOptions): ReadState<T> & { reload: () => void } {
-  const { active, generation } = useJobs();
-  const locked = active !== null;
+  const { active, submitting, generation } = useJobs();
+  // From the click that submits a job until it ends, the lock may be taken at any moment.
+  const locked = active !== null || submitting !== null;
   const enabled = (opts.enabled ?? true) && key !== null;
   const cached = key ? cache.get(key) : undefined;
   const [state, setState] = useState<ReadState<T>>({
@@ -75,10 +89,12 @@ export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: 
     const run = async (): Promise<void> => {
       if (opts.locking && locked) { fromCache(); return; }
       setState((s) => ({ ...s, loading: true }));
+      setInflight(1);
       try {
-        const value = await (opts.locking ? serial(() => fetchRef.current()) : fetchRef.current());
+        // A locking read waits its turn in the queue; if a job started meanwhile it is not sent.
+        const value: T | typeof HELD = await (opts.locking ? serial<T | typeof HELD>(() => (jobs.idle ? fetchRef.current() : Promise.resolve(HELD))) : fetchRef.current());
         if (!alive) return;
-        if (lockBusy(value)) { fromCache(); return; }
+        if (value === HELD || lockBusy(value)) { fromCache(); return; }
         const readAt = new Date().toISOString();
         cache.set(key, { data: value, readAt });
         setState({ data: value, readAt, stale: false, error: null, loading: false });
@@ -86,6 +102,8 @@ export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: 
         if (!alive) return;
         const c = cache.get(key);
         setState({ data: (c?.data as T | undefined) ?? null, readAt: c?.readAt ?? null, stale: !!c, error, loading: false });
+      } finally {
+        setInflight(-1);
       }
     };
     void run();
@@ -103,4 +121,5 @@ export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: 
 /** Test hook: forget everything read so far. */
 export function clearReadCache(): void {
   cache.clear();
+  inflight = 0;
 }

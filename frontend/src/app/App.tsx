@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from 'react';
-import { jobs } from '../api/jobs';
+import { jobs, useJobs } from '../api/jobs';
+import { useReadsInFlight } from '../api/reads';
 import { ThemeSwitch } from '../components/ThemeSwitch';
 import { EmptyState } from '../components/EmptyState';
 import { JobBar } from './JobBar';
@@ -47,7 +48,14 @@ function Outlet() {
 
 export function App() {
   const { path } = useLocation();
+  const reading = useReadsInFlight();
+  const { active, settling } = useJobs();
   useEffect(() => { void jobs.init(); }, []);
+  // For scripts and screen readers: whether the page is still catching up.
+  useEffect(() => {
+    document.documentElement.dataset.reading = reading > 0 || settling ? '1' : '0';
+    document.documentElement.dataset.job = active ? active.state : 'none';
+  }, [reading, active, settling]);
   const nav: [string, string][] = [['/', '舞台'], ['/projects', '项目'], ['/jobs', '作业']];
   const current = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
   return (

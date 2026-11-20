@@ -52,7 +52,21 @@ cd frontend && corepack pnpm build
 cd frontend && corepack pnpm run check
 ```
 
-`check` 依次跑类型检查、ESLint 和组件测试，是任务卡 `proposed_tests` 里的 `frontend-check`。它不在 `scripts/verify.sh` 里，单独运行；提交钩子仍然会跑完整的 `scripts/verify.sh`，所以 worktree 要先 `uv sync`。模拟模式的回放测试在找不到样例时跳过。浏览器端到端（`frontend-e2e`）在联调分支合入 T-0069 后加入。
+`check` 依次跑类型检查、ESLint 和组件测试，是任务卡 `proposed_tests` 里的 `frontend-check`。它不在 `scripts/verify.sh` 里，单独运行；提交钩子仍然会跑完整的 `scripts/verify.sh`，所以 worktree 要先 `uv sync`。模拟模式的回放测试在找不到样例时跳过。
+
+浏览器端到端（`frontend-e2e`）需要 T-0069 的离线联调环境，在合入了它的分支上运行：
+
+```bash
+cd frontend && corepack pnpm run e2e
+```
+
+它先构建页面，再为每条路径用 `uv run python tests/unit/web_support/offline_env.py --scenario <名称> --port 0 --frontend-dist <dist>` 起一个服务，只通过这条命令、信号和 `/api` 与环境交互。三条路径：
+
+- `accept`：从提出目标走到接受，金额阶段走直接模式，汇总阶段走分派模式（两张子卡、合并、测试、审核、接受）。
+- `rework`：汇总集成初审给出 `frontend/status.js` 第 1 行的阻塞意见，从审核页跳到冻结文件的那一行；返工后复审通过，查看返工增量 diff，再接受。
+- `cancel`：子卡实施中途取消，页面先显示「已请求取消」，结束后显示「已取消」和退出码 130；下一张子卡实施中途向环境发 SIGUSR1 硬停重启，页面对当时的作业显示「已中断」并给出恢复说明。
+
+每条路径都断言：作业未结束期间没有发出抢锁种类的读取（按约定的表从网络请求判断）；刷新后回到同一页、同一回执；打开、刷新和翻历史不新增作业。运行记录写在 `e2e/records/`，每条路径一份：结果、请求数、抢锁读取数、违规列表和各作业的状态序列；用 `pnpm run e2e` 运行时另有 Playwright 的 `report.json`。Playwright 使用本机已装的 Chromium（版本 1.60.0 对应的浏览器）。
 
 ## 目录
 
@@ -111,6 +125,15 @@ cd frontend && corepack pnpm run check
 | 按阻塞意见返工 | 集成 | `integration.rework` | 最后一轮结论为 `needs_rework`，这条谱系还没返工过，还没接受 |
 | 在新的目标上重建 | 集成 | `integration.rebase` | `target_is_current` 为假 |
 | 接受 | 集成 | `integration.accept` | `current_eligible` 为真且还没接受；`round_id` 取最后一轮（先确认一次）。资格不够时服务以退出码 2 拒绝，原因在作业页按原文显示 |
+
+## 已知限制
+
+- 页面接受集成时总用最后一轮审核，不提供「用别的审核轮接受」的入口；资格不够时服务以退出码 2 拒绝，原因在作业页按原文显示。
+- 实施和代码审核席位的完整会话日志后端还没有读取入口，页面只列出咨询、规划、测试和冻结输出的日志。
+- 页面只协调自己发起的读取。在终端里对同一仓库另跑会改状态的 CLI，仍可能撞上仓库执行锁，后端会返回降级结果，页面如实显示「未核验」。
+- 分派阶段返工后，阶段读回换成子集成；首页和阶段页的织带只画当前这条集成，要看返工前的那一轮，从集成页的「来源」链接打开。
+- 舞台的泳道按席位排；运行时报告的模型认不出、请求也缺失时，会落到一条临时的「未认出」泳道。
+- 模拟模式只回放样例，不实现业务规则；样例里没有的读取回 404。
 
 ## 舞台怎样从读回换算
 

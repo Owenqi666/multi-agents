@@ -93,6 +93,12 @@ describe('作业状态', () => {
     expect(screen.getByText(/服务重启时这个作业还没结束/)).toBeTruthy();
   });
 
+  it('reads a cancelled plan from its receipt even though it exits with 1', async () => {
+    await show({ ...job('finished · 1，带结果'), action: 'project.plan', result: { status: 'failed', error: { failure_category: 'cancelled' } } });
+    expect(screen.getAllByText('已取消').length).toBeGreaterThan(0);
+    expect(screen.queryByText('结果不满足')).toBeNull();
+  });
+
   it('reads a cancelled finish from the exit code, not from error being null', async () => {
     await show(job('finished · 130'));
     expect(screen.getAllByText('已取消').length).toBeGreaterThan(0);
