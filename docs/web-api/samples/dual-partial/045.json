@@ -38,8 +38,8 @@
         "timeout": 180,
         "grace": 2,
         "executables": {
-          "codex": "/sample/scenario/bin/codex",
-          "claude": "/sample/scenario/bin/claude"
+          "claude": "/sample/scenario/bin/claude",
+          "codex": "/sample/scenario/bin/codex"
         },
         "parent_round_id": null
       },
@@ -284,7 +284,7 @@
     {
       "artifact_id": "10000360000000000000000000000000.stdout",
       "stream": "stdout",
-      "byte_count": 5154,
+      "byte_count": 5153,
       "sha256": "3000050000000000000000000000000000000000000000000000000000000000"
     },
     {

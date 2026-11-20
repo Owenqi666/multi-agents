@@ -339,7 +339,7 @@
             "isolations": [],
             "logs": [
               {
-                "byte_count": 1204,
+                "byte_count": 1203,
                 "closed": true,
                 "healthy": true,
                 "identity": [
@@ -353,7 +353,7 @@
                 "sha256": "3000054000000000000000000000000000000000000000000000000000000000"
               },
               {
-                "byte_count": 14842,
+                "byte_count": 14840,
                 "closed": true,
                 "healthy": true,
                 "identity": [
@@ -425,7 +425,7 @@
           "raw_logs": [
             {
               "metadata": {
-                "byte_count": 1204,
+                "byte_count": 1203,
                 "identity": [
                   1,
                   38
@@ -440,7 +440,7 @@
             },
             {
               "metadata": {
-                "byte_count": 14842,
+                "byte_count": 14840,
                 "identity": [
                   1,
                   39
@@ -949,6 +949,10 @@
     {
       "kind": "integration",
       "id": "100003a0000000000000000000000000"
+    },
+    {
+      "kind": "review",
+      "id": "10000370000000000000000000000000"
     },
     {
       "kind": "snapshot",

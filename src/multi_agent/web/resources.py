@@ -759,15 +759,34 @@ def read_artifact(
     }
 
 
+def _result_field(value: object, key: str) -> object:
+    return value.get(key) if isinstance(value, dict) else None
+
+
+def _first_result_line(*values: object) -> str | None:
+    for value in values:
+        if isinstance(value, str) and value.strip():
+            return value.strip().splitlines()[0].strip()
+    return None
+
+
 def references(action: str, result: object) -> list[dict[str, str]]:
     """Collect explicit product IDs from normal and partially successful results."""
     items: dict[tuple[str, str], dict[str, str]] = {}
+    revised_integrations: dict[str, str] = {}
 
-    def remember(kind: str, identifier: object, parent_id: object = None) -> None:
+    def remember(
+        kind: str,
+        identifier: object,
+        parent_id: object = None,
+        label: str | None = None,
+    ) -> None:
         if isinstance(identifier, str) and _IDENTITY.fullmatch(identifier):
             record = items.setdefault(
                 (kind, identifier), {"kind": kind, "id": identifier}
             )
+            if label is not None:
+                record.setdefault("label", label)
             if (
                 isinstance(parent_id, str)
                 and _IDENTITY.fullmatch(parent_id)
@@ -779,34 +798,65 @@ def references(action: str, result: object) -> list[dict[str, str]]:
         if not isinstance(value, dict):
             return
         goal = value.get("goal")
+        goal_label = _first_result_line(
+            value.get("confirmed_goal"), value.get("original_goal")
+        )
+        plan_goal_label = _first_result_line(
+            _result_field(goal, "confirmed_goal"), _result_field(goal, "original_goal")
+        )
+        project_label = goal_label if value.get("goal_id") else None
+        planning = value.get("planning")
+        source = _result_field(value.get("details"), "input")
+        card_label = _first_result_line(
+            value.get("card_id"),
+            _result_field(value.get("card"), "id"),
+            _result_field(_result_field(source, "card"), "id"),
+            _result_field(_result_field(planning, "card"), "id"),
+        )
+        stage_label = _first_result_line(value.get("stage_id"))
+        task_label = card_label or _first_result_line(
+            value.get("requirements"), _result_field(source, "requirements")
+        )
+        planning_label = (
+            stage_label
+            if _result_field(planning, "planning_kind") == "stage_split"
+            else task_label
+        )
+        target = value.get("target_ref")
+        branch_label = _first_result_line(
+            target.removeprefix("refs/heads/") if isinstance(target, str) else None
+        )
         review_parent = (
             value.get("task_run_id") or value.get("integration_id") or parent
         )
-        for field, kind, owner in (
-            ("project_id", "project", None),
-            ("consultation_id", "consultation", value.get("project_id")),
-            ("goal_id", "goal", value.get("project_id")),
+        for field, kind, owner, label in (
+            ("project_id", "project", None, project_label),
+            ("consultation_id", "consultation", value.get("project_id"), goal_label),
+            ("goal_id", "goal", value.get("project_id"), goal_label),
             (
                 "plan_id",
                 "project-plan",
-                goal.get("goal_id") if isinstance(goal, dict) else None,
+                _result_field(goal, "goal_id"),
+                plan_goal_label,
             ),
-            ("stage_run_id", "stage", value.get("plan_id")),
-            ("planning_run_id", "plan", value.get("stage_run_id")),
-            ("task_run_id", "task", value.get("planning_run_id")),
+            ("stage_run_id", "stage", value.get("plan_id"), stage_label),
+            ("planning_run_id", "plan", value.get("stage_run_id"), planning_label),
+            ("task_run_id", "task", value.get("planning_run_id"), task_label),
             (
                 "integration_id",
                 "integration",
-                value.get("stage_run_id") or value.get("rebased_from"),
+                value.get("rebased_from") or value.get("stage_run_id"),
+                branch_label,
             ),
-            ("snapshot_id", "snapshot", value.get("round_id")),
+            ("snapshot_id", "snapshot", value.get("round_id"), None),
             (
                 "source_snapshot_id",
                 "snapshot",
                 value.get("consultation_id") or value.get("plan_id"),
+                None,
             ),
         ):
-            remember(kind, value.get(field), owner)
+            remember(kind, value.get(field), owner, label)
         review_kind = (
             "task-review"
             if action.startswith("task.") or value.get("task_run_id") is not None
@@ -818,8 +868,25 @@ def references(action: str, result: object) -> list[dict[str, str]]:
             "confirmation_round_id",
             "assessment_round_id",
             "source_review_round_id",
+            "final_review_round_id",
         ):
             remember(review_kind, value.get(field), review_parent)
+        rework = value.get("rework")
+        source_id = _result_field(rework, "source_id")
+        if isinstance(source_id, str) and _IDENTITY.fullmatch(source_id):
+            child_id = _result_field(rework, "child_id")
+            if (
+                isinstance(child_id, str)
+                and _IDENTITY.fullmatch(child_id)
+                and source_id != child_id
+            ):
+                revised_integrations[child_id] = source_id
+                remember("integration", child_id)
+            remember(
+                "review",
+                _result_field(_result_field(rework, "request"), "review_round_id"),
+                source_id,
+            )
         for field in (
             "goal",
             "consultation",
@@ -832,13 +899,16 @@ def references(action: str, result: object) -> list[dict[str, str]]:
             "acceptance",
             "integration",
             "implementation",
+            "workflow",
         ):
             visit(value.get(field), review_parent)
         for field in ("tasks", "leaves", "reviews"):
             children = value.get(field)
             if isinstance(children, list):
                 for child in children:
-                    visit(child)
+                    visit(child, review_parent)
 
     visit(result)
+    for child_id, source_id in revised_integrations.items():
+        items["integration", child_id]["parent_id"] = source_id
     return list(items.values())

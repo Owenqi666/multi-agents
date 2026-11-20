@@ -321,8 +321,8 @@
           "timeout": 180,
           "grace": 2,
           "executables": {
-            "codex": "/sample/scenario/bin/codex",
-            "claude": "/sample/scenario/bin/claude"
+            "claude": "/sample/scenario/bin/claude",
+            "codex": "/sample/scenario/bin/codex"
           },
           "parent_round_id": null
         },
@@ -649,7 +649,7 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8833,
+      "byte_count": 8836,
       "sha256": "3000055000000000000000000000000000000000000000000000000000000000"
     },
     {

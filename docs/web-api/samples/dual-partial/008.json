@@ -75,7 +75,7 @@
           "exit_code": 0,
           "logs": [
             {
-              "byte_count": 1200,
+              "byte_count": 1205,
               "closed": true,
               "healthy": true,
               "identity": [
@@ -89,7 +89,7 @@
               "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
             },
             {
-              "byte_count": 3646,
+              "byte_count": 3644,
               "closed": true,
               "healthy": true,
               "identity": [

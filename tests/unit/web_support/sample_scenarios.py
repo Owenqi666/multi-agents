@@ -17,6 +17,11 @@ def _begin(api):
     workspace = api.get("workspace")
     api.normalizer.bind(repository=workspace["repository"])
     baseline = workspace["head"]
+    assert workspace["branches"] == [{"name": "main", "head": baseline}], workspace
+    defaults = workspace["defaults"]
+    assert defaults["source"] == "cli_default" and defaults["stage_mode"] == "direct", (
+        defaults
+    )
     for provider in ("codex", "claude"):
         observation = api.job("environment.refresh", provider=provider, exit_code=None)
         assert observation["error"] is None, observation
@@ -209,7 +214,8 @@ def accept(api):
         and stage["candidate"] == integration["candidate"]["commit"]
     )
     api.get(f"resources/project-stages/{plan_id}")
-    api.get("runs")
+    runs = {run["id"]: run for run in api.get("runs")["items"]}
+    assert runs[identifier]["label"] != identifier, runs[identifier]
 
 
 def rework(api):
@@ -255,7 +261,9 @@ def rework(api):
         if line.startswith("diff --git ")
     ] == ["diff --git a/frontend/status.js b/frontend/status.js"], incremental
     _accept(api, child, repaired["rereview"]["review"])
-    api.get("runs")
+    runs = {run["id"]: run for run in api.get("runs")["items"]}
+    assert runs[child_id]["parent_id"] == identifier, runs[child_id]
+    assert runs[child_id]["label"] != child_id, runs[child_id]
 
 
 def dual_partial(api):

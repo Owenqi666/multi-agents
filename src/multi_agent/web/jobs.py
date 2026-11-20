@@ -36,6 +36,7 @@ _ARTIFACT = re.compile(r"([0-9a-f]{32})\.(stdout|stderr)")
 _PREVIEW_BYTES = 64 * 1024
 _STDERR_TAIL_BYTES = 8 * 1024
 _RECENT_JOBS = 50
+_RUNS_VERSION = 1
 _RECORD_FIELDS = (
     "args",
     "created_at",
@@ -229,6 +230,9 @@ class EnvironmentJobs:
             self.navigation = {
                 (item["kind"], item["id"]): item for item in state.get("runs", [])
             }
+            upgrade_runs = state.get("runs_version", 0) < _RUNS_VERSION
+            if upgrade_runs:
+                self._upgrade_runs()
         except (KeyError, TypeError, UnicodeError, json.JSONDecodeError):
             raise ValueError("environment state is unreadable") from None
         interrupted = False
@@ -242,8 +246,34 @@ class EnvironmentJobs:
                         "message": "The previous service stopped before observing a result.",
                     },
                 )
-        if interrupted:
+        if interrupted or upgrade_runs:
             self._save()
+
+    def _upgrade_runs(self) -> None:
+        timestamps = {key: row["updated_at"] for key, row in self.navigation.items()}
+        for key, timestamp in timestamps.items():
+            self._register_run(self.navigation[key], timestamp)
+
+        for job in sorted(
+            self.jobs.values(), key=lambda job: job.get("finished_at") or ""
+        ):
+            if job["result"] is None:
+                continue
+            finished_at = job.get("finished_at")
+            if finished_at is None:
+                # Older job records only kept their time on registered runs.
+                related = (
+                    timestamps.get((item["kind"], item["id"]))
+                    for item in job.get("resources", ())
+                )
+                finished_at = min(
+                    (timestamp for timestamp in related if timestamp is not None),
+                    default=None,
+                )
+            for item in references(job["action"], job["result"]):
+                timestamp = timestamps.get((item["kind"], item["id"]), finished_at)
+                if timestamp is not None:
+                    self._register_run(item, timestamp)
 
     def _save(self) -> None:
         state = {
@@ -252,6 +282,7 @@ class EnvironmentJobs:
             "jobs": self.jobs,
             "environments": self.environments,
             "runs": list(self.navigation.values()),
+            "runs_version": _RUNS_VERSION,
         }
         with NamedTemporaryFile(
             mode="w", encoding="utf-8", dir=self.directory, delete=False
@@ -319,6 +350,23 @@ class EnvironmentJobs:
             ]
         return {
             "items": sorted(items, key=lambda item: item["updated_at"], reverse=True)
+        }
+
+    def _register_run(self, item: dict[str, str], updated_at: str) -> None:
+        key = item["kind"], item["id"]
+        previous = self.navigation.get(key, {})
+        fallback_label = key[0].replace("-", " ").capitalize()
+        label = previous.get("label")
+        if not label or label in (key[1], fallback_label):
+            label = item.get("label")
+        if not label or label == key[1]:
+            label = fallback_label
+        self.navigation[key] = {
+            "kind": key[0],
+            "id": key[1],
+            "label": label,
+            "parent_id": item.get("parent_id", previous.get("parent_id")),
+            "updated_at": updated_at,
         }
 
     def _accept(
@@ -507,15 +555,7 @@ class EnvironmentJobs:
         )
         before = self.navigation.copy()
         for item in records:
-            key = item["kind"], item["id"]
-            previous = self.navigation.get(key, {})
-            self.navigation[key] = {
-                "kind": key[0],
-                "id": key[1],
-                "label": item.get("label", previous.get("label", key[1])),
-                "parent_id": item.get("parent_id", previous.get("parent_id")),
-                "updated_at": now,
-            }
+            self._register_run(item, now)
         try:
             self._save()
         except OSError:

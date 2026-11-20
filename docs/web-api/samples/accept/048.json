@@ -318,7 +318,7 @@
                 ],
                 "logs": [
                   {
-                    "byte_count": 8533,
+                    "byte_count": 8539,
                     "closed": true,
                     "healthy": true,
                     "identity": [
@@ -422,7 +422,7 @@
             "integration_id": "10000340000000000000000000000000",
             "logs": [
               {
-                "byte_count": 8533,
+                "byte_count": 8539,
                 "identity": [
                   1,
                   38
