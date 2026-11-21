@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0073",
   "goal": "用户可分别限制本工作台调用 Codex 与 Claude 的并发、时长及次数。同一数据目录里的网页作业、直接 CLI 操作和批量任务共享这些限额。",
-  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "baseline_commit": "30337e0fd03461a81b15937256bf5a211f56fb8a",
   "write_scope": [
     "src/multi_agent/cli/main.py",
     "src/multi_agent/cli/provider_limits.py",

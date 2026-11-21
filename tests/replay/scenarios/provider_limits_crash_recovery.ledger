@@ -1,0 +1,27 @@
+{
+  "limits": {"max_concurrent": 2, "max_calls_per_day": 2, "max_seconds_per_day": 10},
+  "steps": [
+    {"action": "reserve", "turn": "orphan", "at": "2026-11-21T23:59:00+00:00", "requested": 8, "granted": 8},
+    {"action": "start", "turn": "orphan", "process_group": 101},
+    {"action": "reserve", "turn": "abandoned", "at": "2026-11-21T23:59:01+00:00", "requested": 10, "granted": 2},
+    {"action": "lose_controller", "turn": "orphan"},
+    {"action": "lose_controller", "turn": "abandoned"},
+    {"action": "reserve", "turn": "cancelled_before_launch", "at": "2026-11-21T23:59:02+00:00", "requested": 10, "granted": 2},
+    {"action": "finish", "turn": "cancelled_before_launch", "elapsed": 0},
+    {"action": "stop_group", "process_group": 101},
+    {"action": "reserve", "turn": "retry", "at": "2026-11-21T23:59:03+00:00", "requested": 10, "granted": 2},
+    {"action": "start", "turn": "retry", "process_group": 102},
+    {"action": "finish", "turn": "orphan", "elapsed": 1},
+    {"action": "finish", "turn": "retry", "elapsed": 1},
+    {"action": "reserve", "turn": "daily_refusal", "at": "2026-11-21T23:59:04+00:00", "requested": 10, "exhausted": "max_calls_per_day"},
+    {"action": "reserve", "turn": "new_day", "at": "2026-11-22T00:01:00+00:00", "requested": 10, "granted": 10},
+    {"action": "finish", "turn": "new_day", "elapsed": 0}
+  ],
+  "history": [
+    ["2026-11-21", 1, 0, 8, 8],
+    ["2026-11-21", 0, 0, 2, 0],
+    ["2026-11-21", 0, 0, 2, 0],
+    ["2026-11-21", 1, 0, 2, 1],
+    ["2026-11-22", 0, 0, 10, 0]
+  ]
+}

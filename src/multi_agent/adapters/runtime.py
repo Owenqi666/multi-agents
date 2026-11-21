@@ -28,6 +28,7 @@ import math
 import os
 import shutil
 import signal
+import sqlite3
 from collections import deque
 from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field, replace
@@ -64,6 +65,7 @@ from .ownership import (
 )
 from .probe.process import Process, ProcessCleanupIncomplete, SpawnFailed
 from .probe.recording import Recorder, Redactor
+from .provider_limits import ProviderTurn, admit_turn, limit_failure
 from .runtime_decode import (
     CodexDecoder,
     RuntimeFailure,
@@ -362,6 +364,7 @@ class _Turn:
     implementation_policy_reported: bool = False
     ownership_operation: int | None = None
     log_acquisition: Acquisition | None = None
+    provider_turn: ProviderTurn | None = None
 
 
 class RuntimeAdapter(Adapter):
@@ -529,6 +532,8 @@ class RuntimeAdapter(Adapter):
             if state.observed_terminal is not None:
                 raise ValueError("runtime emitted multiple terminal results")
             state.observed_terminal = event
+            if state.provider_turn is not None:
+                state.provider_turn.terminal_at = asyncio.get_running_loop().time()
             # Only model execution uses the turn deadline. Shutdown and final
             # decoding have the transport's own bounded grace period.
             if state.deadline is not None:
@@ -590,6 +595,48 @@ class RuntimeAdapter(Adapter):
                 state.log_acquisition.not_created()
             state.log_acquisition.finish()
             self._ownership.finish_operation(state.ownership_operation)
+            if state.provider_turn is not None:
+                state.provider_turn.finish(
+                    asyncio.get_running_loop().time(),
+                    stopped=self._ownership.snapshot().processes_stopped,
+                )
+
+    async def _admit_provider_turn(
+        self, state: _Turn, *, process_group: int | None = None
+    ) -> ProviderTurn | None:
+        assert state.deadline is not None
+        if state.cancelled:
+            raise RuntimeFailure(
+                Error("cancelled before model execution", FailureCategory.CANCELLED)
+            )
+        deadline = state.deadline.when()
+        assert deadline is not None
+        try:
+            turn = await admit_turn(
+                self.provider,
+                deadline,
+                lambda: state.cancelled,
+                process_group=process_group,
+            )
+        except (OSError, sqlite3.Error) as exc:
+            raise limit_failure(
+                f"{self.provider}: local limit ledger unavailable: {exc}"
+            ) from exc
+        state.provider_turn = turn
+        if turn is not None and turn.limit_field is not None:
+            state.deadline.reschedule(turn.deadline)
+        return turn
+
+    def _timeout_error(self, state: _Turn) -> Error:
+        if (
+            state.provider_turn is not None
+            and state.provider_turn.limit_field is not None
+        ):
+            return limit_failure(
+                f"{self.provider}: local provider limit {state.provider_turn.limit_field} ran out",
+                FailureCategory.TIMEOUT,
+            ).event
+        return Error("runtime deadline exceeded", FailureCategory.TIMEOUT)
 
     async def _run_owned(self, handle: TurnHandle, state: _Turn) -> None:
         recorder: Recorder | None = None
@@ -630,7 +677,7 @@ class RuntimeAdapter(Adapter):
                 failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
             else:
                 state.timed_out = True
-                failure = Error("runtime deadline exceeded", FailureCategory.TIMEOUT)
+                failure = self._timeout_error(state)
         except RuntimeFailure as error:
             failure = error.event
         except asyncio.CancelledError:
@@ -640,7 +687,7 @@ class RuntimeAdapter(Adapter):
                 and state.deadline.expired()
             ):
                 state.timed_out = True
-                failure = Error("runtime deadline exceeded", FailureCategory.TIMEOUT)
+                failure = self._timeout_error(state)
             else:
                 state.cancelled = True
                 failure = Error("runtime task cancelled", FailureCategory.CANCELLED)
@@ -654,11 +701,23 @@ class RuntimeAdapter(Adapter):
                 failure = Error(
                     f"runtime boundary failure: {type(error).__name__}: {error}"
                 )
-        except (SpawnFailed, ValueError, TypeError, KeyError, RuntimeError) as error:
+        except (
+            SpawnFailed,
+            ValueError,
+            TypeError,
+            KeyError,
+            RuntimeError,
+            sqlite3.Error,
+        ) as error:
             failure = Error(
                 f"runtime boundary failure: {type(error).__name__}: {error}"
             )
         finally:
+            if (
+                state.provider_turn is not None
+                and state.provider_turn.terminal_at is None
+            ):
+                state.provider_turn.terminal_at = asyncio.get_running_loop().time()
             try:
                 if state.cancel_task is not None:
                     state.cancel_task.cancel()
@@ -858,6 +917,9 @@ class RuntimeAdapter(Adapter):
             params["outputSchema"] = schema
         self._validate_turn_workspace(state)
         self._check_execution_deadline()
+        turn = await self._admit_provider_turn(state, process_group=process.child.pid)
+        if turn is not None:
+            turn.start(process.child.pid)
         response = await rpc.request("turn/start", params)
         state.turn_id = string_value(
             object_value(response.get("turn"), "turn").get("id"), "turn.id"
@@ -928,6 +990,9 @@ class RuntimeAdapter(Adapter):
             "environment",
             removed_variables=["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
         )
+        turn = await self._admit_provider_turn(state)
+        if turn is not None:
+            argv = turn.claude_command(argv)
         state.process = process = await self._spawn(argv, state.config.cwd, recorder)
         if state.cancelled:
             await self._send_cancel(state)

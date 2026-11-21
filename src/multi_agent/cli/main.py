@@ -274,7 +274,19 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from multi_agent.adapters.provider_limits import budget_for_provider
+
+    from .provider_limits import provider_budget
+
     args = parser().parse_args(argv)
+    scope = budget_for_provider.set(provider_budget(args.data_dir))
+    try:
+        return _main(args)
+    finally:
+        budget_for_provider.reset(scope)
+
+
+def _main(args: argparse.Namespace) -> int:
     if args.command == "integration":
         from .integration_cli import main as integration_main
 

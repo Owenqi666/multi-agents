@@ -5,6 +5,7 @@ import json
 import math
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -13,8 +14,14 @@ import test_runtime as helpers
 from multi_agent.adapters.codex_isolation import CodexIsolation
 from multi_agent.adapters.probe.process import Process
 from multi_agent.adapters.probe.recording import Recorder, Redactor
+from multi_agent.adapters.provider_limits import budget_for_provider
 from multi_agent.adapters.runtime import RuntimeAdapter, RuntimeFailure, _Rpc
 from multi_agent.core.events import Completed, Error, FailureCategory, Message
+from multi_agent.store.provider_limits import (
+    ProviderLedger,
+    ProviderLimits,
+    ProviderReservation,
+)
 
 # Imported fixtures must be present in this module's namespace for pytest to
 # register autouse behavior; importing only the helpers module is insufficient.
@@ -115,6 +122,103 @@ async def completed_stream(adapter, turn, stream):
         events = [event async for event in stream]
         result = await adapter.result(turn)
     return events, result
+
+
+@pytest.mark.parametrize(
+    ("maximum", "reported_limit"), [(10, "max_turn_seconds"), (60, None)]
+)
+def test_provider_turn_uses_the_earlier_deadline_and_releases_the_slot(
+    tmp_path, monkeypatch, maximum, reported_limit
+):
+    async def run():
+        clock = DeadlineClock(monkeypatch)
+        ledger = ProviderLedger(tmp_path)
+        limits = ProviderLimits(
+            max_concurrent=1, max_calls_per_day=2, max_turn_seconds=maximum
+        )
+        scope = budget_for_provider.set(lambda _: (ledger, limits))
+        adapter, config, _ = helpers.setup(
+            tmp_path, monkeypatch, "codex", mode="wait", deadline_at=clock.deadline
+        )
+        try:
+            turn, stream, _ = await ready_turn(adapter, config)
+            state = adapter._turns[turn]
+            assert state.provider_turn is not None
+            assert state.provider_turn.limit_field == reported_limit
+            if reported_limit is not None:
+                assert state.provider_turn.deadline < clock.deadline
+                clock.deadline = state.provider_turn.deadline
+            assert state.deadline.when() == clock.deadline
+            await clock.cross()
+            _, result = await completed_stream(adapter, turn, stream)
+            assert isinstance(result.terminal, Error)
+            assert result.terminal.failure_category == FailureCategory.TIMEOUT
+            if reported_limit is None:
+                assert result.terminal.detail == "runtime deadline exceeded"
+            else:
+                assert result.terminal.raw_type == "adapter.provider_limits"
+                assert reported_limit in result.terminal.detail
+            assert_released(adapter)
+            next_slot = ledger.reserve(
+                "codex", limits, datetime.now(UTC), 20, os.getpid()
+            )
+            assert isinstance(next_slot, ProviderReservation)
+            ledger.finish(next_slot.reservation_id, 0, True)
+            next_slot.close()
+        finally:
+            budget_for_provider.reset(scope)
+            await clean_owned(adapter, tmp_path)
+
+    asyncio.run(run())
+
+
+def test_provider_turn_expiring_at_launch_fence_spends_no_call(tmp_path, monkeypatch):
+    async def run():
+        clock = DeadlineClock(monkeypatch)
+        ledger = ProviderLedger(tmp_path)
+        limits = ProviderLimits(max_calls_per_day=1, max_turn_seconds=10)
+        scope = budget_for_provider.set(lambda _: (ledger, limits))
+        original_start = ledger.start
+        launch_fenced = asyncio.Event()
+
+        def start_after_deadline(identifier, group):
+            started = original_start(identifier, group)
+            clock.cross_without_yield()
+            launch_fenced.set()
+            return started
+
+        monkeypatch.setattr(ledger, "start", start_after_deadline)
+        adapter, config, capture = helpers.setup(
+            tmp_path, monkeypatch, "codex", deadline_at=clock.deadline
+        )
+        try:
+            turn = await adapter.submit_turn(
+                await adapter.start_session(config), "offline"
+            )
+            async with asyncio.timeout_at(clock.deadline + 5):
+                await launch_fenced.wait()
+            _, result = await completed_stream(adapter, turn, adapter.events(turn))
+            assert isinstance(result.terminal, Error)
+            assert result.terminal.failure_category == FailureCategory.TIMEOUT
+            assert result.terminal.raw_type == "adapter.provider_limits"
+            sent_methods = {
+                row["message"].get("method")
+                for row in records(capture)
+                if row["kind"] == "request"
+            }
+            assert "thread/start" in sent_methods and "turn/start" not in sent_methods
+            assert_released(adapter)
+            next_slot = ledger.reserve(
+                "codex", limits, datetime.now(UTC), 20, os.getpid()
+            )
+            assert isinstance(next_slot, ProviderReservation)
+            ledger.finish(next_slot.reservation_id, 0, True)
+            next_slot.close()
+        finally:
+            budget_for_provider.reset(scope)
+            await clean_owned(adapter, tmp_path)
+
+    asyncio.run(run())
 
 
 async def clean_owned(adapter, tmp_path):
