@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "id": "T-0072",
+  "goal": "用户能在网页为可自由派发的已审核单卡选择有序实施备选，并在实施详情核对每次尝试的工作树、派发选择及运行时报告的用量和改派。",
+  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "write_scope": [
+    "frontend/src/app/**",
+    "frontend/src/pages/**",
+    "frontend/src/components/**",
+    "frontend/src/api/**",
+    "frontend/src/styles/ui.css",
+    "frontend/src/test/**",
+    "frontend/src/fixtures/specimen.ts",
+    "frontend/e2e/**",
+    "frontend/README.md",
+    "src/multi_agent/web/resources.py",
+    "src/multi_agent/web/task_evidence.py",
+    "src/multi_agent/cli/task_cli.py",
+    "src/multi_agent/cli/task_evidence.py",
+    "src/multi_agent/adapters/runtime_decode.py",
+    "tests/unit/test_web_*.py",
+    "tests/unit/test_task_*cli*.py",
+    "tests/unit/test_task_evidence*.py",
+    "tests/unit/test_runtime*.py",
+    "tests/unit/web_support/fake_runtime.py",
+    "tests/unit/web_support/offline_fixture.py",
+    "docs/project-service.md"
+  ],
+  "depends_on": [
+    "T-0071"
+  ],
+  "interface_contracts": [
+    {
+      "name": "有序派发",
+      "definition": "首版桥已有 plan、task 只读资源和 task.run 的 implementation、fallbacks 参数。本卡从网页可达入口选择或载入同仓库已有的 planning_run_id，按其已核验的独立单卡与冻结规则启用首次实施。使用既有 workspace 中 implementation/fallback 角色、型号目录、档位和已冻结的派发约束。后续单卡规划页面能复用这个入口。委派叶、直接阶段的执行者已在上游冻结，继续使用原配置；普通重试沿用首次冻结的链。"
+    },
+    {
+      "name": "证据边界",
+      "definition": "按任务运行 ID 和尝试号读取已有请求、冻结策略、selection_history、用量事件及该尝试受凭据约束的运行记录。需要补充读回时沿用只读连接及仓库归属验证，运行时字段依据 protocol/ 与 runtime-protocols。现有 Codex 改派可从可信的已登记原始日志提取，并按本次线程和回合绑定。读回用新增字段兼容旧记录。模型名差异和工作台备选选择都不能作为运行时改派证据。"
+    }
+  ],
+  "deliverables": [
+    "网页可操作的实施配置与尝试证据详情，补充同源资源契约和使用说明。",
+    "针对可自由派发与冻结席位的回归、用量和改派归属的回归，以及假 CLI 配真实回环桥的浏览器验收。"
+  ],
+  "acceptance_criteria": [
+    "从工作台可打开同仓库一张已审核、可实施的独立单卡，添加、删除、重排备选，选择各项型号和档位并真实提交 task.run；服务的准备记录按用户最后的顺序冻结完整链。留空时仍按既有默认派发。",
+    "从直接阶段和委派叶的正常入口继续用原冻结执行者；界面按计划归属判断可否编辑，外仓或不可实施计划无法从新入口执行。已开始的任务和重试显示冻结选择。",
+    "以受控的主选不可用和规则允许的备选核对后续显式派发，按冻结的次序选出第一个合规可用项并记录原因；未报告不可用时沿用主选。选择器沿用实施角色允许的家族及对应档位，规则拒绝的候选不能成为实际选择。",
+    "每次实施和返工的详情直接显示该次请求中的 worktree、请求的模型与档位、实际报告的模型与档位，分别标示工作台的备选选择及其原因；记录跨刷新、跨尝试仍可核对。",
+    "展示本次尝试的实际用量、来源和已有计数口径，Claude 返回的成本标为客户端估算美元；保留真实零值，累计通知和单次增量不重复计数。缺少证据或旧记录显示未确认。",
+    "对带有对应线程和回合的已报告运行时改派，可核对来源、原模型、目标模型及报告的原因。另一尝试的事件、缺失或不可核验的记录，以及单纯请求与报告不一致的情形均不据此声称发生改派。",
+    "既有前端 check、浏览器端到端和完整 scripts/verify.sh 通过，交付回执给出真实回环桥与假 CLI 下网页配置、持久化读回、实施详情的验证。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}

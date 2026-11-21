@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "id": "T-0076",
+  "goal": "用户能在网页对两个提交或粘贴的补丁独立审核，并按仓库、轮次、席位或实施尝试查看已归档的模型会话日志。",
+  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "write_scope": [
+    "frontend/src/**",
+    "frontend/e2e/**",
+    "frontend/README.md",
+    "tests/unit/test_web_*.py",
+    "tests/unit/web_support/**",
+    "docs/project-service.md",
+    "src/multi_agent/web/**",
+    "src/multi_agent/cli/main.py",
+    "src/multi_agent/cli/runner.py",
+    "src/multi_agent/cli/review_inputs.py",
+    "src/multi_agent/cli/snapshot.py",
+    "src/multi_agent/cli/task_evidence.py",
+    "src/multi_agent/cli/task_output.py",
+    "src/multi_agent/cli/task_candidates.py",
+    "src/multi_agent/cli/planning_evidence.py",
+    "src/multi_agent/cli/integration_rework_runtime.py",
+    "src/multi_agent/core/snapshot.py",
+    "src/multi_agent/core/review_input.py",
+    "src/multi_agent/store/database.py",
+    "src/multi_agent/store/migrations/*.sql",
+    "src/multi_agent/adapters/base.py",
+    "src/multi_agent/adapters/runtime.py",
+    "src/multi_agent/adapters/implementation_runtime.py",
+    "tests/unit/test_review*.py",
+    "tests/unit/test_snapshot*.py",
+    "tests/unit/test_store_review*.py",
+    "tests/unit/test_task_evidence*.py",
+    "tests/unit/test_executed_review*.py",
+    "tests/replay/**",
+    "docs/review-cli.md",
+    "docs/web-api/samples/**"
+  ],
+  "depends_on": [
+    "T-0075"
+  ],
+  "interface_contracts": [
+    {
+      "name": "冻结与独立审核",
+      "definition": "采用 T-0062 第 4 节 review.freeze、review.run、review.retry、review.confirm 的字段与顶层 freeze/run/retry/confirm CLI；冻结输入二选一，仓库提交对可包含用户提供的测试证据，粘贴补丁只含原文及需求/验收。单席或双席隔离运行，使用对应 snapshot_id、round_id。"
+    },
+    {
+      "name": "粘贴 diff 归属",
+      "definition": "服务端从绑定仓库确定 git common dir，持久保存新粘贴快照的归属。继续验证快照内容身份；必须处理两个仓库粘贴相同文本的情形。无可靠归属的旧记录不能仅因为命中 ID 而公开，也不回写归档。"
+    },
+    {
+      "name": "日志入口",
+      "definition": "实施任务（覆盖 Sol、Terra、Sonnet）及独立、单任务、集成审核轮从对应会话记录提供已登记的完整日志流；任务、轮次、尝试和席位清晰，/api/artifacts/{id} 沿用分页/完整摘要及边界检查。有历史记录但没有可验证日志时说明缺失。完整指已真实留存的协议/运行输出，不采集供应商账号私有记录；不以冻结的测试 stdout 代替。"
+    }
+  ],
+  "deliverables": [
+    "四个独立审核动作、网页冻结和审核操作、持久仓库归属及实现和审核会话日志入口。",
+    "两种冻结输入、跨仓归属、登记日志分页与独立审核浏览器回归，更新服务和用户说明。"
+  ],
+  "acceptance_criteria": [
+    "通过浏览器用提交对和粘贴补丁分别冻结，在正确仓库从列表和直接链接打开、查看 diff。提交测试可标识为用户提供；粘贴内容没有可预览文件时可定位补丁行。刷新/重启后仍可访问。",
+    "分别覆盖单审及双审，两个席位基于同一个冻结输入；仅失败席位可补跑，需交叉确认时从相应父轮发起，结果历史可回看。不能凭子进程退出 0 把有阻塞意见的审核显示为通过。",
+    "两仓使用同库或尝试已知 ID 时，快照、独立审核轮及其日志遵循归属检查；同文本在两仓按各自冻结后可各自查阅，未被该仓冻结的记录及无可靠归属的历史记录不能被越权读出。",
+    "从任务和审核详情可看真实登记的会话日志；离线覆盖 Sol、Terra、Sonnet 的实施与两种供应商审核席位，分页、摘要、轮次、尝试对应正确；不存在、被改写或属外仓的日志不返回内容。旧记录清楚说明未留存，已有冻结测试输出仍可访问。",
+    "完整走一次浏览器冻结、启动审核、查阅席位发现及会话日志的路径；T-0074 的只读模式可浏览有证据的历史记录但不能新建、补跑或确认。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
