@@ -173,6 +173,9 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
             card_review=OPUS,
         )["result"]
         assert direct["mode"] == "direct" and direct["candidate_verified"]
+        assert not _get(
+            service, f"resources/plan/{direct['planning_run_id']}?implementation=1"
+        )["data"]["dispatch_configurable"]
         assert [
             (item["provider"], item["kind"])
             for item in helpers.records(direct_capture)
@@ -256,6 +259,9 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
                 review_only=True,
             )["result"]
             card = leaf["planning"]["card"]
+            assert not _get(
+                service, f"resources/plan/{leaf['planning_run_id']}?implementation=1"
+            )["data"]["dispatch_configurable"]
             (path,) = card["write_scope"]
             helpers.configure(
                 claude,

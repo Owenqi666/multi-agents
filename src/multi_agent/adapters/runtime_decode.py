@@ -1,15 +1,17 @@
 """Decode only verified runtime fields; all unrecognized messages stay in raw logs.
 
 Protocol sources: protocol/codex/schema/v2/{TurnCompletedNotification,
-ItemCompletedNotification,ThreadTokenUsageUpdatedNotification}.json and
-CodexErrorInfo in the merged schema; Claude fields are recorded in
- tests/fixtures/runtime/claude-2.1.325/*.jsonl. Model reroutes remain raw evidence,
-not an inferred statement about the model that actually produced a result.
+ItemCompletedNotification,ThreadTokenUsageUpdatedNotification,
+ModelReroutedNotification,ThreadStartResponse,TurnStartParams,TurnStartResponse}.json
+and CodexErrorInfo in the merged schema; Claude fields are recorded in
+tests/fixtures/runtime/claude-2.1.325/*.jsonl. Model reroutes describe notifications
+in the raw transcript. Reported model fields are populated independently.
 """
 
 import json
 import math
-from typing import Any, cast
+from io import BytesIO
+from typing import Any, Literal, TypedDict, cast
 
 from multi_agent.core.events import (
     AdapterEvent,
@@ -185,6 +187,113 @@ def codex_failure(value: object, raw_type: str) -> Error:
                 elif status == 429:
                     category = FailureCategory.RATE_LIMITED
     return Error(detail, category, raw_type=raw_type)
+
+
+class CodexReroute(TypedDict):
+    source: Literal["model/rerouted"]
+    from_model: str
+    to_model: str
+    reason: str
+
+
+def _recorded_codex_reroutes(raw: bytes, session_id: str) -> list[CodexReroute] | None:
+    sent: set[tuple[str, str | int]] = set()
+    starts: dict[tuple[str, str | int], tuple[int, str]] = {}
+    replies: dict[tuple[str, str | int], tuple[int, str] | None] = {}
+    notifications: list[tuple[int, str, object]] = []
+    for line_number, line in enumerate(BytesIO(raw)):
+        row = object_value(strict_json_loads(line.decode("utf-8")), "transcript row")
+        outbound = row.get("kind") == "send"
+        inbound = row.get("kind") == "recv" and row.get("stream") == "stdout"
+        if not (outbound or inbound) or "message" not in row:
+            continue
+        process = string_value(row.get("proc"), "recorded process")
+        message = object_value(row["message"], "recorded JSON-RPC message")
+        method = message.get("method")
+        if (
+            inbound
+            and method == "model/rerouted"
+            and message.keys().isdisjoint({"id", "result", "error"})
+        ):
+            notifications.append((line_number, process, message.get("params")))
+            continue
+        identifier = message.get("id")
+        if not isinstance(identifier, (str, int)) or isinstance(identifier, bool):
+            continue
+        key = (process, identifier)
+        if outbound and isinstance(method, str):
+            if key in sent:
+                raise ValueError("recorded JSON-RPC request id was reused")
+            sent.add(key)
+            if method == "thread/start":
+                starts[key] = (line_number, "thread")
+            elif method == "turn/start":
+                params = object_value(message.get("params"), "turn/start params")
+                if params.get("threadId") == session_id:
+                    starts[key] = (line_number, "turn")
+        elif inbound and "method" not in message and key in starts:
+            if key in replies:
+                raise ValueError("duplicate recorded JSON-RPC reply")
+            if "error" in message:
+                replies[key] = None
+                continue
+            _, field = starts[key]
+            result = object_value(message.get("result"), "start result")
+            value = object_value(result.get(field), "started object")
+            replies[key] = (line_number, string_value(value.get("id"), "started id"))
+
+    threads = [
+        (key[0], reply[0])
+        for key, reply in replies.items()
+        if starts[key][1] == "thread" and reply is not None and reply[1] == session_id
+    ]
+    if len(threads) != 1:
+        return None
+    process, thread_reply = threads[0]
+    turns = [
+        (start, replies.get(key))
+        for key, (start, field) in starts.items()
+        if key[0] == process and field == "turn"
+    ]
+    if len(turns) != 1:
+        return None
+    turn_start, turn_reply = turns[0]
+    if turn_reply is None or turn_start <= thread_reply:
+        return None
+
+    turn_id = turn_reply[1]
+    evidence: list[CodexReroute] = []
+    for line_number, emitter, payload in notifications:
+        if emitter != process or line_number <= turn_start:
+            continue
+        params = object_value(payload, "reroute notification params")
+        if string_value(params.get("threadId"), "reroute thread id") != session_id:
+            continue
+        if string_value(params.get("turnId"), "reroute turn id") != turn_id:
+            continue
+        evidence.append(
+            {
+                "source": "model/rerouted",
+                "from_model": string_value(
+                    params.get("fromModel"), "reroute from model"
+                ),
+                "to_model": string_value(params.get("toModel"), "reroute to model"),
+                "reason": string_value(params.get("reason"), "reroute reason"),
+            }
+        )
+    return evidence
+
+
+def codex_reroutes(raw: bytes, session_id: str) -> list[CodexReroute] | None:
+    """Read reported reroutes from an already authenticated attempt transcript.
+
+    An empty list means the attempt's session and sole turn were confirmed.
+    None means the transcript could not establish that context or was malformed.
+    """
+    try:
+        return _recorded_codex_reroutes(raw, session_id)
+    except ValueError:
+        return None
 
 
 class CodexDecoder:

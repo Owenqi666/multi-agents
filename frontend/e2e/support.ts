@@ -18,6 +18,7 @@ export class OfflineEnv {
   private lines: string[] = [];
   private waiting: ((line: string) => void)[] = [];
   url = '';
+  standalonePlans: { codex: string; claude: string } | null = null;
 
   private constructor(private readonly proc: ChildProcess, readonly scenario: string) {
     createInterface({ input: proc.stdout! }).on('line', (line) => {
@@ -38,11 +39,14 @@ export class OfflineEnv {
   }
 
   static async start(scenario: string): Promise<OfflineEnv> {
-    const fixture = ['review-fixes', 'claim'].includes(scenario) ? 'frontend/e2e/review_fixes_env.py' : 'tests/unit/web_support/offline_env.py';
+    let fixture = 'tests/unit/web_support/offline_env.py';
+    if (['review-fixes', 'claim'].includes(scenario)) fixture = 'frontend/e2e/review_fixes_env.py';
+    if (scenario === 'task-evidence') fixture = 'frontend/e2e/task_evidence_env.py';
     const proc = spawn('uv', ['run', 'python', fixture, '--scenario', scenario, '--port', '0', '--frontend-dist', DIST], {
       cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const env = new OfflineEnv(proc, scenario);
+    if (scenario === 'task-evidence') env.standalonePlans = JSON.parse(await env.nextLine()) as NonNullable<OfflineEnv['standalonePlans']>;
     env.url = (await env.nextLine()).trim();
     return env;
   }

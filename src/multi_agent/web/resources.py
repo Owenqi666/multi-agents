@@ -12,13 +12,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from multi_agent.adapters.runtime_decode import CodexReroute, codex_reroutes
 from multi_agent.cli.integration_cli import _view as integration_view
 from multi_agent.cli.integration_verification import verification_view
 from multi_agent.cli.project_stage import stage_view
 from multi_agent.cli.review_inputs import load_review_input
 from multi_agent.cli.runner import view_round
 from multi_agent.cli.snapshot import MAX_SNAPSHOT_BYTES, _diff, _git, _path
-from multi_agent.cli.task_cli import view_task
+from multi_agent.cli.task_cli import _plan_view, _task_view
+from multi_agent.cli.task_evidence import MAX_MANIFEST_BYTES
 from multi_agent.cli.task_review_cli import view_task_review
 from multi_agent.cli.task_test_cli import _existing_lease, view_task_test
 from multi_agent.cli.task_test_evidence import inspect_task_test_command
@@ -160,11 +162,15 @@ def require_owned(workspace: Workspace, kind: str, identifier: str) -> None:
 
 def _resource_options(kind: str, query: _Query) -> dict[str, str]:
     allowed = {"history"} if kind in _HISTORY else set()
+    if kind in {"plan", "task"}:
+        allowed.add("implementation")
     if kind == "task-test":
         allowed = {"implementation_attempt", "test_attempt"}
     options = _query(query, allowed)
     if "history" in options and options["history"] != "1":
         raise ValueError("history must be 1")
+    if "implementation" in options and options["implementation"] != "1":
+        raise ValueError("implementation must be 1")
     return options
 
 
@@ -184,6 +190,27 @@ def _resource_data(
     database, common = _scope(workspace, kind, identifier)
     with _ResourceStore.open_readonly(database) as store:
         _owned(store, common, kind, identifier)
+        if kind == "plan":
+            plan = _plan_view(store, identifier, history)
+            if "implementation" in options:
+                plan["dispatch_configurable"] = (
+                    plan["phase"] == "ready"
+                    and plan["verification"] == "verified"
+                    and plan["next_action"]["kind"] == "run"
+                    and "draft_projection" not in plan
+                    and "planning_kind" not in plan
+                    and (
+                        store._connection.execute("PRAGMA user_version").fetchone()[0]
+                        < _PROJECT_SCHEMA["stage"]
+                        or store.stage_for_planning(identifier) is None
+                    )
+                )
+            return plan
+        if kind == "task":
+            task = _task_view(store, database, identifier, history)
+            if "implementation" in options:
+                _task_attempt_evidence(workspace, task)
+            return task
         if kind == "integration":
             record = store.load_integration(identifier)
             result = integration_view(record, "show")
@@ -203,10 +230,6 @@ def _resource_data(
             value = _read_snapshot(store, identifier)
             return {"snapshot_id": value.snapshot_id, "input": value.to_dict()}
 
-    if kind == "plan":
-        return view_task(database, planning_run_id=identifier, history=history)
-    if kind == "task":
-        return view_task(database, task_run_id=identifier, history=history)
     if kind == "task-review":
         return view_task_review(database, identifier, history=history)
     if kind == "task-test":
@@ -473,6 +496,108 @@ def _sealed_bytes(
         raise KeyError("registered artifact is unavailable") from error
     finally:
         os.close(fd)
+
+
+def _task_log_artifacts(
+    workspace: Workspace, task_run_id: str, attempt: dict[str, Any]
+) -> list[_Artifact]:
+    reconciliation = attempt.get("reconciliation")
+    if not reconciliation or not reconciliation.get("process_stopped"):
+        return []
+    digest = reconciliation.get("log_sha256")
+    if not isinstance(digest, str) or not _SHA256.fullmatch(digest):
+        return []
+    prepared = next(
+        (
+            event
+            for event in attempt["events"]
+            if event["kind"] == "task_execution_prepared"
+        ),
+        None,
+    )
+    if prepared is None:
+        return []
+    root = Path(prepared["context"]["path"]).parent / "logs"
+    manifest = root / "execution.json"
+    if reconciliation.get("log_path") != str(manifest):
+        return []
+    try:
+        payload = json.loads(
+            _sealed_bytes(workspace, manifest, digest, limit=MAX_MANIFEST_BYTES)
+        )
+        binding = payload["binding"]
+        receipt = payload["receipt"]
+        if (
+            payload["version"] != 1
+            or binding["run_id"] != task_run_id
+            or binding["attempt"] != attempt["runtime"]["number"]
+            or binding["logs"]["path"] != str(root)
+            or binding["context"] != prepared["context"]
+            or binding["requested"] != attempt["request"]
+            or receipt["owner_id"] != binding["owner_id"]
+        ):
+            return []
+        return [
+            artifact
+            for row in receipt["logs"]
+            if (artifact := _receipt_artifact(row)) is not None
+            and isinstance(artifact.source, Path)
+            and artifact.source.parent == root
+        ]
+    except (KeyError, TypeError, ValueError):
+        return []
+
+
+def _task_reroutes(
+    workspace: Workspace, task_run_id: str, attempt: dict[str, Any]
+) -> list[CodexReroute] | None:
+    session_id = attempt["runtime"].get("session_id")
+    if (
+        not session_id
+        or attempt["request"]["decision"]["choice"]["provider"] != "codex"
+    ):
+        return None
+    result = None
+    for artifact in _task_log_artifacts(workspace, task_run_id, attempt):
+        if not isinstance(artifact.source, Path) or artifact.source.suffix != ".jsonl":
+            continue
+        try:
+            raw = _sealed_bytes(
+                workspace,
+                artifact.source,
+                artifact.sha256,
+                limit=_ARTIFACT_LIMIT,
+                size=artifact.byte_count,
+                identity=artifact.identity,
+            )
+        except KeyError:
+            continue
+        reported = codex_reroutes(raw, session_id)
+        if reported is not None:
+            if result is not None:
+                return None  # More than one transcript claims the same session.
+            result = reported
+    return result
+
+
+def _task_attempt_evidence(workspace: Workspace, task: dict[str, Any]) -> None:
+    for attempt in task["attempts"]:
+        usage = next(
+            (
+                event
+                for event in reversed(attempt["events"])
+                if event["kind"] == "usage"
+            ),
+            None,
+        )
+        attempt["usage_evidence"] = (
+            {"source": usage["raw_type"] or "usage", "counts": usage["counts"]}
+            if usage is not None
+            else None
+        )
+        attempt["runtime_reroutes"] = _task_reroutes(
+            workspace, task["task_run_id"], attempt
+        )
 
 
 def _add_logs(

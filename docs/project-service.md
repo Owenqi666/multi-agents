@@ -34,6 +34,15 @@ uv run python -m multi_agent.web --repository "$REPO" --data-dir "$DATA" \
 
 Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必须等于该 URL。HTTP 错误使用 `{error:{code,message,details?}}`。进入作业后，计划、阶段、测试或审核可能返回业务拒绝。检查实际 `exit_code`、`result` 和 `error`，其中退出 1 或 130 的作业也可能保留有效的领域回执。重启后，以原 `job_id` 和领域 ID 读回。失去原进程控制权的作业显示 `interrupted`，查询仍可查看 SQLite 已保存的领域状态。恢复工作使用明确的续跑动作。普通查询和环境检查无模型回合。
 
+### 单卡派发与实施证据
+
+工作台「单卡」可用 `planning_run_id` 打开同仓库的独立规划。`GET /api/resources/plan/{id}?implementation=1` 的 `dispatch_configurable` 在该独立卡已审核、已核验且等待首次实施时为 `true`。提交 `task.run` 时可指定 `implementation`，并按尝试顺序传 `fallbacks`。准备事件 `task_execution_prepared.dispatch_policy` 会冻结完整备选链。已绑定的直接阶段和委派子卡沿用上游冻结的配置。普通重试只提供 `planning_run_id`。如果前一次回合报告所选模型不可用，重试按冻结链重新选取合规且未明确不可用的模型，并保存 `decision.selection_history` 与 `decision.reason`。
+
+`GET /api/resources/task/{id}?implementation=1` 每次尝试的 `request.worktree` 是登记的工作树。`request.decision.requested` 保存显式请求，`request.decision.choice` 是工作台选出的派发值，`runtime.reported_model` 和 `runtime.reported_effort` 来自运行时报告。加 `implementation=1` 时，每次尝试还附带 `usage_evidence` 与 `runtime_reroutes` 两项证据。
+
+- `usage_evidence` 为 `null` 或 `{source,counts}`。使用该次尝试最后一条已应用的用量事件。Codex 的 `total.*` 是该线程累计值，`last.*` 是最后一次报告的用量。两个口径分别显示。Claude 的 `client_estimated_cost_usd` 是客户端估算，包含报告值为零的情况。
+- `runtime_reroutes` 为 `null` 或按报告顺序排列的 `{source,from_model,to_model,reason}` 列表。Codex 项来自通过该尝试凭据核验的原始日志，只纳入相同线程和回合的 `model/rerouted`。核验成功但未记录改派时返回空列表。缺少已登记的日志、线程回合或证据不能核验时为 `null`。工作台的备选决定在派发记录里查看。
+
 ### 找回作业、取消和并发
 
 新作业的 `args` 记录提交的业务字段。`original_goal` 和 `confirmed_goal` 各用 `{"length":字符数}` 代替，`document.length` 计算紧凑 JSON 的字符数。只在对应动作的作业参数中做这项缩减，领域回执仍按原契约返回。四个 UTC ISO 8601 字段分别记录受理（`created_at`）、开始（`started_at`）、请求取消（`cancel_requested_at`）和观察到结束（`finished_at`）的时刻。尚未发生或缺少证据时为 `null`。CLI 退出后，`stderr_tail` 取 stderr 最后 8192 个原始字节，以 UTF-8 替换解码，空 stderr 为 `""`。运行中和缺字段的旧记录均返回 `null`。刷新页面后先查作业列表，再按原 `job_id` 恢复轮询。

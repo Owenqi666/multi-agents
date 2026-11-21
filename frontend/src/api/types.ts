@@ -277,6 +277,7 @@ export interface PlanningView {
   attempts: { draft: PlanningAttempt[]; review: PlanningAttempt[] };
   next_action: NextAction | null;
   planning_kind?: 'stage_split';
+  dispatch_configurable?: boolean;
   details?: { input?: { card?: { test_refs?: string[] }; frozen_rules?: { rules?: { commands?: { name: string }[] } } } };
   draft_projection?: {
     executor?: RoleRequest;
@@ -292,12 +293,21 @@ export interface PlanningView {
 
 export interface ImplementationAttempt {
   request: {
-    decision: { choice: RoleRequest };
+    decision: {
+      choice: RoleRequest;
+      requested?: RoleRequest | null;
+      reason?: string;
+      selection_history?: { choice: RoleRequest; outcome: string }[];
+    };
+    worktree?: string | null;
     started_at: string | null;
     kind: 'task_attempt_started' | 'task_rework_started';
     source?: { review_round_id?: Id };
   };
   runtime: Runtime | null;
+  events?: { kind: string; dispatch_policy?: { fallbacks: RoleRequest[] } }[];
+  usage_evidence?: { source: string; counts: Record<string, number> } | null;
+  runtime_reroutes?: { source: string; from_model: string; to_model: string; reason: string }[] | null;
 }
 
 export interface TestCommand {

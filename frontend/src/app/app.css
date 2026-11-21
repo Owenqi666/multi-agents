@@ -96,6 +96,34 @@ a { color: var(--ink); text-decoration-color: var(--ink-3); text-underline-offse
 .plan-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .attempt-list { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; font-size: 14px; }
 .attempt-list li > * + * { margin-left: 10px; }
+.task-plan-open { align-items: end; }
+.task-plan-open label { width: min(100%, 28rem); }
+.task-dispatch { min-width: 0; max-width: 42rem; margin: 0; padding: 0; border: 0; display: grid; gap: 14px; }
+.task-backups, .task-attempts { list-style: none; margin: 0; padding: 0; }
+.task-backup { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 16px; padding: 10px 0; border-top: 1px solid var(--hair); }
+.task-backup:last-child { border-bottom: 1px solid var(--hair); }
+.task-dispatch .picker { min-width: 0; max-width: 100%; }
+.task-dispatch .picker select { min-width: 0; max-width: 100%; }
+.task-dispatch .picker-label, .task-attempt-evidence .facts-grid dt, .task-attempt-evidence .stamp { color: var(--ink-2); }
+@media (max-width: 520px) {
+  .task-dispatch .picker:not(.empty-picker) {
+    display: grid; width: 100%; grid-template-columns: 3.6rem minmax(0, 1fr) max-content;
+  }
+  .task-dispatch .picker-label { min-width: 0; }
+}
+.task-attempts { display: grid; gap: 16px; }
+.task-attempt-evidence { display: grid; gap: 12px; min-width: 0; border-top: 1px solid var(--hair); padding-top: 14px; }
+.task-attempt-evidence h3 { margin: 0; font-size: 15px; font-weight: 500; }
+.task-data { overflow-wrap: anywhere; }
+.task-choice-list { margin: 0; padding-left: 1.4em; }
+.task-choice-list li + li { margin-top: 4px; }
+.task-usage { display: grid; gap: 6px; }
+.task-counters { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); gap: 5px 18px; }
+.task-counters > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-bottom: 3px; border-bottom: 1px solid var(--wash); }
+.task-counters dt { color: var(--ink-2); overflow-wrap: anywhere; }
+.task-counters dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+.task-reroutes { list-style: none; display: grid; gap: 6px; padding: 0; margin: 0; }
+.task-reroutes li { display: flex; flex-wrap: wrap; gap: 3px 12px; align-items: baseline; }
 .leaf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .leaf { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 10px; background: var(--plate); }
 .leaf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }

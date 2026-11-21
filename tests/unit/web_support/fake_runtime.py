@@ -14,8 +14,10 @@ from offline_fixture import (
     CLAUDE_MODELS,
     CODEX_MODELS,
     DRAFT,
+    EVIDENCE_PLANS,
     READY,
     STATUS,
+    TASK_EVIDENCE,
     WELCOME,
     project_document,
 )
@@ -37,8 +39,6 @@ def _planning(frozen):
             "reason": "The offline card covers the selected stage scope.",
             "blocking_issues": [],
         }
-    requirement, handoff = frozen["requirements"].split("\n", 1)
-    selected = json.loads(handoff)["selected_stage"]["stage_id"]
 
     def card(identifier, path):
         return {
@@ -56,6 +56,11 @@ def _planning(frozen):
             "proposed_tests": [],
         }
 
+    for identifier, path, requirement in EVIDENCE_PLANS.values():
+        if frozen["requirements"] == requirement:
+            return card(identifier, path)
+    requirement, handoff = frozen["requirements"].split("\n", 1)
+    selected = json.loads(handoff)["selected_stage"]["stage_id"]
     if requirement.startswith("Split only selected_stage") and selected == "summary":
         return {"cards": [card("T-0800", STATUS), card("T-0801", BANNER)]}
     if requirement.startswith("Implement only selected_stage") and selected == "amount":
@@ -144,6 +149,35 @@ def _response(root, scenario, provider, prompt):
     raise ValueError("unexpected offline model role")
 
 
+def _emit_codex_usage(emit, thread_id, turn_id):
+    def breakdown(input_tokens, output_tokens):
+        return {
+            "inputTokens": input_tokens,
+            "cachedInputTokens": 0,
+            "cacheWriteInputTokens": 0,
+            "outputTokens": output_tokens,
+            "reasoningOutputTokens": 0,
+            "totalTokens": input_tokens + output_tokens,
+        }
+
+    first = breakdown(12, 5)
+    for total, last in ((first, first), (breakdown(31, 13), breakdown(19, 8))):
+        emit(
+            {
+                "method": "thread/tokenUsage/updated",
+                "params": {
+                    "threadId": thread_id,
+                    "turnId": turn_id,
+                    "tokenUsage": {
+                        "total": total,
+                        "last": last,
+                        "modelContextWindow": 131072,
+                    },
+                },
+            }
+        )
+
+
 def _transport_source():
     # The same audited transport is used by the existing adapter tests. The
     # offline fixture admits low and supplies the complete synthetic catalog.
@@ -176,9 +210,16 @@ def _transport_source():
         + source[last:]
     )
     turn = '    elif method == "turn/start":\n'
-    return source.replace(
+    source = source.replace(
         turn,
-        turn + '        report, mode = offline_response(params["input"][0]["text"])\n',
+        turn
+        + '        report, mode = offline_response(params["input"][0]["text"], params["model"])\n',
+    )
+    terminal = '        if mode == "model-error":\n'
+    return source.replace(
+        terminal,
+        '        if offline_evidence and implementation and mode == "success":\n'
+        "            offline_usage(emit, thread_id, turn_id)\n" + terminal,
     )
 
 
@@ -288,12 +329,21 @@ def main():
             FAKE_RUNTIME_MODE=mode, FAKE_RUNTIME_REPORT=json.dumps(report)
         )
 
+    def codex_response(prompt, model):
+        if (
+            scenario == TASK_EVIDENCE
+            and prompt.startswith("Implementation template:")
+            and model == "gpt-6.2-sol"
+        ):
+            return {}, "model-error"
+        return _response(root, scenario, provider, prompt)
+
     runpy.run_path(
         str(root / "runtime" / f"{provider}-transport.py"),
         init_globals={
-            "offline_response": lambda prompt: _response(
-                root, scenario, provider, prompt
-            )
+            "offline_response": codex_response,
+            "offline_evidence": scenario == TASK_EVIDENCE,
+            "offline_usage": _emit_codex_usage,
         },
         run_name="__main__",
     )

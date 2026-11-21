@@ -47,7 +47,7 @@ export function Facts({ rows }: { rows: [string, ReactNode][] }) {
 
 const ROUTE_OF: Record<string, string> = {
   project: 'projects', consultation: 'consultations', goal: 'goals', 'project-plan': 'plans', stage: 'stages',
-  task: 'tasks', integration: 'integrations', review: 'reviews', 'task-review': 'reviews',
+  plan: 'task-plans', task: 'tasks', integration: 'integrations', review: 'reviews', 'task-review': 'reviews',
 };
 
 /** A link to a record by kind and opaque id. */

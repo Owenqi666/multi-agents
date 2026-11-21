@@ -14,6 +14,11 @@ INITIAL = 'export const status = "initial";\n'
 DRAFT = 'export const status = "draft";\n'
 READY = 'export const status = "ready";\n'
 WELCOME = 'export const banner = "welcome";\n'
+TASK_EVIDENCE = "task-evidence"
+EVIDENCE_PLANS = {
+    "codex": ("T-0810", AMOUNT, "Implement the standalone amount.\n"),
+    "claude": ("T-0811", STATUS, "Implement the standalone status.\n"),
+}
 CODEX_MODELS = ("gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6.2-luna")
 CLAUDE_MODELS = (
     "claude-fable-5-2",
@@ -49,7 +54,7 @@ def project_document():
     }
 
 
-def _rules():
+def _rules(scenario):
     python = str(Path(sys.executable).resolve())
     return {
         "version": 1,
@@ -70,6 +75,11 @@ def _rules():
                 "provider": "codex",
                 "default_model": "gpt-6.2-sol",
                 "default_effort": "low",
+                **(
+                    {"allowed_models": ["gpt-6.2-sol", "gpt-6.1-terra"]}
+                    if scenario == TASK_EVIDENCE
+                    else {}
+                ),
             },
         ],
     }
@@ -116,7 +126,7 @@ def create_fixture(root: Path, scenario: str) -> dict[str, str]:
         AMOUNT: "AMOUNT = 0\n",
         STATUS: INITIAL,
         BANNER: 'export const banner = "initial";\n',
-        ".multi-agent/rules.yaml": json.dumps(_rules(), indent=2) + "\n",
+        ".multi-agent/rules.yaml": json.dumps(_rules(scenario), indent=2) + "\n",
         "checks/build.py": (
             "from pathlib import Path\n"
             f"Path('artifact.bin').write_bytes(Path({STATUS!r}).read_bytes())\n"

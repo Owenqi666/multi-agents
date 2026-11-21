@@ -46,6 +46,12 @@ cd frontend && corepack pnpm build
 
 产物在 `frontend/dist`，不入库（根目录 `.gitignore` 已有 `dist/`）。
 
+## 从已审核的单卡开始实施
+
+在「单卡」输入当前仓库里的规划运行 ID。已有已审核独立规划可以选择主模型和备选模型。留空按冻结规则派发；添加的备选按页面最后排列的顺序冻结，后续在实施详情查看。直接阶段和已领取子卡从阶段页面使用各自冻结的配置。
+
+「实施详情」按尝试显示工作树位置、请求、工作台选择、冻结备选链、运行时报告、用量与改派。Codex 的累计用量和最近一次用量分开显示。Claude 报告的费用显示为客户端估算美元。重试沿用首次冻结的设置，缺少证据的字段显示「未确认」。
+
 ## 检查
 
 ```bash
@@ -113,6 +119,7 @@ cd frontend && corepack pnpm run e2e
 | 领取这个阶段 | 计划 | `project.stage.start` | 计划已生成、阶段未领取、前置阶段的 `review_satisfied` 均为真。阶段负责人和卡片复核沿用工作区默认值，可手动改选。可填写包含所有前置交付的执行基线 |
 | 恢复阶段 | 阶段 | `project.stage.resume` | 还没有拟卡尝试（带 `prepare: true`），或规划 `next_action.kind` 为 `plan_retry` |
 | 开始实施 | 阶段、实施 | `task.run` | `next_action.kind` 为 `run` 且还没有实施尝试 |
+| 开始实施 | 单卡规划 | `task.run` | 读回允许配置且尚未绑定实施。可选 `implementation` 和顺序排列的 `fallbacks` |
 | 重试实施 | 阶段、实施 | `task.retry` | `next_action.kind` 为 `run` 且已有实施尝试 |
 | 领取子卡 | 阶段（分派） | `project.stage.leaf` | 子卡还没有 `planning`，`unmet_dependencies` 为空；执行者只能选 Terra 或 Sonnet |
 | 重新冻结并复核 | 阶段（分派） | `project.stage.leaf` | 已领取的子卡所冻结的前置候选发生变化，且现有前置候选均可用。提交 `refreeze: true` 和 `review_only: true`，保留旧规划供查看 |

@@ -9,6 +9,7 @@ import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
 import { ReadFrame } from '../components/ReadNote';
 import { useWorkspace } from './GoalPages';
+import { TaskAttemptEvidence } from './TaskAttemptEvidence';
 import { currentTaskReview, ReviewRetry, RoundSummary, useCommands, useSeats } from './bits';
 import { ArtifactLinks, Evidence, Facts, NextNote, Page, Section, useResource } from './common';
 
@@ -17,7 +18,7 @@ const PHASE: Record<string, string> = {
   planning_required: '需要先规划',
 };
 
-export function TaskPanel({ task, leaf = false }: { task: TaskView; leaf?: boolean }) {
+export function TaskPanel({ task, detail = false }: { task: TaskView; detail?: boolean }) {
   const ws = useWorkspace();
   const next = task.next_action;
   const kind = next?.kind ?? null;
@@ -42,17 +43,22 @@ export function TaskPanel({ task, leaf = false }: { task: TaskView; leaf?: boole
           ['预算', task.budget ? `还剩 ${task.budget.remaining} 次` : '—'],
           ['返工', task.rework_used ? '已用过一次' : '还没用'],
         ]} />
-        <ol className="attempt-list">
-          {task.attempts.map((a, i) => (
-            <li key={i}>
-              <span>{a.request.kind === 'task_rework_started' ? '返工' : `第 ${i + 1} 次实施`}</span>
-              <Evidence reportedModel={a.runtime?.reported_model} reportedEffort={a.runtime?.reported_effort} request={a.request.decision.choice} />
-              <span className="stamp">{timeText(a.request.started_at)}</span>
-              {a.runtime?.status ? <span className="stamp">{a.runtime.status}</span> : null}
-            </li>
-          ))}
-        </ol>
+        {task.attempts.length ? (
+          <ol className={detail ? 'task-attempts' : 'attempt-list'} aria-label="实施尝试">
+            {task.attempts.map((a, i) => detail ? (
+              <TaskAttemptEvidence key={i} attempt={a} number={a.runtime?.number ?? i + 1} />
+            ) : (
+              <li key={i}>
+                <span>{a.request.kind === 'task_rework_started' ? '返工' : `第 ${i + 1} 次实施`}</span>
+                <Evidence reportedModel={a.runtime?.reported_model} reportedEffort={a.runtime?.reported_effort} request={a.request.decision.choice} />
+                <span className="stamp">{timeText(a.request.started_at)}</span>
+                {a.runtime?.status ? <span className="stamp">{a.runtime.status}</span> : null}
+              </li>
+            ))}
+          </ol>
+        ) : null}
         <div className="form-actions">
+          {detail ? null : <Link className="btn" href={to('tasks', task.task_run_id)}>实施详情</Link>}
           {kind === 'run' && !task.attempts.length ? (
             <ActionButton action="task.run" primary label="开始实施" args={() => ({ planning_run_id: task.planning_run_id })} />
           ) : null}
@@ -104,7 +110,6 @@ export function TaskPanel({ task, leaf = false }: { task: TaskView; leaf?: boole
           {kind === 'user_decision' && lastRound ? <p className="action-why"><NextNote next={next} /></p> : null}
         </div>
       </Section>
-      {leaf ? null : null}
     </>
   );
 }
@@ -124,12 +129,12 @@ function TestLogs({ taskRunId, implementation, test }: { taskRunId: string; impl
 }
 
 export function TaskPage({ id }: { id: string }) {
-  const read = useResource<TaskView>('task', id);
+  const read = useResource<TaskView>('task', id, { implementation: 1 });
   const task = read.data?.id === id ? read.data.data : null;
   return (
     <Page kicker={`实施 · ${shortId(id)}`} title="实施和审核">
       <ReadFrame read={{ ...read, data: task }} what="实施记录">
-        {(t) => <TaskPanel key={id} task={t} />}
+        {(t) => <TaskPanel key={id} task={t} detail />}
       </ReadFrame>
     </Page>
   );

@@ -11,6 +11,7 @@ import { ProjectsPage, ProjectPage, GoalPage } from '../pages/ProjectPages';
 import { PlanPage } from '../pages/PlanPage';
 import { StagePage } from '../pages/StagePage';
 import { TaskPage } from '../pages/TaskPage';
+import { OpenTaskPlanPage, TaskPlanPage } from '../pages/TaskPlanPage';
 import { IntegrationPage } from '../pages/IntegrationPage';
 import { ReviewPage } from '../pages/ReviewPage';
 import { DiffPage, FrozenFilePage, LogPage } from '../pages/ViewerPages';
@@ -27,6 +28,8 @@ const ROUTES: Route[] = [
   ['/consultations/:id', (p) => <ConsultationPage id={p.id!} />],
   ['/plans/:id', (p) => <PlanPage id={p.id!} />],
   ['/stages/:id', (p) => <StagePage id={p.id!} />],
+  ['/task-plans', () => <OpenTaskPlanPage />],
+  ['/task-plans/:id', (p) => <TaskPlanPage key={p.id!} id={p.id!} />],
   ['/tasks/:id', (p) => <TaskPage id={p.id!} />],
   ['/integrations/:id', (p) => <IntegrationPage id={p.id!} />],
   ['/reviews/:id', (p) => <ReviewPage id={p.id!} />],
@@ -56,7 +59,7 @@ export function App() {
     document.documentElement.dataset.reading = reading > 0 || settling ? '1' : '0';
     document.documentElement.dataset.job = active ? active.state : 'none';
   }, [reading, active, settling]);
-  const nav: [string, string][] = [['/', '舞台'], ['/projects', '项目'], ['/jobs', '作业']];
+  const nav: [string, string][] = [['/', '舞台'], ['/projects', '项目'], ['/task-plans', '单卡'], ['/jobs', '作业']];
   const current = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
   return (
     <div className="app">
