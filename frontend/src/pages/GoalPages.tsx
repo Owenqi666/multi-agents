@@ -13,7 +13,7 @@ import { Badge } from '../components/Badge';
 import { EmptyState } from '../components/EmptyState';
 import { candidatesFor, ModelPicker, requestFrom, type PickerChoice } from '../components/ModelPicker';
 import { ReadFrame } from '../components/ReadNote';
-import { Evidence, Facts, Page, Section, useResource } from './common';
+import { ArtifactLinks, Evidence, Facts, Page, Section, useResource } from './common';
 
 export function useWorkspace() {
   return useRead<Workspace>('workspace', () => api.workspace(), { locking: false });
@@ -154,6 +154,8 @@ export function ConsultationPage({ id }: { id: string }) {
                   <p className="row"><Badge tone={SEAT_STATUS[s.status]?.[0] ?? 'muted'}>{SEAT_STATUS[s.status]?.[1] ?? s.status}</Badge>
                     <Evidence reportedModel={s.evidence?.reported_model} reportedEffort={s.evidence?.reported_effort} request={s.request} /></p>
                   {s.advice ? <AdviceView advice={s.advice} /> : s.status === 'pending' ? <p className="loading">还没开始。</p> : null}
+                  <ArtifactLinks artifacts={(read.data?.artifacts ?? []).filter((a) => a.coordinates?.seat === s.number)}
+                    label={(a) => `顾问 ${s.number} · ${a.stream ?? '日志'} ${a.coordinates?.log_index ?? ''}`.trim()} />
                 </Section>
               ))}
               {draft ? (

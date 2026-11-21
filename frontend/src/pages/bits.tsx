@@ -2,9 +2,10 @@
 // round summaries, test command selection.
 
 import { useCallback, useState } from 'react';
-import type { ReviewRound, RoleRequest, Workspace } from '../api/types';
+import type { IntegrationRecord, Job, ReviewRound, RoleRequest, TaskView, Workspace } from '../api/types';
 import { ASSESSMENT_LABEL, shortId, VERIFICATION_LABEL } from '../app/labels';
-import { Link, to } from '../app/router';
+import { Link, navigate, to } from '../app/router';
+import { ActionButton } from '../components/Action';
 import { Badge, type BadgeTone } from '../components/Badge';
 import { candidatesFor, ModelPicker, type PickerChoice } from '../components/ModelPicker';
 import { Evidence } from './common';
@@ -40,23 +41,64 @@ export function useSeats(ws: Workspace | null) {
 
 export const ROUND_TONE: Record<string, BadgeTone> = { ready: 'ok', needs_rework: 'warn', user_decision: 'plain', incomplete: 'muted' };
 
-export function seatFailed(round: ReviewRound, key: string): boolean {
-  const seat = round.seats.find((s) => s.key === key);
-  const attempt = seat?.attempts[seat.attempts.length - 1];
-  return !attempt || attempt.status !== 'succeeded';
+/** Only the round for the current implementation and test may offer task actions. */
+export function currentTaskReview(task: TaskView): ReviewRound | undefined {
+  const latest = task.reviews.findLast((round) =>
+    round.metadata.kind === 'review' && round.implementation_attempt === task.implementation_attempt);
+  return latest?.source_current ? latest : undefined;
+}
+
+export function currentIntegrationReview(integration: IntegrationRecord): ReviewRound | undefined {
+  const latest = integration.reviews.findLast((round) => round.metadata.kind === 'review');
+  if (integration.superseded_by || !integration.target_is_current) return undefined;
+  return latest?.source_current && latest.test_attempt === integration.test?.attempt ? latest : undefined;
+}
+
+/** Integration review, confirmation and retry may all produce a reworked revision. */
+export function openIntegrationRevision(job: Job) {
+  const revision = job.result?.revision as { integration_id?: string } | undefined;
+  if (revision?.integration_id) navigate(to('integrations', revision.integration_id));
+}
+
+function retryableSeats(round: ReviewRound): string[] {
+  return round.seats.filter((seat) => seat.current_attempt === null ||
+    seat.attempts.find((attempt) => attempt.number === seat.current_attempt)?.status === 'failed').map((seat) => seat.key);
+}
+
+/** Retry the failed or unstarted seats in the frozen round that owns them. */
+export function ReviewRetry({ round, integrationId, onDone }: {
+  round: ReviewRound | null | undefined;
+  integrationId?: string;
+  onDone?: (job: Job) => void;
+}) {
+  if (!round) return null;
+  const seatKeys = retryableSeats(round);
+  if (!seatKeys.length) return null;
+  return (
+    <ActionButton action={integrationId ? 'integration.retry_review' : 'task.retry_review'}
+      label={`补跑失败的席位（${seatKeys.join('、')}）`}
+      args={() => ({ ...(integrationId ? { integration_id: integrationId } : {}), round_id: round.round_id, seat_keys: seatKeys })}
+      onDone={onDone} />
+  );
 }
 
 /** A review round in one block: seats with their evidence, the assessment, a link to it. */
 export function RoundSummary({ round }: { round: ReviewRound & { verification?: string; source_current?: boolean; confirmation_round_id?: string | null } }) {
+  const confirmation = round.metadata.kind === 'confirmation';
   const status = round.assessment?.status ?? 'incomplete';
   const blocking = round.assessment?.groups.filter((g) => g.blocking).length ?? 0;
+  const confirmed = round.status === 'ready_for_assessment';
   return (
     <div className="round">
       <div className="round-head">
-        <Link href={to('reviews', round.round_id)}>{round.metadata.kind === 'confirmation' ? '交叉确认' : '审核轮'} <code>{shortId(round.round_id)}</code></Link>
-        <Badge tone={ROUND_TONE[status] ?? 'muted'}>{ASSESSMENT_LABEL[status] ?? status}</Badge>
-        {blocking ? <Badge tone="fail">{blocking} 条阻塞意见</Badge> : null}
-        {round.seats.length > 1 ? <span className="stamp">双席，互不可见</span> : <span className="stamp">单席</span>}
+        <Link href={to('reviews', round.round_id)}>{confirmation ? '交叉确认' : '审核轮'} <code>{shortId(round.round_id)}</code></Link>
+        {confirmation ? <Badge tone={confirmed ? 'ok' : 'muted'}>{confirmed ? '确认完成' : '确认未完成'}</Badge> : (
+          <>
+            <Badge tone={ROUND_TONE[status] ?? 'muted'}>{ASSESSMENT_LABEL[status] ?? status}</Badge>
+            {blocking ? <Badge tone="fail">{blocking} 条阻塞意见</Badge> : null}
+          </>
+        )}
+        {round.seats.length > 1 ? <span className="stamp">{confirmation ? '双席' : '双席，互不可见'}</span> : <span className="stamp">单席</span>}
         {round.verification ? <span className="stamp">{VERIFICATION_LABEL[round.verification] ?? round.verification}</span> : null}
         {round.metadata.rework_from_round_id ? <span className="stamp">返工后的复审</span> : null}
       </div>

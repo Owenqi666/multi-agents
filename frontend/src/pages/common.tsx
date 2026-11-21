@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { api, isLockingKind } from '../api/client';
 import { useRead } from '../api/reads';
 import type { Query } from '../api/transport';
-import type { NextAction, Resource, RoleRequest } from '../api/types';
+import type { ArtifactRef, NextAction, Resource, RoleRequest } from '../api/types';
 import { KIND_LABEL, nextText, shortId } from '../app/labels';
 import { Link, to } from '../app/router';
 import { Requested, Unconfirmed } from '../components/Badge';
@@ -55,6 +55,29 @@ export function RecordLink({ kind, id, label }: { kind: string; id: string; labe
   const base = ROUTE_OF[kind];
   const text = label ?? <>{KIND_LABEL[kind] ?? kind} <code>{shortId(id)}</code></>;
   return base ? <Link href={to(base, id)}>{text}</Link> : <span>{text}</span>;
+}
+
+export function ArtifactLinks({ artifacts, label, locking = false }: {
+  artifacts: readonly ArtifactRef[];
+  label?: (artifact: ArtifactRef) => string;
+  locking?: boolean;
+}) {
+  if (!artifacts.length) return null;
+  return (
+    <ul className="plain-list">
+      {artifacts.map((artifact) => {
+        const title = label?.(artifact) ?? artifact.key ?? artifact.stream ?? '日志';
+        const query = new URLSearchParams({ title });
+        if (locking) query.set('locking', '1');
+        return (
+          <li key={artifact.artifact_id}>
+            <Link href={`${to('logs', artifact.artifact_id)}?${query}`}>{title}</Link>
+            {artifact.byte_count !== undefined ? <span className="stamp"> {artifact.byte_count.toLocaleString('en-US')} 字节</span> : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
 }
 
 /** Model evidence: the reported model and effort, or 未确认; the request marked 请求. */

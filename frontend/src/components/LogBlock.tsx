@@ -11,27 +11,28 @@ export function readTime(iso: string): string {
 
 /** One page of a log, shown as plain text. A lock_busy page keeps the last text read and
  *  says when it was read; with nothing read yet it says the log is readable after the job. */
-export function LogBlock({ title, coords, stream, page, previous, readAt, onMore, footer }: {
+export function LogBlock({ title, coords, stream, page, previous, readAt, onMore, moreDisabled, footer }: {
   title: string;
   coords?: string;
-  stream: 'stdout' | 'stderr';
+  stream: string;
   page: (ArtifactPage & { lock_busy?: boolean }) | null;
   previous?: ArtifactPage | null;
   readAt?: string | null;
   onMore?: () => void;
+  moreDisabled?: boolean;
   footer?: ReactNode;
 }) {
   const busy = page?.lock_busy === true || page?.text === null;
   const shown = busy ? previous ?? null : page;
   return (
-    <figure className={`log log-${stream}`}>
+    <figure className={`log${stream === 'stderr' ? ' log-stderr' : ''}`}>
       <figcaption className="log-head">
         <span className="log-title">{title}</span>
         <span className="log-stream">{stream}</span>
         {coords ? <span className="log-coords">{coords}</span> : null}
         {shown ? (
           <span className="log-range">
-            字节 {bytes(shown.offset)}–{bytes(shown.offset + new TextEncoder().encode(shown.text ?? '').length)} / 共 {bytes(shown.byte_count)}
+            字节 {bytes(shown.offset)}–{bytes(shown.next_offset ?? shown.byte_count ?? (shown.offset + new TextEncoder().encode(shown.text ?? '').length))} / 共 {bytes(shown.byte_count)}
           </span>
         ) : null}
       </figcaption>
@@ -43,7 +44,7 @@ export function LogBlock({ title, coords, stream, page, previous, readAt, onMore
       )}
       {shown && shown.next_offset !== null && !busy ? (
         <div className="log-more">
-          <button type="button" className="btn small" onClick={onMore}>读下一页</button>
+          <button type="button" className="btn small" disabled={moreDisabled} onClick={onMore}>读下一页</button>
           {shown.sha256 ? <span className="log-hash">sha256 {shown.sha256.slice(0, 12)}</span> : null}
         </div>
       ) : null}

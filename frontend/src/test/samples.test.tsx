@@ -4,6 +4,7 @@
 import { render, screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { setTransport } from '../api/client';
+import { jobs } from '../api/jobs';
 import type { Job, ReviewRound } from '../api/types';
 import { RoundSummary } from '../pages/bits';
 import { IntegrationPage } from '../pages/IntegrationPage';
@@ -60,10 +61,12 @@ describe.skipIf(!have)('录制样例里的页面状态', () => {
 
   it('lock_busy stage, diff and log answers say they are readable after the job', async () => {
     setTransport(fakeTransport({
+      '/jobs': { items: [] },
       '/workspace': workspace(),
       '/resources/stage/stage-100001c0000000000000000000000000': sample('cancel', '040.json'),
       '/diffs/task/10000110000000000000000000000000': sample('cancel', '041.json'),
     }));
+    await jobs.init();
     const stage = render(<StagePage id="stage-100001c0000000000000000000000000" />);
     expect(await screen.findByText('作业运行中，结束后可读')).toBeTruthy();
     stage.unmount();
@@ -93,7 +96,8 @@ describe.skipIf(!have)('录制样例里的页面状态', () => {
 
   it('direct and delegate stages', async () => {
     const direct = sample<{ data: { stage_run_id: string } }>('accept', '027.json');
-    setTransport(fakeTransport({ '/workspace': workspace(), [`/resources/stage/${direct.data.stage_run_id}`]: direct }));
+    setTransport(fakeTransport({ '/jobs': { items: [] }, '/workspace': workspace(), [`/resources/stage/${direct.data.stage_run_id}`]: direct }));
+    await jobs.init();
     const a = render(<StagePage id={direct.data.stage_run_id} />);
     expect(await screen.findByText('直接模式')).toBeTruthy();
     a.unmount();
@@ -106,7 +110,8 @@ describe.skipIf(!have)('录制样例里的页面状态', () => {
 
   it('an integration with a rework offers its increment; one without does not', async () => {
     const reworked = sample<{ data: { integration_id: string } }>('rework', '055.json');
-    setTransport(fakeTransport({ '/workspace': workspace(), [`/resources/integration/${reworked.data.integration_id}`]: reworked }));
+    setTransport(fakeTransport({ '/jobs': { items: [] }, '/workspace': workspace(), [`/resources/integration/${reworked.data.integration_id}`]: reworked }));
+    await jobs.init();
     const a = render(<IntegrationPage id={reworked.data.integration_id} />);
     expect(await screen.findByText('返工增量')).toBeTruthy();
     a.unmount();

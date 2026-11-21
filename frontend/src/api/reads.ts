@@ -1,6 +1,6 @@
 // Reading records with the lock rules of the contract:
-// - a locking read is not sent while a CLI job is unfinished; the last content stays on
-//   screen with the time it was read, or the page says it can be read after the job;
+// - locking reads wait for the initial job list. While a CLI job is unfinished, the last
+//   content stays on screen with the time it was read, or the page says it can be read after the job;
 // - a lock_busy answer is treated the same way;
 // - locking reads go out one at a time, never in parallel;
 // - other records may be re-read while a job runs, at most every 5 seconds.
@@ -60,10 +60,16 @@ export interface ReadOptions {
 }
 
 const POLL_MS = 5000;
-const HELD = Symbol('lock held');
+export const HELD = Symbol('lock held');
+
+/** Wait for other locking reads and check the job state again when it's time to send. */
+export function readWithLock<T>(fetcher: () => Promise<T | typeof HELD>): Promise<T | typeof HELD> {
+  return serial(() => jobs.idle ? fetcher() : Promise.resolve(HELD));
+}
 
 export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: ReadOptions): ReadState<T> & { reload: () => void } {
-  const { active, submitting, generation } = useJobs();
+  const { active, submitting, generation, ready } = useJobs();
+  const booting = opts.locking && !ready;
   // From the click that submits a job until it ends, the lock may be taken at any moment.
   const locked = active !== null || submitting !== null;
   const enabled = (opts.enabled ?? true) && key !== null;
@@ -82,17 +88,19 @@ export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: 
   useEffect(() => {
     if (!enabled || !key) return;
     let alive = true;
+    const fetch = fetchRef.current;
     const fromCache = (): void => {
       const c = cache.get(key);
       setState((s) => ({ ...s, data: (c?.data as T | undefined) ?? null, readAt: c?.readAt ?? null, stale: true, loading: false }));
     };
     const run = async (): Promise<void> => {
       if (opts.locking && locked) { fromCache(); return; }
+      if (booting) return;
       setState((s) => ({ ...s, loading: true }));
       setInflight(1);
       try {
         // A locking read waits its turn in the queue; if a job started meanwhile it is not sent.
-        const value: T | typeof HELD = await (opts.locking ? serial<T | typeof HELD>(() => (jobs.idle ? fetchRef.current() : Promise.resolve(HELD))) : fetchRef.current());
+        const value = await (opts.locking ? readWithLock<T>(() => alive ? fetch() : Promise.resolve(HELD)) : fetch());
         if (!alive) return;
         if (value === HELD || lockBusy(value)) { fromCache(); return; }
         const readAt = new Date().toISOString();
@@ -113,7 +121,7 @@ export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: 
       alive = false;
       if (timer) clearInterval(timer);
     };
-  }, [key, enabled, locked, generation, nonce, opts.locking, opts.pollWhileJob]);
+  }, [key, enabled, booting, locked, generation, nonce, opts.locking, opts.pollWhileJob]);
 
   return { ...state, reload: () => setNonce((n) => n + 1) };
 }

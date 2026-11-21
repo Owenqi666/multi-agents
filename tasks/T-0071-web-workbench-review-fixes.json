@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "id": "T-0071",
+  "goal": "从网页完成 T-0069/T-0070 合并审核指出的恢复和交付流程，并能在页面正确识别所派模型、作业所属阶段、返工前后的证据。",
+  "baseline_commit": "9daf08b16adf5c5e134ae521f887a670f8a7099d",
+  "write_scope": [
+    "frontend/src/**",
+    "frontend/e2e/**",
+    "frontend/README.md",
+    "tasks/T-0071-web-workbench-review-fixes.json"
+  ],
+  "depends_on": [
+    "T-0069",
+    "T-0070"
+  ],
+  "interface_contracts": [
+    {
+      "name": "桥与证据",
+      "definition": "以 docs/project-service.md、docs/workspace-api.md 和 docs/web-api/samples/ 为准。沿用同源 HTTP 端点，按已有领域字段和冻结回执判断审核、基线及日志归属。实际模型与档位只显示运行时报告值。原始审核和复现资料在 /Users/owen/Desktop/Multi-agent-acceptance/web-main-9daf08b/REVIEW.md 及相邻的 evidence/。"
+    },
+    {
+      "name": "操作与检查",
+      "definition": "延续 T-0070 的页面、读锁、作业轮询及刷新恢复约定。利用现有的假 CLI 与真实回环桥，把针对本次回归的断言并入现有检查或相应的浏览器路径。"
+    }
+  ],
+  "deliverables": [
+    "修复报告中的三项 P1 和八项 P2，更新必要的前端说明和直接覆盖这些行为的回归。",
+    "候选提交、完整检查结果、逐项回执及仍需确认的限制。"
+  ],
+  "acceptance_criteria": [
+    "P1：已通过初审的集成重新测试成功后，网页保留旧轮、能对当前测试发起新审核，并以关联的新审核接受。",
+    "P1：上游返工后，网页能按新基线重新冻结和复核下游子卡，再实施并恢复阶段的集成资格；旧规划历史仍可查。",
+    "P1：首页及阶段页按真实谱系展示父集成初审阻塞、返工、子集成复测、复审通过和接受；子集成页可返回父集成。",
+    "P2：工作区、计划以任意顺序返回时，用户未改选择的阶段领取请求都使用工作区给出的模型和档位，用户主动选择仍生效。",
+    "P2：打开另一阶段时，全局运行作业只在所属阶段的时间线上出现；能区分同一项目的两个不同阶段。",
+    "P2：双席交叉确认中有一席失败时，网页可用失败确认轮的 ID 补跑失败席位，保留成功席位并继续后续流程；检查任务与集成的对应入口。",
+    "P2：取消终态先返回、先前轮询后返回时，终态保持，后续作业可以正常启动。",
+    "P2：在已有活动作业时直接打开或刷新阶段、任务或相关 diff 页，收到初始作业列表前及活动作业期间均无抢锁 GET；结束后恢复读取。",
+    "P2：前置阶段未满足时不能领取；两个独立的已交付前置阶段汇合时，可从网页指定合并基线并领取依赖二者的阶段。",
+    "P2：咨询、项目规划、冻结测试输出、集成测试各自可打开服务登记的日志，并查看长日志后续页。",
+    "P2：直接确认目标后、尚无计划时，首页可显示该目标并提供进入下一步的入口，读取结束后消除加载提示。",
+    "已有 frontend-check、frontend-e2e 和完整 scripts/verify.sh 通过，用真实回环服务、假 CLI 的浏览器回执核对三个 P1，并为八项 P2 对应到可复查的回归或复现场景。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": [],
+  "proposed_tests": [
+    {
+      "name": "frontend-check",
+      "executable": "corepack",
+      "args": [
+        "pnpm",
+        "--dir",
+        "frontend",
+        "run",
+        "check"
+      ],
+      "reason": "沿用 T-0070 已有的类型、lint 和组件回归检查。"
+    },
+    {
+      "name": "frontend-e2e",
+      "executable": "corepack",
+      "args": [
+        "pnpm",
+        "--dir",
+        "frontend",
+        "run",
+        "e2e"
+      ],
+      "reason": "沿用 T-0070 已有的浏览器和真实本地桥联调入口。"
+    }
+  ]
+}

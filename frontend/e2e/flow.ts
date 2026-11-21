@@ -5,13 +5,14 @@ import { act, pick, refreshEnvironments } from './support';
 export const GOAL = 'Build the amount and summary, then outline monthly reporting.\n';
 export const EDITED = `${GOAL}Use the checked output format.\n`;
 
-export async function goalToPlan(page: Page, base: string): Promise<void> {
+export async function goalToPlan(page: Page, base: string, onConsultation?: (page: Page) => Promise<void>): Promise<void> {
   await page.goto(`${base}/new`);
   await refreshEnvironments(page);
   await page.getByLabel('原始目标').fill(GOAL);
   await pick(page, '第一位顾问', 'claude-fable-5-2', 'low');
   await act(page, '请顾问完善');
   await expect(page).toHaveURL(/\/consultations\//);
+  if (onConsultation) await onConsultation(page);
   await page.getByLabel('确认的目标').fill(EDITED);
   await act(page, '按改过的确认');
   await expect(page).toHaveURL(/\/projects\//);
@@ -65,6 +66,10 @@ export async function leavesToIntegration(page: Page, opts: { cancelFirst?: (pag
 
 export async function integrationReview(page: Page, seats: [string, string][] = [['claude-opus-5-5', 'low']]): Promise<void> {
   await act(page, '运行测试');
+  await reviewCandidate(page, seats);
+}
+
+export async function reviewCandidate(page: Page, seats: [string, string][]): Promise<void> {
   if (seats.length === 1) await page.getByRole('radio', { name: '单席' }).first().click();
   await pick(page, '审核席位 1', seats[0]![0], seats[0]![1]);
   if (seats[1]) await pick(page, '审核席位 2', seats[1][0], seats[1][1]);

@@ -55,8 +55,10 @@ describe('作业期间的读取', () => {
   it('treats a lock_busy answer like the lock, keeping nothing it did not read', async () => {
     setTransport(fakeTransport({
       '/workspace': workspace,
+      '/jobs': { items: [] },
       '/resources/stage/s1': { kind: 'stage', id: 's1', data: null, artifacts: [], lock_busy: true },
     }));
+    await jobs.init();
     render(<StagePage id="s1" />);
     expect(await screen.findByText('作业运行中，结束后可读')).toBeTruthy();
   });
@@ -126,7 +128,8 @@ describe('审核席位和报告值', () => {
 
 describe('阶段：直接和分派，有和没有返工', () => {
   const stagePage = async (id: string, data: unknown) => {
-    setTransport(fakeTransport({ '/workspace': workspace, [`/resources/stage/${id}`]: resource('stage', id, data) }));
+    setTransport(fakeTransport({ '/jobs': { items: [] }, '/workspace': workspace, [`/resources/stage/${id}`]: resource('stage', id, data) }));
+    await jobs.init();
     const view = render(<StagePage id={id} />);
     await screen.findByText('门槛');
     return view;

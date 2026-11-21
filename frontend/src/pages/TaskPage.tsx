@@ -9,8 +9,8 @@ import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
 import { ReadFrame } from '../components/ReadNote';
 import { useWorkspace } from './GoalPages';
-import { RoundSummary, seatFailed, useCommands, useSeats } from './bits';
-import { Evidence, Facts, NextNote, Page, Section, useResource } from './common';
+import { currentTaskReview, ReviewRetry, RoundSummary, useCommands, useSeats } from './bits';
+import { ArtifactLinks, Evidence, Facts, NextNote, Page, Section, useResource } from './common';
 
 const PHASE: Record<string, string> = {
   ready: '等待实施', implementing: '实施中', awaiting_delivery: '等待交付', delivered: '已交付', failed: '失败', cancelled: '已取消',
@@ -25,9 +25,10 @@ export function TaskPanel({ task, leaf = false }: { task: TaskView; leaf?: boole
   const available = task.details?.input?.frozen_rules?.rules?.commands?.map((c) => c.name) ?? [];
   const cmd = useCommands(available, card?.test_refs ?? []);
   const seats = useSeats(ws.data);
-  const reviews = task.reviews.filter((r) => r.metadata.kind === 'review');
-  const lastRound = reviews[reviews.length - 1];
-  const failedSeats = lastRound ? lastRound.seats.filter((s) => seatFailed(lastRound, s.key)).map((s) => s.key) : [];
+  const lastRound = currentTaskReview(task);
+  const retryRound = lastRound?.confirmation_round_id
+    ? task.reviews.find((round) => round.round_id === lastRound.confirmation_round_id)
+    : lastRound;
   const attempt = task.implementation_attempt;
   const reworked = task.attempts.some((a) => a.request.kind === 'task_rework_started');
   return (
@@ -93,10 +94,8 @@ export function TaskPanel({ task, leaf = false }: { task: TaskView; leaf?: boole
           </div>
         ) : null}
         <div className="form-actions">
-          {lastRound && failedSeats.length ? (
-            <ActionButton action="task.retry_review" label={`补跑失败的席位（${failedSeats.join('、')}）`} args={() => ({ round_id: lastRound.round_id, seat_keys: failedSeats })} />
-          ) : null}
-          {lastRound && lastRound.seats.length === 2 && !lastRound.confirmation_round_id && !failedSeats.length && lastRound.assessment && lastRound.assessment.status !== 'ready' ? (
+          <ReviewRetry round={retryRound} />
+          {lastRound && lastRound.seats.length === 2 && !lastRound.confirmation_round_id && lastRound.status === 'ready_for_assessment' && lastRound.assessment && lastRound.assessment.status !== 'ready' ? (
             <ActionButton action="task.confirm" label="请两席交叉确认" args={() => ({ round_id: lastRound.round_id })} />
           ) : null}
           {kind === 'rework' && next?.review_round_id ? (
@@ -118,25 +117,19 @@ function TestLogs({ taskRunId, implementation, test }: { taskRunId: string; impl
   if (!open) return <button type="button" className="link" onClick={() => setOpen(true)}>日志</button>;
   return (
     <ReadFrame read={read} what="测试日志">
-      {(r) => (
-        <span className="row">
-          {r.artifacts.map((a) => (
-            <Link key={a.artifact_id} href={`${to('logs', a.artifact_id)}?locking=1&title=${encodeURIComponent(`测试 ${test} ${a.key ?? a.stream ?? ''}`)}`}>
-              {a.coordinates ? `命令 ${String(a.coordinates.sequence ?? '')} ${a.stream ?? ''}` : a.key ?? a.stream}
-            </Link>
-          ))}
-        </span>
-      )}
+      {(r) => <ArtifactLinks artifacts={r.artifacts} locking
+        label={(a) => a.coordinates ? `命令 ${String(a.coordinates.sequence ?? '')} ${a.stream ?? ''}` : a.key ?? a.stream ?? '日志'} />}
     </ReadFrame>
   );
 }
 
 export function TaskPage({ id }: { id: string }) {
   const read = useResource<TaskView>('task', id);
+  const task = read.data?.id === id ? read.data.data : null;
   return (
     <Page kicker={`实施 · ${shortId(id)}`} title="实施和审核">
-      <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what="实施记录">
-        {(t) => <TaskPanel task={t} />}
+      <ReadFrame read={{ ...read, data: task }} what="实施记录">
+        {(t) => <TaskPanel key={id} task={t} />}
       </ReadFrame>
     </Page>
   );

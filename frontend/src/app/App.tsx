@@ -32,7 +32,7 @@ const ROUTES: Route[] = [
   ['/reviews/:id', (p) => <ReviewPage id={p.id!} />],
   ['/snapshots/:id/file', (p, q) => <FrozenFilePage id={p.id!} side={(q.get('side') as 'baseline' | 'candidate') ?? 'candidate'} path={q.get('path') ?? ''} line={Number(q.get('line') ?? 0)} end={Number(q.get('end') ?? q.get('line') ?? 0)} />],
   ['/diffs/:kind/:id', (p, q) => <DiffPage kind={p.kind as 'task' | 'integration' | 'snapshot'} id={p.id!} against={q.get('against') === 'parent' ? 'parent' : undefined} />],
-  ['/logs/:id', (p, q) => <LogPage id={p.id!} title={q.get('title') ?? '日志'} locking={q.get('locking') === '1'} />],
+  ['/logs/:id', (p, q) => <LogPage key={p.id!} id={p.id!} title={q.get('title') ?? '日志'} locking={q.get('locking') === '1'} />],
   ['/jobs', () => <JobsPage />],
   ['/jobs/:id', (p) => <JobPage id={p.id!} />],
 ];

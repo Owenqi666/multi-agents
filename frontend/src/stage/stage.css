@@ -169,7 +169,7 @@
 .now-band { fill: var(--wash); stroke: var(--hair); stroke-width: 1; opacity: 0.9; transition: x 0.5s; }
 .col .slot { fill: var(--groove-in); stroke: var(--groove); stroke-width: 1; }
 .col .blind { stroke: var(--ink-3); stroke-width: 1; stroke-dasharray: 2 3; }
-.col .wl { font-size: 10.5px; }
+.col .wl { font-size: 11px; }
 .col .ttl { font-size: 12.5px; }
 .bar .bar-body { fill: var(--c); stroke: var(--c); stroke-width: 1; }
 .bar .bar-glow { fill: var(--c); opacity: calc(var(--glow) * 0.7); }

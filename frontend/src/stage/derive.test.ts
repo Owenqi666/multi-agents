@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { StageIntegration } from '../api/types';
 import { collabHistory, collabStage, delegateStage, directStage, consultation, goal, plan } from '../fixtures/specimen';
 import { deriveStory } from './derive';
 
@@ -54,5 +55,36 @@ describe('deriveStory', () => {
     expect(rework.tone).toBe('terra');
     expect(rework.name).toBe('未确认');
     expect(story.beats[6]!.holders.map((h) => h.tone)).toEqual(['opus', 'astra']);
+  });
+
+  it('uses the rework source round and does not draw the inherited reservation again in the child', () => {
+    const parent = structuredClone(collabHistory[0]!) as StageIntegration;
+    const child = structuredClone(collabStage.integration!);
+    const rework = parent.evidence!.rework!;
+    const blockedReview = parent.evidence!.reviews[0]!;
+    rework.request = { ...rework.request, review_round_id: blockedReview.round_id, findings: [{}] };
+    rework.result = { status: 'succeeded', evidence: { reported_model: 'gpt-6.2-terra', reported_effort: null } };
+    child.evidence!.rework = rework;
+    parent.evidence!.reviews.push(child.evidence!.reviews[0]!);
+
+    const story = deriveStory({ stage: { ...collabStage, integration: child }, integrationHistory: [parent] });
+    const [, initial, repair, retest, final, accept] = story.beats.slice(5);
+    expect(story.beats.slice(5).map((beat) => beat.title)).toEqual(['测试', '代码审核', '返工', '复测', '复审', '接受']);
+    expect(initial?.note).toContain('候选 b7c6d5e。结论：需要返工，1 条阻塞意见。');
+    expect(repair?.carry).toBe('1 条阻塞意见');
+    expect(repair?.holders[0]?.reportedModel).toBe('gpt-6.2-terra');
+    expect(repair?.holders[0]?.reportedEffort).toBeNull();
+    expect(retest?.carry).toBe('修订候选 d4e5f60');
+    expect(final?.note).toContain('候选 d4e5f60。结论：通过。');
+    expect(accept?.carry).toBe('候选 d4e5f60');
+  });
+
+  it('does not show a previous review as the verdict for a new test attempt', () => {
+    const integration = structuredClone(delegateStage.integration!);
+    integration.evidence!.test!.attempt = 2;
+    integration.evidence!.reviews[0]!.test_attempt = 1;
+    integration.evidence!.acceptance = null;
+    const story = deriveStory({ stage: { ...delegateStage, integration } });
+    expect(story.beats.slice(-2).map((beat) => beat.title)).toEqual(['合并', '测试']);
   });
 });

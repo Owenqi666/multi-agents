@@ -21,7 +21,7 @@ export interface JobCenterState {
   generation: number;
   /** An action that was clicked and has not got a job id back yet. */
   submitting: string | null;
-  /** The first GET /api/jobs has answered. */
+  /** The first job list has been restored. */
   ready: boolean;
   /** A job just ended; pages are about to read again, so actions wait a moment. */
   settling: boolean;
@@ -30,12 +30,16 @@ export interface JobCenterState {
 export type SubmitResult = { job: Job } | { busy: string | null };
 
 const POLL_MS = 1000;
+const jobProgress: Record<Job['state'], number> = { queued: 0, running: 1, cancelling: 2, finished: 3, interrupted: 3 };
 
 export class JobCenter {
   private state: JobCenterState = { active: null, environment: {}, recent: [], generation: 0, submitting: null, ready: false, settling: false };
+  private initialRequest: Promise<void> | null = null;
+  private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private settleTimer: ReturnType<typeof setTimeout> | null = null;
   private listeners = new Set<() => void>();
   private watched = new Map<string, Job>();
+  private finished = new Map<string, Job>();
   private waiters = new Map<string, ((job: Job) => void)[]>();
   private timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -49,7 +53,10 @@ export class JobCenter {
   /** Tests only: forget every job and timer. */
   reset(): void {
     if (this.timer) clearTimeout(this.timer);
-    this.timer = null;
+    if (this.retryTimer) clearTimeout(this.retryTimer);
+    if (this.settleTimer) clearTimeout(this.settleTimer);
+    this.timer = this.retryTimer = this.settleTimer = null;
+    this.finished.clear();
     this.watched.clear();
     this.waiters.clear();
     this.set({ active: null, environment: {}, recent: [], generation: 0, submitting: null, ready: false, settling: false });
@@ -62,27 +69,41 @@ export class JobCenter {
 
   /** After a page load or refresh: find unfinished jobs again from the job list. */
   async init(): Promise<void> {
+    if (this.state.ready) return;
+    if (!this.initialRequest) {
+      this.initialRequest = this.restoreJobs().finally(() => { this.initialRequest = null; });
+    }
+    await this.initialRequest;
+  }
+
+  private async restoreJobs(): Promise<void> {
     try {
       const { items } = await api.jobs();
-      this.set({ recent: items, ready: true });
+      this.set({ recent: items });
       for (const job of items) if (isUnfinished(job)) this.watch(job);
-    } catch {
       this.set({ ready: true });
+    } catch {
+      // Leave repository reads held until the bridge can tell us about its active jobs.
+      this.retryTimer ??= setTimeout(() => {
+        this.retryTimer = null;
+        void this.init();
+      }, POLL_MS);
     }
   }
 
   async refreshRecent(): Promise<void> {
+    if (!this.state.ready) return this.init();
     try {
       const { items } = await api.jobs();
-      this.set({ recent: items });
+      this.set({ recent: items.map((job) => this.finished.get(job.job_id) ?? job) });
     } catch {
       /* the list is a convenience; the watched jobs carry the state */
     }
   }
 
-  /** True while no CLI job is unfinished and nothing is being submitted. */
+  /** True once the initial job list is known and no CLI job can be taking the lock. */
   get idle(): boolean {
-    return this.state.active === null && this.state.submitting === null;
+    return this.state.ready && this.state.active === null && this.state.submitting === null;
   }
 
   /** Submit an action. While a CLI job is unfinished or a click is still on its way, nothing
@@ -116,14 +137,14 @@ export class JobCenter {
 
   /** Resolves with the job once it is no longer queued, running or cancelling. */
   waitFor(jobId: string): Promise<Job> {
-    const known = this.watched.get(jobId);
-    if (known && !isUnfinished(known)) return Promise.resolve(known);
+    const known = this.finished.get(jobId);
+    if (known) return Promise.resolve(known);
     return new Promise((resolve) => this.waiters.set(jobId, [...(this.waiters.get(jobId) ?? []), resolve]));
   }
 
   /** Start following a job we only know the id of (from a 409 busy). */
   async track(jobId: string): Promise<void> {
-    if (this.watched.has(jobId)) return;
+    if (this.watched.has(jobId) || this.finished.has(jobId)) return;
     try {
       this.watch(await api.job(jobId));
     } catch {
@@ -132,7 +153,9 @@ export class JobCenter {
   }
 
   private watch(job: Job): void {
-    this.watched.set(job.job_id, job);
+    const current = this.watched.get(job.job_id);
+    if (this.finished.has(job.job_id) || (current && jobProgress[job.state] < jobProgress[current.state])) return;
+    if (isUnfinished(job)) this.watched.set(job.job_id, job);
     this.publish(job);
     this.schedule();
   }
@@ -158,6 +181,7 @@ export class JobCenter {
       if (this.settleTimer) clearTimeout(this.settleTimer);
       this.settleTimer = setTimeout(() => { this.settleTimer = null; this.set({ settling: false }); }, 400);
       this.watched.delete(job.job_id);
+      this.finished.set(job.job_id, job);
       for (const resolve of this.waiters.get(job.job_id) ?? []) resolve(job);
       this.waiters.delete(job.job_id);
     }
@@ -176,7 +200,7 @@ export class JobCenter {
     try {
       const job = await api.job(jobId);
       const before = this.watched.get(jobId);
-      if (!before || before.state !== job.state || !isUnfinished(job)) this.publish(job);
+      if (!before || before.state !== job.state) this.watch(job);
       else this.watched.set(jobId, job);
     } catch {
       /* keep polling; the bridge may be restarting */

@@ -22,7 +22,7 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
   /** Ask before submitting (actions that create something new). */
   confirm?: string;
 }) {
-  const { active, submitting, settling } = useJobs();
+  const { active, submitting, settling, ready } = useJobs();
   const reading = useReadsInFlight() > 0 || settling;
   const [mine, setMine] = useState<string | null>(null);
   const [problem, setProblem] = useState<ReactNode>(null);
@@ -30,7 +30,7 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
   const busyElsewhere = !running && (active !== null || submitting !== null);
   // While the page is still reading (just after a job, or on arrival) its buttons may come from
   // the state before; wait for the reading so nothing is submitted twice.
-  const blocked = disabled || busyElsewhere || running || submitting === action || reading;
+  const blocked = !ready || disabled || busyElsewhere || running || submitting === action || reading;
 
   const click = async (): Promise<void> => {
     const a = args();

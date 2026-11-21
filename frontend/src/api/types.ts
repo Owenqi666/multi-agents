@@ -278,7 +278,16 @@ export interface PlanningView {
   next_action: NextAction | null;
   planning_kind?: 'stage_split';
   details?: { input?: { card?: { test_refs?: string[] }; frozen_rules?: { rules?: { commands?: { name: string }[] } } } };
-  draft_projection?: { executor?: RoleRequest };
+  draft_projection?: {
+    executor?: RoleRequest;
+    dependencies?: {
+      card_id: string;
+      planning_run_id: Id;
+      task_run_id: Id;
+      implementation_attempt: number;
+      candidate: string;
+    }[];
+  };
 }
 
 export interface ImplementationAttempt {
@@ -349,7 +358,7 @@ export interface ReviewRound {
   round_id: Id;
   snapshot_id: Id;
   status: string;
-  metadata: { kind: 'review' | 'confirmation'; created_at: string; automatic_rework?: boolean; rework_from_round_id?: Id };
+  metadata: { kind: 'review' | 'confirmation'; created_at: string; automatic_rework?: boolean; rework_from_round_id?: Id; parent_round_id?: Id | null };
   seats: ReviewSeat[];
   assessment: Assessment | null;
   implementation_attempt?: number;
@@ -390,6 +399,26 @@ export interface Leaf {
   blocked_reason: string | null;
   planning?: PlanningView | null;
   implementation?: TaskView | null;
+  prior_planning_run_ids?: Id[];
+}
+
+export interface IntegrationRework {
+  rework_id: Id;
+  source_id: Id;
+  child_id: Id | null;
+  request?: {
+    requested_actor?: { decision?: { choice?: RoleRequest } };
+    review_round_id?: Id;
+    findings?: unknown[];
+  };
+  result: { status: string; evidence?: Evidence | null } | null;
+}
+
+interface IntegrationAcceptance {
+  acceptance_id: Id;
+  accepted_at: string;
+  candidate?: CandidateRef | string | null;
+  review_round_id?: Id | null;
 }
 
 export interface StageIntegration {
@@ -399,16 +428,11 @@ export interface StageIntegration {
   tests_passed: boolean;
   review_satisfied: boolean;
   evidence: {
+    rebased_from?: Id | null;
     test: { attempt: number; status: string; candidate: string | CandidateRef | null } | null;
     reviews: ReviewRound[];
-    rework: {
-      rework_id: Id;
-      source_id: Id;
-      child_id: Id | null;
-      request: { requested_actor?: { decision?: { choice?: RoleRequest } } };
-      result: { status: string } | null;
-    } | null;
-    acceptance: { acceptance_id: Id; accepted_at: string } | null;
+    rework: IntegrationRework | null;
+    acceptance: IntegrationAcceptance | null;
   } | null;
 }
 
@@ -466,11 +490,13 @@ export interface IntegrationRecord {
   conflict: unknown;
   rebased_from: Id | null;
   test: { attempt: number; status: string; candidate: CandidateRef | string | null } | null;
+  test_history?: NonNullable<IntegrationRecord['test']>[];
+  test_evidence_verification?: string;
   reviews: ReviewRound[];
   current_eligible: boolean;
   blocking_findings: unknown[];
-  acceptance: { acceptance_id: Id; accepted_at: string } | null;
-  rework: { rework_id: Id; source_id: Id; child_id: Id | null; result: { status: string } | null } | null;
+  acceptance: IntegrationAcceptance | null;
+  rework: IntegrationRework | null;
   superseded_by: Id | null;
   source_errors?: string[];
 }

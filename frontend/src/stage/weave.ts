@@ -27,6 +27,7 @@ export const TIERS: TierDef[] = [
 const RAILS: [Tone, string][] = [['you', '你'], ['bench', '工作台']];
 
 const GUTTER = 172;
+const PINS_WIDTH = GUTTER + 8;
 const RIGHT = 22;
 const MIN_COL = 62;
 const LANE = 30;
@@ -329,11 +330,11 @@ export class WeaveRenderer implements StageRenderer {
       box.appendChild(g);
       box.addEventListener('scroll', () => box.classList.toggle('scrolled', box.scrollLeft > 4), { passive: true });
     }
-    g.setAttribute('viewBox', `0 0 ${GUTTER + 8} ${this.H}`);
-    g.setAttribute('width', String(GUTTER + 8));
+    g.setAttribute('viewBox', `0 0 ${PINS_WIDTH} ${this.H}`);
+    g.setAttribute('width', String(PINS_WIDTH));
     g.setAttribute('height', String(this.H));
     g.innerHTML = `<defs><linearGradient id="${this.uid}-fade" x1="0" y1="0" x2="1" y2="0"><stop offset="0.88" style="stop-color:var(--plate);stop-opacity:1"/><stop offset="1" style="stop-color:var(--plate);stop-opacity:0"/></linearGradient></defs>`
-      + `<rect x="0" y="0" width="${GUTTER + 8}" height="${this.H}" fill="url(#${this.uid}-fade)"/>${content}`;
+      + `<rect x="0" y="0" width="${PINS_WIDTH}" height="${this.H}" fill="url(#${this.uid}-fade)"/>${content}`;
     box.classList.toggle('scrolled', box.scrollLeft > 4);
   }
 
@@ -343,10 +344,10 @@ export class WeaveRenderer implements StageRenderer {
     this.rev?.setAttribute('width', String(fmt(Math.max(0, x))));
   }
 
-  private placeCapsule(x: number, w: number, label: string, tone: string, textAlpha: number): void {
-    const c = this.cap;
-    if (!c) return;
+  private placeCapsule(x: number, w: number, label: string, tone: string, textAlpha: number): number {
     const cx = Math.max(GUTTER + w / 2, Math.min(this.W - RIGHT - w / 2, x));
+    const c = this.cap;
+    if (!c) return cx;
     c.g.setAttribute('transform', `translate(${fmt(cx)} ${fmt(this.carryY)})`);
     c.g.style.setProperty('--c', tone);
     c.cap.setAttribute('x', String(fmt(-w / 2)));
@@ -361,13 +362,18 @@ export class WeaveRenderer implements StageRenderer {
     c.text.style.opacity = String(textAlpha);
     c.g.classList.toggle('empty', !label);
     c.g.style.display = '';
+    return cx;
   }
 
-  private keepInView(x: number): void {
+  private keepInView(x: number, width: number): void {
     const box = this.el.box;
     if (box.scrollWidth <= box.clientWidth + 1) return;
-    const left = box.scrollLeft, right = left + box.clientWidth;
-    if (x - 60 < left || x + 60 > right) box.scrollLeft = Math.max(0, x - box.clientWidth / 2);
+    const left = box.scrollLeft + (box.scrollLeft > 4 ? PINS_WIDTH : 0);
+    const right = box.scrollLeft + box.clientWidth;
+    const margin = width / 2 + 6;
+    if (x - margin < left || x + margin > right) {
+      box.scrollLeft = Math.max(0, x - (box.clientWidth + PINS_WIDTH) / 2);
+    }
   }
 
   settle(i: number): void {
@@ -376,8 +382,9 @@ export class WeaveRenderer implements StageRenderer {
     this.beads.forEach((b) => { b.style.display = 'none'; });
     if (i < 0) { if (this.cap) this.cap.g.style.display = 'none'; return; }
     const beat = this.story.beats[i]!;
-    this.placeCapsule(this.x[i]!, this.capsuleWidth(beat.carry), beat.carry ?? '', toneVar(beat.holders[0]!.tone), 1);
-    this.keepInView(this.x[i]!);
+    const width = this.capsuleWidth(beat.carry);
+    const x = this.placeCapsule(this.x[i]!, width, beat.carry ?? '', toneVar(beat.holders[0]!.tone), 1);
+    this.keepInView(x, width);
   }
 
   paintStates(i: number): void {

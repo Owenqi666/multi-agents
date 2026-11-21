@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
-import { lockBusy, useRead } from '../api/reads';
+import { HELD, lockBusy, readWithLock, useRead } from '../api/reads';
 import { errorText } from '../api/transport';
 import type { ArtifactPage, Diff, FrozenFile } from '../api/types';
 import { shortId } from '../app/labels';
@@ -74,20 +74,29 @@ export function FrozenFilePage({ id, side, path, line, end }: { id: string; side
 /** A log by its registered handle, page by page. Logs of locking records are not read while
  *  a job runs; job logs always are. */
 export function LogPage({ id, title, locking }: { id: string; title: string; locking: boolean }) {
-  const { active } = useJobs();
+  const { active, submitting, ready } = useJobs();
   const [pages, setPages] = useState<ArtifactPage[]>([]);
   const [problem, setProblem] = useState<string | null>(null);
-  const first = useRead<ArtifactPage>(`log/${id}/0`, () => api.artifact(id, 0), { locking });
+  const [loadingMore, setLoadingMore] = useState(false);
+  const limit = 8192;
+  const first = useRead<ArtifactPage>(`log/${id}/0`, () => api.artifact(id, 0, limit), { locking });
   const all = first.data && !lockBusy(first.data) ? [first.data, ...pages] : pages;
   const last = all[all.length - 1];
+  const held = locking && (!ready || active !== null || submitting !== null);
   const more = async (): Promise<void> => {
-    if (!last || last.next_offset === null) return;
+    if (!last || last.next_offset === null || held || loadingMore) return;
+    const offset = last.next_offset;
+    const fetchPage = () => api.artifact(id, offset, limit);
+    setProblem(null);
+    setLoadingMore(true);
     try {
-      const p = await api.artifact(id, last.next_offset);
-      if (lockBusy(p)) { setProblem('作业运行中，下一页结束后可读。'); return; }
+      const p = await (locking ? readWithLock(fetchPage) : fetchPage());
+      if (p === HELD || lockBusy(p)) return;
       setPages((xs) => [...xs, p]);
     } catch (e) {
       setProblem(errorText(e));
+    } finally {
+      setLoadingMore(false);
     }
   };
   const joined: ArtifactPage | null = all.length
@@ -96,9 +105,12 @@ export function LogPage({ id, title, locking }: { id: string; title: string; loc
   return (
     <Page kicker={`日志 · ${shortId(id, 12)}`} title={title}>
       {problem ? <p className="stale-note">{problem}</p> : null}
-      <LogBlock title={title} stream={joined?.stream === 'stderr' ? 'stderr' : 'stdout'} page={joined ?? (first.data ? { ...first.data, text: null, lock_busy: true } : null)}
-        previous={null} readAt={first.readAt} onMore={() => void more()} />
-      {locking && active ? <p className="stamp">每页单独按 UTF-8 解码，中文跨页时边界上可能出现替换字符。</p> : null}
+      <ReadFrame read={first} what="日志">
+        {() => (
+          <LogBlock title={title} stream={joined?.stream ?? 'stdout'} page={joined}
+            readAt={first.readAt} onMore={() => void more()} moreDisabled={held || loadingMore} />
+        )}
+      </ReadFrame>
     </Page>
   );
 }

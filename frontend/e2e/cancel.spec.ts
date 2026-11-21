@@ -10,7 +10,14 @@ async function midFlight(page: Page, base: string): Promise<void> {
   await expect.poll(async () => ((await (await page.request.get(`${base}/api/jobs/${job_id}`)).json()) as { state: string }).state, { timeout: 120_000 }).toBe('finished');
 }
 
-test('cancel：作业中取消，再硬停重启，页面显示 interrupted 并引导恢复', async ({ page }) => {
+async function openSibling(page: Page, id: 'amount' | 'summary'): Promise<void> {
+  await page.getByRole('link', { name: '项目计划', exact: true }).click();
+  const row = page.locator('.stage-list > li').filter({ has: page.locator('code', { hasText: new RegExp(`^${id}$`) }) });
+  await row.getByRole('link', { name: '打开阶段', exact: true }).click();
+  await expect(page.getByRole('heading', { name: `阶段 ${id}`, exact: true })).toBeVisible();
+}
+
+test('cancel：作业只出现在所属阶段，取消及重启后可恢复', async ({ page }) => {
   const env = await OfflineEnv.start('cancel');
   const net = new NetworkLog(page);
   page.on('dialog', (d) => void d.accept());
@@ -28,9 +35,33 @@ test('cancel：作业中取消，再硬停重启，页面显示 interrupted 并�
     }
     const stageUrl = page.url();
 
-    // Cancel the first leaf while it runs.
-    await page.locator('.leaf').getByRole('button', { name: '实施', exact: true }).first().click();
+    // Warm both stage records in this browser before the job holds the repository lock.
+    const stepTitles = () => page.locator('.stage-weave .ticks > button').evaluateAll((buttons) => buttons.map((b) => b.getAttribute('title')));
+    const caption = page.locator('.stage-weave .caption');
+    const runningNote = '作业「实施」正在进行。';
+    await openSibling(page, 'amount');
+    await expect(caption).toContainText('代码审核');
+    const amountBefore = await stepTitles();
+    await openSibling(page, 'summary');
+
+    // The first leaf's running beat belongs only to the summary stage, while the job bar
+    // remains global. Go through the plan in the same page so cached stage data can be read.
+    const implement = page.locator('.leaf').getByRole('button', { name: '实施', exact: true }).first();
+    await expect(implement).toBeEnabled();
+    await implement.click();
     await midFlight(page, env.url);
+    await expect(caption).toContainText(runningNote);
+    const summaryDuring = await stepTitles();
+    await openSibling(page, 'amount');
+    await expect.poll(stepTitles).toEqual(amountBefore);
+    await expect(caption).not.toContainText(runningNote);
+    await expect(page.locator('.job-bar')).toContainText('实施');
+    await expect(page.locator('.job-bar').getByRole('button', { name: '取消作业' })).toBeVisible();
+    const amountDuring = await stepTitles();
+    await openSibling(page, 'summary');
+    await expect(caption).toContainText(runningNote);
+
+    // Cancel the first leaf while it runs.
     await page.locator('.job-bar').getByRole('button', { name: '取消作业' }).click();
     await expect(page.locator('.job-bar')).toContainText('已请求取消');
     await expect(page.locator('.job-bar').getByRole('button', { name: '取消作业' })).toHaveCount(0);
@@ -57,7 +88,7 @@ test('cancel：作业中取消，再硬停重启，页面显示 interrupted 并�
     expect(net.posts().length).toBe(posts);
     await net.ready();
     expect(net.lockViolations()).toEqual([]);
-    await net.record('cancel', { result: 'passed', same_page_after_refresh: here });
+    await net.record('cancel', { result: 'passed', same_page_after_refresh: here, stage_scope: { amount_before: amountBefore, amount_during: amountDuring, summary_during: summaryDuring } });
   } catch (e) {
     await net.record('cancel', { result: 'failed', error: String(e) });
     throw e;

@@ -11,6 +11,7 @@ import { expect, type Locator, type Page } from '@playwright/test';
 const here = dirname(fileURLToPath(import.meta.url));
 export const REPO = resolve(here, '../..');
 const DIST = resolve(REPO, 'frontend/dist');
+export const RECORDS = process.env.WORKBENCH_E2E_EVIDENCE ?? resolve(here, 'records');
 
 /** The only way the tests touch the environment: this command, signals, and /api. */
 export class OfflineEnv {
@@ -37,7 +38,8 @@ export class OfflineEnv {
   }
 
   static async start(scenario: string): Promise<OfflineEnv> {
-    const proc = spawn('uv', ['run', 'python', 'tests/unit/web_support/offline_env.py', '--scenario', scenario, '--port', '0', '--frontend-dist', DIST], {
+    const fixture = ['review-fixes', 'claim'].includes(scenario) ? 'frontend/e2e/review_fixes_env.py' : 'tests/unit/web_support/offline_env.py';
+    const proc = spawn('uv', ['run', 'python', fixture, '--scenario', scenario, '--port', '0', '--frontend-dist', DIST], {
       cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const env = new OfflineEnv(proc, scenario);
@@ -90,6 +92,7 @@ interface Event {
   jobId?: string;
   action?: string;
   state?: string;
+  items?: Pick<Event, 'jobId' | 'action' | 'state'>[];
 }
 
 const UNFINISHED = new Set(['queued', 'running', 'cancelling']);
@@ -113,20 +116,20 @@ export class NetworkLog {
       const isPoll = req.method() === 'GET' && job !== null && res.status() === 200;
       const isList = req.method() === 'GET' && u.pathname === '/api/jobs' && res.status() === 200;
       if (!isPost && !isPoll && !isList) return;
-      const slot = this.events.length;
-      this.events.push({ at: Date.now(), kind: 'job' });
+      const event: Event = { at: Date.now(), kind: 'job' };
+      this.events.push(event);
       this.pending.push((async () => {
         try {
           const body = await res.json();
           if (isPost) {
             const b = body as { job_id: string; state: string };
-            this.events[slot] = { at: this.events[slot]!.at, kind: 'job', jobId: b.job_id, action: (req.postDataJSON() as { action: string }).action, state: b.state };
+            Object.assign(event, { jobId: b.job_id, action: (req.postDataJSON() as { action: string }).action, state: b.state });
           } else if (isPoll) {
             const b = body as { job_id: string; action: string; state: string };
-            this.events[slot] = { at: this.events[slot]!.at, kind: 'job', jobId: b.job_id, action: b.action, state: b.state };
+            Object.assign(event, { jobId: b.job_id, action: b.action, state: b.state });
           } else {
             const items = (body as { items: { job_id: string; action: string; state: string }[] }).items;
-            this.events.splice(slot, 1, ...items.map((b) => ({ at: this.events[slot]!.at, kind: 'job' as const, jobId: b.job_id, action: b.action, state: b.state })));
+            event.items = items.map((b) => ({ jobId: b.job_id, action: b.action, state: b.state }));
           }
         } catch {
           /* the page navigated away before the body was read */
@@ -139,11 +142,15 @@ export class NetworkLog {
     await Promise.all(this.pending);
   }
 
+  private records(): Event[] {
+    return this.events.flatMap((e) => e.items ? e.items.map((item) => ({ ...e, ...item })) : [e]);
+  }
+
   /** Locking reads sent while the last known state of some CLI job was unfinished. */
   lockViolations(): string[] {
     const state = new Map<string, string>();
     const out: string[] = [];
-    for (const e of this.events) {
+    for (const e of this.records()) {
       if (e.kind === 'job' && e.jobId && e.action !== 'environment.refresh') state.set(e.jobId, e.state ?? '');
       if (e.kind === 'request' && e.method === 'GET' && e.path && isLockingRead(e.path)) {
         const busy = [...state.entries()].find(([, s]) => UNFINISHED.has(s));
@@ -159,16 +166,15 @@ export class NetworkLog {
 
   async record(name: string, extra: Record<string, unknown>): Promise<void> {
     await this.ready();
-    const dir = resolve(here, 'records');
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(RECORDS, { recursive: true });
     const jobs = new Map<string, { action: string; states: string[] }>();
-    for (const e of this.events) {
+    for (const e of this.records()) {
       if (e.kind !== 'job' || !e.jobId) continue;
       const j = jobs.get(e.jobId) ?? { action: e.action ?? '', states: [] };
       if (j.states[j.states.length - 1] !== e.state) j.states.push(e.state ?? '');
       jobs.set(e.jobId, j);
     }
-    writeFileSync(resolve(dir, `${name}.json`), JSON.stringify({
+    writeFileSync(resolve(RECORDS, `${name}.json`), JSON.stringify({
       scenario: name,
       finished_at: new Date().toISOString(),
       api_requests: this.events.filter((e) => e.kind === 'request').length,
@@ -191,6 +197,18 @@ export async function pick(scope: Page | Locator, label: string, model: string, 
 /** Wait until the page has read the state after the last job. */
 export async function settled(page: Page): Promise<void> {
   await expect(page.locator('html[data-reading="0"]')).toHaveCount(1, { timeout: 60_000 });
+}
+
+export async function readback<T>(page: Page, url: string): Promise<T> {
+  const response = await page.request.get(url);
+  expect(response.ok(), url).toBe(true);
+  return ((await response.json()) as { data: T }).data;
+}
+
+export function jobRequest(page: Page, action: string) {
+  return page.waitForRequest((request) =>
+    request.method() === 'POST' && new URL(request.url()).pathname === '/api/jobs'
+    && request.postDataJSON()?.action === action);
 }
 
 /** Click an action button and wait for its job to end; returns the outcome badge text. */

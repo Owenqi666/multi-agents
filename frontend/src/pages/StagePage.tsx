@@ -4,8 +4,10 @@
 // job it keeps the last reading and the weave marks where the running job is.
 
 import { useCallback, useMemo, useState } from 'react';
+import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
-import type { DelegateStage, DirectStage, Leaf, Stage as StageData, Workspace } from '../api/types';
+import { useRead } from '../api/reads';
+import type { DelegateStage, DirectStage, Leaf, PlanningView, Stage as StageData, Workspace } from '../api/types';
 import { nz } from '../api/types';
 import { shortId } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
@@ -16,10 +18,12 @@ import { ModelPicker, requestFrom, type PickerChoice } from '../components/Model
 import { ReadFrame } from '../components/ReadNote';
 import { readTime } from '../components/LogBlock';
 import { deriveStory, withRunningJob } from '../stage/derive';
+import { useIntegrationHistory } from '../stage/integrationLineage';
+import { belongsToStage } from '../stage/jobScope';
 import { Stage } from '../stage/Stage';
 import { useWorkspace } from './GoalPages';
 import { TaskPanel } from './TaskPage';
-import { Evidence, Facts, NextNote, Page, Section, useResource } from './common';
+import { Evidence, Facts, NextNote, Page, Raw, Section, useResource } from './common';
 
 function Gate({ ok, label }: { ok: boolean; label: string }) {
   return <Badge tone={ok ? 'ok' : 'muted'}>{label}{ok ? '' : '：还没有'}</Badge>;
@@ -77,6 +81,31 @@ function DirectBody({ stage, ws }: { stage: DirectStage; ws: Workspace | null })
   );
 }
 
+function PriorLeafPlan({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const read = useResource<PlanningView>('plan', id, { history: 1 }, { enabled: open });
+  return (
+    <details className="raw" onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>原规划 <code>{shortId(id)}</code></summary>
+      {open ? (
+        <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what="原规划">
+          {(plan) => <Raw value={plan} label="完整规划记录" />}
+        </ReadFrame>
+      ) : null}
+    </details>
+  );
+}
+
+function upstreamChanged(leaf: Leaf, leaves: Leaf[]): boolean {
+  return (leaf.planning?.draft_projection?.dependencies ?? []).some((frozen) => {
+    const current = leaves.find((l) => l.card_id === frozen.card_id);
+    return current?.candidate_verified && (
+      current.planning_run_id !== frozen.planning_run_id || current.task_run_id !== frozen.task_run_id
+      || current.implementation_attempt !== frozen.implementation_attempt || current.candidate !== frozen.candidate
+    );
+  });
+}
+
 function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Workspace | null }) {
   const [exec, setExec] = useState<PickerChoice | null>(null);
   const [stop, setStop] = useState(true);
@@ -87,6 +116,8 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
   const last = impl?.attempts[impl.attempts.length - 1];
   const claimed = planning !== null;
   const waiting = leaf.unmet_dependencies.length > 0;
+  const canRefreeze = claimed && !leaf.review_ready && !waiting && upstreamChanged(leaf, stage.leaves);
+  const baseline = planning?.card?.baseline_commit;
   const req = requestFrom(ws, 'implementation', exec);
   return (
     <li className="leaf">
@@ -95,6 +126,7 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
         {claimed ? <Badge tone={leaf.review_ready ? 'ok' : 'muted'}>{leaf.review_ready ? '复核通过' : '复核中或未通过'}</Badge> : <Badge tone="muted">未领取</Badge>}
         {leaf.candidate_verified ? <Badge tone="ok">候选已核验</Badge> : null}
         {waiting ? <span className="stamp">等待 {leaf.unmet_dependencies.join('、')}</span> : null}
+        {typeof baseline === 'string' ? <span className="stamp">基线 <code>{shortId(baseline)}</code></span> : null}
         {leaf.task_run_id ? <Link href={to('tasks', leaf.task_run_id)}>实施详情</Link> : null}
       </div>
       {leaf.blocked_reason ? <p className="muted">{leaf.blocked_reason}</p> : null}
@@ -107,12 +139,16 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
             <ActionButton action="project.stage.leaf" label="领取子卡" disabled={!req || waiting} reason={waiting ? '依赖的子卡还没完成。' : '先选执行者。'}
               args={() => ({ stage_run_id: stage.stage_run_id, card_id: leaf.card_id, implementation: req, ...(stop ? { review_only: true } : {}) })} />
           </>
-        ) : leaf.review_ready && planning && !impl?.attempts.length ? (
+        ) : canRefreeze ? (
+          <ActionButton action="project.stage.leaf" primary label="重新冻结并复核"
+            args={() => ({ stage_run_id: stage.stage_run_id, card_id: leaf.card_id, refreeze: true, review_only: true })} />
+        ) : leaf.review_ready && !waiting && planning && !impl?.attempts.length ? (
           <ActionButton action="task.run" primary label="实施" args={() => ({ planning_run_id: planning.planning_run_id })} />
-        ) : impl && impl.next_action?.kind === 'run' && impl.attempts.length ? (
+        ) : leaf.review_ready && !waiting && impl && impl.next_action?.kind === 'run' && impl.attempts.length ? (
           <ActionButton action="task.retry" label="重试实施" args={() => ({ planning_run_id: impl.planning_run_id })} />
         ) : null}
       </div>
+      {(leaf.prior_planning_run_ids ?? []).map((id) => <PriorLeafPlan key={id} id={id} />)}
     </li>
   );
 }
@@ -148,13 +184,16 @@ export function StagePage({ id }: { id: string }) {
   const read = useResource<StageData>('stage', id);
   const ws = useWorkspace();
   const { active } = useJobs();
-  const stage = read.data?.data ?? null;
-  const story = useMemo(() => withRunningJob(deriveStory({ stage }), active), [stage, active]);
+  const stage = read.data?.id === id ? read.data.data : null;
+  const integrationHistory = useIntegrationHistory(stage);
+  const runs = useRead('runs', () => api.runs(), { locking: false, pollWhileJob: true, enabled: active !== null });
+  const ownJob = active && belongsToStage(active, id, stage, integrationHistory, runs.data?.items ?? []) ? active : null;
+  const story = useMemo(() => withRunningJob(deriveStory({ stage, integrationHistory }), ownJob), [stage, integrationHistory, ownJob]);
   return (
     <Page kicker={`阶段 · ${shortId(id)}`} title={stage ? `阶段 ${stage.stage_id}` : '阶段'} aside={stage ? <Link className="btn small" href={to('plans', stage.plan_id)}>项目计划</Link> : null}>
       {story.beats.length ? (
         <div className="stage-weave">
-          <Stage key={story.beats.length} story={story} kind="weave" handle="stage" autoplay={false} keys={false}
+          <Stage key={id} story={story} kind="weave" handle="stage" autoplay={false} keys={false}
             foot={read.stale && read.readAt ? `作业运行中，停在 ${readTime(read.readAt)} 读到的状态` : undefined} />
         </div>
       ) : null}

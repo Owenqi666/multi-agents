@@ -17,9 +17,9 @@ import {
   type ReviewRound,
   type RoleRequest,
   type Stage,
-  type StageIntegration,
   type TaskTest,
 } from '../api/types';
+import { integrationPredecessor, type TimelineIntegration } from './integrationLineage';
 import { familyOfTone, reportedShort, parseModel, toneFor, UNCONFIRMED } from './models';
 import type { Beat, Fork, Holder, Span, Story } from './story';
 
@@ -29,7 +29,7 @@ export interface StoryInput {
   plan?: ProjectPlan | null;
   stage?: Stage | null;
   /** Earlier integrations of the stage's lineage (a rework's source), oldest first. */
-  integrationHistory?: StageIntegration[];
+  integrationHistory?: TimelineIntegration[];
 }
 
 const shortId = (id: string | null | undefined, n = 7): string => (id ? id.slice(0, n) : '');
@@ -73,7 +73,7 @@ function implementationHolder(key: string, role: string, attempt: Implementation
   return modelHolder(key, role, attempt.request.decision.choice, fromRuntime(attempt));
 }
 
-function reviewBeat(id: string, title: string, round: ReviewRound, firstRound: boolean): Beat {
+function reviewBeat(id: string, title: string, round: ReviewRound, firstRound: boolean, candidate?: string | null): Beat {
   const holders = round.seats.map((seat) => {
     const attempt = last(seat.attempts);
     return modelHolder(
@@ -96,7 +96,8 @@ function reviewBeat(id: string, title: string, round: ReviewRound, firstRound: b
   return {
     id, step: 10, title, phase: '测试与审核', holders, fork,
     carry: `快照 ${shortId(round.snapshot_id)}`,
-    note: (firstRound ? opening : '返工后的候选重新冻结，再审一次。') + outcome,
+    note: (firstRound ? '' : '在新的测试回执上重新冻结候选。') + opening
+      + (candidate ? `候选 ${shortId(candidate)}。` : '') + outcome,
   };
 }
 
@@ -251,7 +252,7 @@ function leafLabel(index: number): string {
   return `子卡 ${String.fromCharCode(65 + index)}`;
 }
 
-function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], history: StageIntegration[]): void {
+function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], history: TimelineIntegration[]): void {
   const draft = draftBeat(stage);
   if (!draft) return;
   beats.push(draft);
@@ -293,35 +294,46 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
   // 9 测试, 10 代码审核 and 11 返工 per integration. A successful rework makes a child
   // integration and the stage then reports the child, so earlier integrations of the same
   // lineage come in through integrationHistory, oldest first.
-  const chain = [...history, integration];
-  let lastEvidence: NonNullable<StageIntegration['evidence']> | null = null;
-  chain.forEach((item, k) => {
+  [...history, integration].forEach((item, k) => {
     const evidence = item.evidence;
-    const test = evidence?.test;
-    if (!evidence || !test) return;
-    lastEvidence = evidence;
-    beats.push(testBeat(`test-${k + 1}`, k ? '复测' : '测试', { candidate: commitOf(test.candidate), passed: test.status === 'succeeded', commands: null }, k > 0));
-    const round = last(evidence.reviews.filter((r) => r.metadata.kind === 'review'));
-    if (round) beats.push(reviewBeat(`review-${k + 1}`, k ? '复审' : '代码审核', round, k === 0));
-    const rework = evidence.rework;
+    if (!evidence) return;
+    const revised = k > 0 || integrationPredecessor({ integration_id: item.integration_id, ...evidence }) !== null;
+    const test = evidence.test;
+    const testId = `test-${item.integration_id}`;
+    const candidate = commitOf(test?.candidate) ?? item.candidate;
+    if (test) {
+      beats.push(testBeat(testId, revised ? '复测' : '测试', { candidate, passed: test.status === 'succeeded', commands: null }, revised));
+    }
+    const rework = evidence.rework?.source_id === item.integration_id ? evidence.rework : null;
+    const pinnedRound = rework?.request?.review_round_id ?? evidence.acceptance?.review_round_id;
+    const reviews = evidence.reviews.filter((r) => r.metadata.kind === 'review');
+    const round = pinnedRound
+      ? reviews.find((r) => r.round_id === pinnedRound) ?? null
+      : last(reviews.filter((r) => test && (r.test_attempt == null || r.test_attempt === test.attempt)));
+    if (round) beats.push(reviewBeat(`review-${item.integration_id}`, revised ? '复审' : '代码审核', round, !revised, candidate));
     if (rework) {
-      const testIndex = beats.findIndex((b) => b.id === `test-${k + 1}`);
-      const choice = rework.request.requested_actor?.decision?.choice ?? null;
+      const testIndex = beats.findIndex((b) => b.id === testId);
+      const choice = rework.request?.requested_actor?.decision?.choice ?? null;
+      const reported = rework.result?.evidence;
+      const findings = rework.request?.findings?.length ?? (round ? blockingCount(round) : null);
       beats.push({
-        id: `rework-${k + 1}`, step: 11, title: '返工', phase: '测试与审核',
-        holders: [modelHolder('impl', '原实施者', choice, null)], fork: null,
-        carry: `${blockingCount(round)} 条阻塞意见`,
-        note: '原实施者按阻塞意见修改，成功后生成一个子集成，回到测试。返工记录里没有运行时报告的模型。',
+        id: `rework-${item.integration_id}`, step: 11, title: '返工', phase: '测试与审核',
+        holders: [modelHolder('impl', '原实施者', choice, reported ? { model: nz(reported.reported_model), effort: nz(reported.reported_effort) } : null)], fork: null,
+        carry: findings === null ? '阻塞意见' : `${findings} 条阻塞意见`,
+        note: '原实施者按阻塞意见修改，成功后生成一个子集成，回到测试。',
       });
       if (testIndex >= 0) loops.push({ from: testIndex, to: beats.length - 1, label: '返工后回到测试' });
     }
   });
 
   // 12 接受
-  if ((lastEvidence as NonNullable<StageIntegration['evidence']> | null)?.acceptance) {
+  const acceptance = integration.evidence?.acceptance;
+  if (acceptance) {
+    const acceptedCandidate = commitOf(acceptance.candidate) ?? integration.candidate;
     beats.push({
       id: 'accept', step: 12, title: '接受', phase: '接受', holders: [YOU], fork: null,
-      carry: '审核通过的集成', note: '你接受了审核通过的集成，阶段交付完成。',
+      carry: acceptedCandidate ? `候选 ${shortId(acceptedCandidate)}` : '审核通过的集成',
+      note: '你接受了审核通过的集成，阶段交付完成。',
     });
   }
 }
@@ -364,7 +376,7 @@ export function runningBeat(job: JobLike): Beat | null {
   switch (job.action) {
     case 'project.consult': {
       const advisors = (a.advisors as unknown[] | undefined) ?? [];
-      return beat(1, '需求顾问', advisors.slice(0, 1).map((r, i) => seat(`advisor-${i + 1}`, `顾问 ${i + 1}`, r)));
+      return beat(1, '需求顾问', [seat('advisor-1', '顾问 1', advisors[0])]);
     }
     case 'project.confirm': return beat(2, '确认目标', [YOU]);
     case 'project.plan': return beat(3, '项目计划', [seat('planner', '规划', a.planner)]);
