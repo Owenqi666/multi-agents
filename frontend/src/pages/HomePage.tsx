@@ -12,7 +12,7 @@ import { EmptyState } from '../components/EmptyState';
 import { readTime } from '../components/LogBlock';
 import { deriveStory, withRunningJob } from '../stage/derive';
 import { useIntegrationHistory } from '../stage/integrationLineage';
-import { belongsToStage } from '../stage/jobScope';
+import { belongsToProjectTimeline, belongsToStage } from '../stage/jobScope';
 import { Stage } from '../stage/Stage';
 import { NextNote, RecordLink, useResource } from './common';
 
@@ -37,16 +37,22 @@ export function HomePage() {
   const planId = stageData?.plan_id ?? (stageId ? subject?.parent_id : null) ?? (subject?.kind === 'project-plan' ? subject.id : null);
   const plan = useResource<ProjectPlan>('project-plan', planId);
   const planData = plan.data?.id === planId ? plan.data.data : null;
-  const goalId = stageData?.goal_id ?? (subject?.kind === 'goal' ? subject.id : null);
+  const planRun = items.find((item) => item.kind === 'project-plan' && item.id === planId);
+  const goalId = planData?.goal.goal_id ?? stageData?.goal_id ?? planRun?.parent_id ?? (subject?.kind === 'goal' ? subject.id : null);
   const confirmed = useResource<Goal>('goal', goalId, undefined, { enabled: !planId });
   const goal = planData?.goal ?? (confirmed.data?.id === goalId ? confirmed.data.data : null);
   const consultationId = goal?.consultation?.consultation_id ?? (subject?.kind === 'consultation' ? subject.id : null);
   const consultation = useResource<Consultation>('consultation', consultationId);
   const consultationData = consultation.data?.id === consultationId ? consultation.data.data : null;
+  const goalRun = items.find((item) => item.kind === 'goal' && item.id === goalId);
+  const projectId = goal?.project_id ?? goalRun?.parent_id ?? consultationData?.project_id
+    ?? (subject?.kind === 'consultation' ? subject.parent_id : null);
   const stageAction = active && /^(project\.stage\.|task\.|integration\.)/.test(active.action);
   const firstStage = planId && !stageId && active?.action === 'project.stage.start' && active.args?.plan_id === planId;
   const storyJob = active && (
-    !stageAction || firstStage || (stageId && belongsToStage(active, stageId, stageData, integrationHistory, items))
+    stageAction
+      ? firstStage || (stageId && belongsToStage(active, stageId, stageData, integrationHistory, items))
+      : belongsToProjectTimeline(active, { projectId, goalId, planId, consultationId, empty: runs.data !== null && subject === null })
   ) ? active : null;
 
   const story = useMemo(() => withRunningJob(deriveStory({
