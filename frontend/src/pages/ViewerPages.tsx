@@ -77,6 +77,15 @@ export function FrozenFilePage({ id, side, path, line, end }: { id: string; side
   );
 }
 
+function joinLogPages(pages: ArtifactPage[]): string {
+  const decoder = new TextDecoder('utf-8', { ignoreBOM: true });
+  return pages.map((page) => {
+    if (page.raw_base64 === undefined) return page.text ?? '';
+    const bytes = Uint8Array.from(atob(page.raw_base64), (char) => char.charCodeAt(0));
+    return decoder.decode(bytes, { stream: page.next_offset !== null });
+  }).join('');
+}
+
 /** A log by its registered handle, page by page. Logs of locking records are not read while
  *  a job runs; job logs always are. */
 export function LogPage({ id, title, locking }: { id: string; title: string; locking: boolean }) {
@@ -106,7 +115,7 @@ export function LogPage({ id, title, locking }: { id: string; title: string; loc
     }
   };
   const joined: ArtifactPage | null = all.length
-    ? { offset: all[0]!.offset, next_offset: last!.next_offset, byte_count: last!.byte_count, sha256: last!.sha256, text: all.map((p) => p.text ?? '').join(''), stream: all[0]!.stream }
+    ? { offset: all[0]!.offset, next_offset: last!.next_offset, byte_count: last!.byte_count, sha256: last!.sha256, text: joinLogPages(all), stream: all[0]!.stream }
     : null;
   return (
     <Page kicker={`日志 · ${shortId(id, 12)}`} title={title}>
@@ -114,7 +123,8 @@ export function LogPage({ id, title, locking }: { id: string; title: string; loc
       <ReadFrame read={first} what="日志">
         {() => (
           <LogBlock title={title} stream={joined?.stream ?? 'stdout'} page={joined}
-            readAt={first.readAt} onMore={() => void more()} moreDisabled={held || loadingMore} />
+            readAt={first.readAt} onMore={() => void more()} moreDisabled={held || loadingMore}
+            fullDigest={first.data?.raw_base64 !== undefined} />
         )}
       </ReadFrame>
     </Page>

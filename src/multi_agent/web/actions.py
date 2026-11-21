@@ -142,12 +142,12 @@ class _Command:
                 raise ValueError(f"invalid {name}")
             self.argv.extend((_flag(name), value))
 
-    def baseline(self) -> None:
-        if "baseline" in self.args:
-            revision = _string(self.args["baseline"], "baseline", nonempty=True)
+    def revision(self, name: str) -> None:
+        if name in self.args:
+            revision = _string(self.args[name], name, nonempty=True)
             if revision.startswith("-") or "\r" in revision or "\n" in revision:
-                raise ValueError("invalid baseline commit revision")
-            self.argv.extend(("--baseline", revision))
+                raise ValueError(f"invalid {name} commit revision")
+            self.argv.extend((_flag(name), revision))
 
     def attempt(self, name: str) -> None:
         if name in self.args:
@@ -200,7 +200,7 @@ class _Command:
 
 def _project_goal(command: _Command, action: str) -> None:
     command.argv.extend(("--repo", str(command.workspace.repository)))
-    command.baseline()
+    command.revision("baseline")
     command.text_file("original_goal")
     if "project_id" in command.args:
         command.argv.extend(("--project-id", command.owned("project_id", "project")))
@@ -250,7 +250,7 @@ def _stage(command: _Command, action: str) -> None:
             )
         )
         command.token("mode", ("direct", "delegate"))
-        command.baseline()
+        command.revision("baseline")
         if "sol" in command.args:
             _, model, effort = _role(
                 command.args["sol"], frozenset(("sol",)), implicit_codex=True
@@ -281,7 +281,7 @@ def _stage(command: _Command, action: str) -> None:
             command.argv.extend(
                 ("--card-review", *_role(command.args["card_review"], _REVIEW))
             )
-        command.baseline()
+        command.revision("baseline")
         command.boolean("review_only")
         command.boolean("refreeze")
     else:
@@ -322,7 +322,7 @@ def _planning(command: _Command, action: str) -> None:
         return
 
     command.storage(repository=True, runtime_directory=True)
-    command.baseline()
+    command.revision("baseline")
     command.text_file("requirements")
     for name, provider, families in (
         ("draft", "claude", _DRAFT),
@@ -367,6 +367,42 @@ def _task_run(command: _Command, action: str) -> None:
             )
     command.token("task_type")
     command.bins()
+
+
+def _review_freeze(command: _Command, _action: str) -> None:
+    if "diff" in command.args:
+        if command.args.keys() & {"baseline", "candidate", "tests"}:
+            raise ValueError("a pasted diff cannot include revisions or supplied tests")
+        command.text_file("diff")
+        command.argv.extend(("--diff-repository", str(command.workspace.repository)))
+    else:
+        if not {"baseline", "candidate"} <= command.args.keys():
+            raise ValueError("freezing a commit pair requires baseline and candidate")
+        command.argv.extend(("--repo", str(command.workspace.repository)))
+        command.revision("baseline")
+        command.revision("candidate")
+        if "tests" in command.args:
+            tests = _fields(command.args["tests"], ("required_commands", "results"))
+            for key, value in tests.items():
+                _array(value, key, minimum=0)
+            command.input_file(
+                "tests", ".json", json.dumps(tests, ensure_ascii=False, allow_nan=False)
+            )
+    command.text_file("requirements")
+    for item in _array(command.args["acceptance"], "acceptance"):
+        criterion = _string(item, "acceptance", nonempty=True)
+        command.argv.append(f"--acceptance={criterion}")
+
+
+def _independent_review(command: _Command, action: str) -> None:
+    if action == "review.run":
+        command.argv.append(command.owned("snapshot_id", "snapshot"))
+        command.seats()
+        command.bins()
+        return
+    command.argv.append(command.owned("round_id", "review"))
+    if action == "review.retry":
+        command.retry_seats()
 
 
 def _task_evidence(command: _Command, action: str) -> None:
@@ -500,6 +536,20 @@ _ACTIONS: dict[str, _Spec] = {
     ),
     "task.confirm": ("task-review confirm", _task_evidence, ("round_id",), ()),
     "task.rework": ("task rework", _task_evidence, ("round_id",), ()),
+    "review.freeze": (
+        "freeze",
+        _review_freeze,
+        ("requirements", "acceptance"),
+        ("baseline", "candidate", "diff", "tests"),
+    ),
+    "review.run": ("run", _independent_review, ("snapshot_id", "seats"), ()),
+    "review.retry": (
+        "retry",
+        _independent_review,
+        ("round_id",),
+        ("seat_keys",),
+    ),
+    "review.confirm": ("confirm", _independent_review, ("round_id",), ()),
     "integration.create": (
         "integration create",
         _integration,

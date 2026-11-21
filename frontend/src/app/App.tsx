@@ -17,6 +17,7 @@ import { NewTaskPlanPage } from '../pages/NewTaskPlanPage';
 import { OpenTaskPlanPage, TaskPlanPage } from '../pages/TaskPlanPage';
 import { IntegrationPage } from '../pages/IntegrationPage';
 import { ReviewPage } from '../pages/ReviewPage';
+import { NewReviewPage, ReviewHomePage, ReviewSnapshotPage } from '../pages/StandaloneReviewPages';
 import { DiffPage, FrozenFilePage, LogPage } from '../pages/ViewerPages';
 import { JobsPage, JobPage } from '../pages/JobPages';
 
@@ -37,7 +38,10 @@ const ROUTES: Route[] = [
   ['/task-plans/:id', (p) => <TaskPlanPage key={p.id!} id={p.id!} />],
   ['/tasks/:id', (p) => <TaskPage id={p.id!} />],
   ['/integrations/:id', (p) => <IntegrationPage id={p.id!} />],
-  ['/reviews/:id', (p) => <ReviewPage id={p.id!} />],
+  ['/reviews', () => <ReviewHomePage />],
+  ['/reviews/new', () => <NewReviewPage />],
+  ['/reviews/:id', (p, q) => <ReviewPage key={p.id!} id={p.id!} patchLocation={q} />],
+  ['/snapshots/:id', (p) => <ReviewSnapshotPage key={p.id!} id={p.id!} />],
   ['/snapshots/:id/file', (p, q) => <FrozenFilePage id={p.id!} side={(q.get('side') as 'baseline' | 'candidate') ?? 'candidate'} path={q.get('path') ?? ''} line={Number(q.get('line') ?? 0)} end={Number(q.get('end') ?? q.get('line') ?? 0)} />],
   ['/diffs/:kind/:id', (p, q) => <DiffPage kind={p.kind as 'task' | 'integration' | 'snapshot'} id={p.id!} against={q.get('against') === 'parent' ? 'parent' : undefined} />],
   ['/logs/:id', (p, q) => <LogPage key={p.id!} id={p.id!} title={q.get('title') ?? '日志'} locking={q.get('locking') === '1'} />],
@@ -74,8 +78,8 @@ function WorkspaceShell() {
     document.documentElement.dataset.reading = reading > 0 || settling ? '1' : '0';
     document.documentElement.dataset.job = active ? active.state : 'none';
   }, [reading, active, settling]);
-  const nav: [string, string][] = archive ? [['/archive', '归档']] : [['/', '舞台'], ['/projects', '项目'], ['/task-plans', '单卡'], ['/jobs', '作业']];
-  const current = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
+  const nav: [string, string][] = archive ? [['/archive', '归档']] : [['/', '舞台'], ['/projects', '项目'], ['/task-plans', '单卡'], ['/reviews', '审核'], ['/jobs', '作业']];
+  const current = (href: string) => href === '/' ? path === '/' : path.startsWith(href) || (href === '/reviews' && path.startsWith('/snapshots/'));
   return (
     <div className="app">
       <header className="app-head">

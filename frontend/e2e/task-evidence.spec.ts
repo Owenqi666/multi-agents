@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { RoleRequest } from '../src/api/types';
+import { checkSessionLog, sessionArtifacts, sessionResource } from './session-logs';
 import { act, jobRequest, NetworkLog, OfflineEnv, pick, readback, refreshEnvironments } from './support';
 
 const SOL = { provider: 'codex', model: 'gpt-6.2-sol', effort: 'high' };
@@ -140,6 +141,11 @@ test('独立单卡冻结用户排序的备选链，重试改派后可读回每�
     }
     expect(net.posts().length).toBe(postsBeforeReload);
     expect(await taskReadback(page, codexTask)).toEqual(completed);
+    const codexSessions = await sessionResource<TaskReadback>(page, env.url, 'task', codexTask.split('/').at(-1)!);
+    expect(codexSessions.artifacts.some((artifact) => artifact.coordinates?.implementation_attempt === 1)).toBe(false);
+    const unsealed = page.locator('.session-log-group').filter({ has: page.getByRole('heading', { name: '实施尝试 1', exact: true }) });
+    await expect(unsealed.getByText('没有可验证的会话日志。', { exact: true })).toBeVisible();
+    const terraLog = await checkSessionLog(page, env.url, sessionArtifacts(codexSessions, { implementation_attempt: 2 }), TERRA.model);
 
     await openPlan(page, env.url, plans.claude);
     const defaultRequest = jobRequest(page, 'task.run');
@@ -165,6 +171,8 @@ test('独立单卡冻结用户排序的备选链，重试改派后可读回每�
     await expect(attemptView(page, 1)).toContainText('Claude 客户端估算（USD）');
     await expect(attemptView(page, 1)).toContainText('0.04');
     await expect(attemptView(page, 1)).toContainText('actual-claude');
+    const claudeSessions = await sessionResource<TaskReadback>(page, env.url, 'task', page.url().split('/').at(-1)!);
+    const sonnetLog = await checkSessionLog(page, env.url, sessionArtifacts(claudeSessions, { implementation_attempt: 1 }), 'actual-claude');
 
     await net.ready();
     expect(net.lockViolations()).toEqual([]);
@@ -173,6 +181,7 @@ test('独立单卡冻结用户排序的备选链，重试改派后可读回每�
       verified_ready_plans: plans,
       frozen_fallbacks: preparation(second)?.fallbacks,
       fallback_selection: second.request.decision,
+      session_logs: { failed_sol_log: null, terra: terraLog, sonnet: sonnetLog },
       codex: { candidate: completed.candidate, worktree: second.request.worktree, usage: second.usage_evidence, reroutes: second.runtime_reroutes },
       claude: { candidate: claudeTask.candidate, worktree: claude.request.worktree, usage: claude.usage_evidence },
     });

@@ -243,3 +243,26 @@ def test_plan_retry_is_scoped_and_passes_only_the_same_frozen_id(
         for identifier in ("owned-plan", "foreign-plan", "stage-plan")
     ]
     assert not list(directory.iterdir())
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {},
+        {"baseline": "HEAD~1"},
+        {"candidate": "HEAD"},
+        {"candidate": "HEAD", "baseline": "--option"},
+        {"diff": "a pasted change", "baseline": "HEAD~1"},
+        {"diff": "a pasted change", "tests": {"required_commands": [], "results": []}},
+    ],
+)
+def test_review_freeze_rejects_mixed_or_missing_sources(action_context, fields):
+    _, directory, _, prepare = action_context
+    with pytest.raises(ValueError):
+        prepare(
+            "review.freeze",
+            requirements="Check the patch.",
+            acceptance=["The criteria apply."],
+            **fields,
+        )
+    assert not list(directory.iterdir())

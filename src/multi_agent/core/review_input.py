@@ -53,7 +53,10 @@ class ExecutedReviewInput:
     kind: str = "executed_task_review"
 
     def to_dict(self) -> dict[str, Any]:
-        return cast(dict[str, Any], task_execution_value(self))
+        return {
+            **cast(dict[str, Any], task_execution_value(self)),
+            "source": self.source.to_dict(),
+        }
 
     @property
     def snapshot_id(self) -> str:
@@ -73,7 +76,10 @@ class IntegrationReviewInput:
     kind: str = "executed_integration_review"
 
     def to_dict(self) -> dict[str, Any]:
-        return cast(dict[str, Any], task_execution_value(self))
+        return {
+            **cast(dict[str, Any], task_execution_value(self)),
+            "source": self.source.to_dict(),
+        }
 
     @property
     def snapshot_id(self) -> str:

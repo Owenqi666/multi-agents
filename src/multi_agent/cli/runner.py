@@ -8,7 +8,7 @@ import math
 import signal
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -21,6 +21,7 @@ from multi_agent.adapters.base import (
     Permission,
     SessionConfig,
 )
+from multi_agent.adapters.ownership import LogOwnership
 from multi_agent.adapters.report_validation import REPORT_SCHEMA, validate_report
 from multi_agent.adapters.runtime import RuntimeAdapter
 from multi_agent.adapters.runtime_decode import RuntimeFailure
@@ -103,8 +104,9 @@ def snapshot_for(store: ReviewStore, identifier: str) -> ReviewInput:
 
 def ensure_external(directory: Path, snapshot: ReviewInput) -> None:
     snapshot = review_source(snapshot)
-    if snapshot.repository is not None:
-        common = Path(snapshot.repository).resolve()
+    repository = snapshot.repository or snapshot.bound_repository
+    if repository is not None:
+        common = Path(repository).resolve()
         root = common.parent if common.name == ".git" else common
         if directory.resolve().is_relative_to(root):
             raise ValueError("data/log directory must be outside the target repository")
@@ -373,6 +375,19 @@ def _tree_digest(directory: Path) -> str:
     return hashlib.sha256(json.dumps(values).encode()).hexdigest()
 
 
+def _sealed_session_log(adapter: RuntimeAdapter, path: Path) -> LogOwnership | None:
+    receipt = adapter.ownership_receipt()
+    if not receipt.processes_stopped:
+        return None
+    matching = [log for log in receipt.logs if log.path == str(path.absolute())]
+    if len(matching) != 1:
+        return None
+    log = matching[0]
+    if log.sealed and log.closed and log.healthy:
+        return log
+    return None
+
+
 async def execute_round(
     store: ReviewStore,
     round_id: str,
@@ -575,6 +590,15 @@ async def execute_round(
                     if not stop_event.is_set():
                         cancelling.cancel()
                     outcomes = await asyncio.gather(cancelling, return_exceptions=True)
+                    # Only the actual model subprocess emits ProcessExited.
+                    # A preflight or cancelled-before-launch recorder is not a session.
+                    if process_exit is not None and isinstance(adapter, RuntimeAdapter):
+                        log = _sealed_session_log(
+                            adapter,
+                            log_dir / f"{seat.config.provider}-{turn.identifier}.jsonl",
+                        )
+                        if log is not None:
+                            evidence["session_logs"] = [asdict(log)]
                     for outcome in outcomes:
                         if isinstance(outcome, BaseException) and not isinstance(
                             outcome, asyncio.CancelledError
@@ -639,6 +663,15 @@ async def execute_round(
             signal.signal(signal.SIGINT, previous)
 
 
+def _public_execution(store: ReviewStore, identifier: str) -> dict[str, Any]:
+    execution = cast(dict[str, Any], thaw_json(store.load_execution(identifier)))
+    for attempts in execution.values():
+        for attempt in attempts.values():
+            if isinstance(attempt, dict):
+                attempt.pop("session_logs", None)
+    return execution
+
+
 def view_round(
     store: ReviewStore, identifier: str, *, history: bool = False
 ) -> dict[str, Any]:
@@ -696,7 +729,7 @@ def view_round(
         "metadata": metadata,
         "status": round_status(state),
         "seats": seats,
-        "execution": thaw_json(store.load_execution(identifier)),
+        "execution": _public_execution(store, identifier),
         "assessment": None,
     }
     if metadata["kind"] == "review":

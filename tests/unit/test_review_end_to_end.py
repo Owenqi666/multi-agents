@@ -1,12 +1,18 @@
 """Real module entry points and transports, using only synthetic CLI executables."""
 
+import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
+
+from multi_agent.core.events import thaw_json
+from multi_agent.store import ReviewStore
 
 
 @pytest.fixture(autouse=True)
@@ -60,6 +66,30 @@ def fake_executable(directory, provider):
     )
     executable.chmod(0o755)
     return str(executable)
+
+
+def execution_evidence(data, round_id):
+    with ReviewStore(data / "reviews.sqlite3") as store:
+        return thaw_json(store.load_execution(round_id))
+
+
+def assert_sealed_session_log(data, output, key, provider):
+    round_id = output["round_id"]
+    [receipt] = execution_evidence(data, round_id)[key]["1"]["session_logs"]
+    path = Path(receipt["path"])
+    assert path.parent == (data / "logs" / round_id / key / "1").resolve()
+    assert path.name.startswith(provider + "-") and path.suffix == ".jsonl"
+    assert receipt["sealed"] and receipt["closed"] and receipt["healthy"]
+    raw = path.read_bytes()
+    info = path.stat()
+    assert receipt["identity"] == [info.st_dev, info.st_ino]
+    assert receipt["byte_count"] == len(raw)
+    assert receipt["sha256"] == hashlib.sha256(raw).hexdigest()
+    records = [json.loads(line) for line in raw.splitlines()]
+    assert receipt["records"] == len(records)
+    assert records[0]["kind"] == "requested"
+    assert any(record["kind"] == "exit" for record in records)
+    assert "session_logs" not in output["execution"][key]["1"]
 
 
 @pytest.mark.parametrize("dual", [False, True])
@@ -178,6 +208,7 @@ def test_frozen_git_input_through_real_cli_and_fake_transports(
         assert attempt["reported_model"] == (
             "actual-claude" if seat["provider"] == "claude" else None
         )
+        assert_sealed_session_log(data, restored, seat["key"], seat["provider"])
     wire = [json.loads(line) for line in capture.read_text().splitlines()]
     turns = [
         item
@@ -265,6 +296,8 @@ def test_real_cli_claude_logged_out_exit_one_persists_auth_expired_without_turn(
     evidence = restored["execution"]["reviewer-1"]["1"]["environment"]
     assert evidence["logged_in"] is False
     assert evidence["cli_version"] == "fake-claude 1.0"
+    stored = execution_evidence(data, output["round_id"])["reviewer-1"]["1"]
+    assert "session_logs" not in stored
     events = [item["envelope"]["event"] for item in restored["history"]]
     assert [event["type"] for event in events] == ["attempt_started", "error"]
     assert events[-1]["failure_category"] == "auth_expired"
@@ -286,6 +319,75 @@ def test_real_cli_claude_logged_out_exit_one_persists_auth_expired_without_turn(
     assert any(
         record["kind"] == "exit" and record["returncode"] == 1 for record in records
     )
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_real_cli_preserves_sealed_session_when_launched_reviewer_stops(
+    tmp_path, monkeypatch, cancel
+):
+    repo = tmp_path / "repository"
+    subprocess.run(
+        ["git", "init", "-q", "--template=", str(repo)], check=True, capture_output=True
+    )
+    data = tmp_path / "data"
+    capture = tmp_path / "wire.jsonl"
+    monkeypatch.setenv("FAKE_RUNTIME_CAPTURE", str(capture))
+    monkeypatch.setenv("FAKE_RUNTIME_MODE", "wait" if cancel else "model-error")
+    executable = fake_executable(tmp_path, "claude")
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text("Review the constant change.")
+    diff = tmp_path / "change.patch"
+    diff.write_text(
+        "--- a/source.py\n+++ b/source.py\n@@ -1 +1 @@\n-value = 1\n+value = 2\n"
+    )
+    frozen = cli(
+        data,
+        "freeze",
+        "--diff",
+        str(diff),
+        "--diff-repository",
+        str(repo),
+        "--requirements",
+        str(requirements),
+        "--acceptance",
+        "value equals two",
+    )
+    run = (
+        "run",
+        frozen["snapshot_id"],
+        "--seat",
+        "claude",
+        "claude-requested",
+        "high",
+        "--claude-bin",
+        executable,
+        "--timeout",
+        "5",
+        "--grace",
+        "0.1",
+    )
+    if cancel:
+        with subprocess.Popen(
+            [sys.executable, "-m", "multi_agent", "--data-dir", str(data), *run],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        ) as process:
+            deadline = time.monotonic() + 10
+            while not (capture.exists() and '"argv": ["-p"' in capture.read_text()):
+                assert process.poll() is None and time.monotonic() < deadline
+                time.sleep(0.01)
+            process.send_signal(signal.SIGINT)
+            stdout, stderr = process.communicate(timeout=10)
+            assert process.returncode == 0, stderr
+            output = json.loads(stdout)
+    else:
+        output = cli(data, *run)
+    assert output["assessment"]["status"] == "incomplete"
+    attempt = output["seats"][0]["attempts"][0]
+    assert attempt["status"] == "failed"
+    assert (attempt["failure_category"] == "cancelled") == cancel
+    assert_sealed_session_log(data, output, "reviewer-1", "claude")
 
 
 @pytest.mark.parametrize("provider", ["codex", "claude"])

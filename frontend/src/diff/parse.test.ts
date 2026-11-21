@@ -27,4 +27,19 @@ describe('parseDiff', () => {
     expect(unquotePath('"a/\\346\\240\\267\\345\\274\\240.md"')).toBe('a/样张.md');
     expect(unquotePath('plain/path.ts')).toBe('plain/path.ts');
   });
+
+  it('reads plain unified patches with file headers after completed hunks', () => {
+    const patch = [
+      '--- a/value.txt\told timestamp', '+++ b/value.txt\tnew timestamp', '@@ -3 +5 @@',
+      '--- change that looks like a file header', '+++ replacement that looks like a file header',
+      '--- /dev/null', '+++ b/added.txt', '@@ -0,0 +1 @@', '+value',
+    ].join('\n');
+    const [changed, added] = parseDiff(patch);
+    expect(changed).toMatchObject({ status: 'modified', oldPath: 'value.txt', newPath: 'value.txt' });
+    expect(changed?.hunks[0]?.lines).toEqual([
+      { kind: 'del', old: 3, new: null, text: '-- change that looks like a file header' },
+      { kind: 'add', old: null, new: 5, text: '++ replacement that looks like a file header' },
+    ]);
+    expect(added).toMatchObject({ status: 'added', oldPath: null, newPath: 'added.txt' });
+  });
 });

@@ -29,6 +29,10 @@ export const ACTION_LABEL: Record<string, string> = {
   'integration.rework': '集成返工',
   'integration.rebase': '重建集成',
   'integration.accept': '接受',
+  'review.freeze': '冻结审核输入',
+  'review.run': '独立审核',
+  'review.retry': '补跑独立审核',
+  'review.confirm': '发起交叉确认',
 };
 
 export const actionLabel = (action: string): string => ACTION_LABEL[action] ?? action;

@@ -2,17 +2,22 @@
 // diff with each finding under its lines. Review rounds and snapshots do not take the
 // repository lock, so this page also shows seat progress while a review job runs.
 
+import { useMemo } from 'react';
 import { api } from '../api/client';
 import { useRead } from '../api/reads';
-import type { Diff, Finding, IntegrationRecord, ReviewRound, TaskView } from '../api/types';
+import type { Diff, Finding, IntegrationRecord, ReviewRound, ReviewSnapshot, TaskView } from '../api/types';
+import { useWorkspaceWritesAllowed } from '../api/workspace';
 import { ASSESSMENT_LABEL, shortId } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
+import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
-import { DiffView, type Annotation } from '../components/DiffView';
+import { DiffView, type Annotation, type PatchLocation } from '../components/DiffView';
 import { EmptyState } from '../components/EmptyState';
 import { ReadFrame } from '../components/ReadNote';
 import { currentIntegrationReview, currentTaskReview, openIntegrationRevision, ReviewRetry, ROUND_TONE, RoundSummary } from './bits';
 import { ArtifactLinks, Page, Section, useResource } from './common';
+import { UserTests } from './StandaloneReviewPages';
+import { ReviewSessionLogs } from './SessionLogs';
 
 type SnapshotSource =
   | { kind: 'executed_integration_review'; integration_id: string }
@@ -45,13 +50,56 @@ function fileLink(snapshot: string, f: Finding): string {
   return `${to('snapshots', snapshot, 'file')}?side=${f.side}&path=${encodeURIComponent(f.path)}&line=${f.line_start}&end=${f.line_end}`;
 }
 
-export function ReviewPage({ id }: { id: string }) {
-  const read = useResource<ReviewRound>('review', id);
+function IndependentActions({ round, stale }: { round: ReviewRound; stale: boolean }) {
+  const writesAllowed = useWorkspaceWritesAllowed();
+  const parent = round.metadata.parent_round_id;
+  return (
+    <div className="form-actions">
+      <Link href={to('snapshots', round.snapshot_id)}>查看冻结输入</Link>
+      {parent ? <Link href={to('reviews', parent)}>返回原审核轮</Link> : null}
+      {writesAllowed && !stale ? <>
+        <ReviewRetry round={round} independent />
+        {round.can_confirm && !round.confirmation_round_id ? (
+          <ActionButton action="review.confirm" label="发起交叉确认" args={() => ({ round_id: round.round_id })}
+            onDone={(job) => {
+              if (window.location.pathname !== to('reviews', round.round_id)) return;
+              const confirmation = job.resources?.find((record) => record.kind === 'review' && record.id !== round.round_id);
+              navigate(confirmation ? to('reviews', confirmation.id) : to('jobs', job.job_id));
+            }} />
+        ) : null}
+      </> : null}
+    </div>
+  );
+}
+
+function parseLocation(search: string): PatchLocation | undefined {
+  const query = new URLSearchParams(search);
+  const side = query.get('side');
+  const path = query.get('path');
+  const start = Number(query.get('line'));
+  const end = Number(query.get('end') ?? start);
+  if ((side === 'baseline' || side === 'candidate') && path && Number.isSafeInteger(start) && start > 0 && Number.isSafeInteger(end) && end >= start) {
+    return { side, path, start, end };
+  }
+  return undefined;
+}
+
+export function ReviewPage({ id, patchLocation }: { id: string; patchLocation?: URLSearchParams }) {
+  const read = useResource<ReviewRound>('review', id, { session_logs: 1 });
   const round = read.data?.id === id ? read.data.data : null;
   const snap = round?.snapshot_id ?? null;
+  const snapshot = useResource<ReviewSnapshot>('snapshot', round?.independent_review ? snap : null, undefined, { pollWhileJob: false });
+  const input = snapshot.data?.id === snap ? snapshot.data?.data?.input : undefined;
+  const standalone = input && 'requirements' in input ? input : undefined;
+  const pasted = standalone?.files.length === 0 && standalone.baseline === null && standalone.candidate === null;
   const diff = useRead<Diff>(snap ? `diff/snapshot/${snap}` : null, () => api.diff('snapshot', snap!), { locking: false });
+  const search = patchLocation?.toString() ?? '';
+  const location = useMemo(() => parseLocation(search), [search]);
   const groups = round?.assessment?.groups ?? [];
   const annotations: Annotation[] = groups.flatMap((g) => g.members.map((m) => ({ finding: m.finding, seat: m.seat, anchor: m.finding.side === 'candidate' ? 'new' as const : 'old' as const })));
+  const findingLink = (snapshotId: string, finding: Finding) => pasted
+    ? `${to('reviews', id)}?${new URLSearchParams({ side: finding.side, path: finding.path, line: String(finding.line_start), end: String(finding.line_end) })}`
+    : fileLink(snapshotId, finding);
   return (
     <Page kicker={`审核轮 · ${shortId(id)}`} title={round?.metadata.kind === 'confirmation' ? '交叉确认' : '代码审核'}>
       <ReadFrame read={{ ...read, data: round }} what="审核轮">
@@ -59,9 +107,10 @@ export function ReviewPage({ id }: { id: string }) {
           <>
             <Section title="席位">
               <RoundSummary round={r} />
-              {r.metadata.kind === 'confirmation' ? <ConfirmationActions key={r.round_id} round={r} /> : null}
+              {r.independent_review ? <IndependentActions round={r} stale={read.stale} />
+                : r.metadata.kind === 'confirmation' ? <ConfirmationActions key={r.round_id} round={r} /> : null}
             </Section>
-            <Section title="意见" note="P0、P1 是阻塞意见。点「在冻结文件里查看」跳到它指向的行。">
+            <Section title="意见" note={pasted ? '点击意见的文件名和行号，跳到补丁中的对应位置。' : '点击意见的文件名和行号，打开冻结文件。'}>
               {r.assessment ? <p className="row"><Badge tone={ROUND_TONE[r.assessment.status] ?? 'muted'}>{ASSESSMENT_LABEL[r.assessment.status] ?? r.assessment.status}</Badge>{r.assessment.reasons.map((x) => <code key={x} className="stamp">{x}</code>)}</p> : null}
               {groups.length ? (
                 <ul className="finding-list">
@@ -70,19 +119,26 @@ export function ReviewPage({ id }: { id: string }) {
                       <Badge tone={m.finding.severity === 'P0' || m.finding.severity === 'P1' ? 'fail' : 'warn'}>{m.finding.severity}</Badge>
                       <span className="finding-title">{m.finding.title}</span>
                       <code className="stamp">{m.seat}</code>
-                      <Link href={fileLink(r.snapshot_id, m.finding)}>{m.finding.path}:{m.finding.line_start}</Link>
+                      {r.independent_review && !standalone ? <code className="task-data">{m.finding.path}:{m.finding.line_start}</code>
+                        : <Link href={findingLink(r.snapshot_id, m.finding)}>{m.finding.path}:{m.finding.line_start}</Link>}
                     </li>
                   ))}
                 </ul>
               ) : <p className="muted">没有意见。</p>}
               {r.confirmation_round_id ? <p><Link href={to('reviews', r.confirmation_round_id)}>查看交叉确认</Link></p> : null}
             </Section>
-            <Section title="冻结的审核输入" note="两位审核者看到的是同一份。">
-              <ArtifactLinks artifacts={read.data?.artifacts ?? []}
+            <ReviewSessionLogs round={r} artifacts={read.data?.artifacts ?? []} />
+            {standalone ? <UserTests input={standalone} /> : null}
+            <Section title="冻结的审核输入" note={r.seats.length > 1 ? '两位审核者看到的是同一份。' : undefined}>
+              <ArtifactLinks artifacts={read.data?.artifacts.filter((artifact) => !artifact.key?.startsWith('session-')) ?? []}
                 label={(a) => `冻结日志 · 命令 ${a.coordinates?.frozen_index ?? ''} · ${a.stream ?? a.key ?? '日志'}`} />
               <ReadFrame read={diff} what="冻结快照的 diff">
-                {(d) => <DiffView diff={d.diff} annotations={annotations} onOpenFinding={(a) => navigate(fileLink(r.snapshot_id, a.finding))}
-                  emptyNote={<EmptyState compact title="没有可看的 diff" body={d.unavailable_reason ?? '这份快照没有 diff。'} />} />}
+                {(d) => <>
+                  <DiffView diff={d.diff} annotations={annotations} location={pasted ? location : undefined}
+                    onOpenFinding={pasted || (r.independent_review && !standalone) ? undefined : (a) => navigate(fileLink(r.snapshot_id, a.finding))}
+                    emptyNote={<EmptyState compact title="没有可看的 diff" body={d.unavailable_reason ?? '这份快照没有 diff。'} />} />
+                  {pasted && d.diff !== null ? <details className="raw"><summary>补丁原文</summary><pre>{d.diff}</pre></details> : null}
+                </>}
               </ReadFrame>
             </Section>
           </>

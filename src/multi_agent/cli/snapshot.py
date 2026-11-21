@@ -280,6 +280,29 @@ def _diff(repo: Path, baseline: str, candidate: str) -> str:
     return result.decode("utf-8", errors="replace")
 
 
+def _repository_dir(repo: Path) -> Path:
+    if not isinstance(repo, Path):
+        raise TypeError("repository must be a Path")
+    try:
+        repo = repo.resolve(strict=True)
+    except OSError as error:
+        raise ValueError(f"repository cannot be opened: {error}") from error
+    if not repo.is_dir():
+        raise ValueError("repository must be a directory")
+    if "\n" in str(repo) or "\r" in str(repo):
+        raise ValueError("repository path contains a line ending")
+    return repo
+
+
+def _common_directory(repo: Path) -> str:
+    repository = (
+        _git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+        .decode("utf-8")
+        .removesuffix("\n")
+    )
+    return str(Path(repository).resolve())
+
+
 def freeze_repository(
     repo: Path,
     baseline: str,
@@ -293,28 +316,15 @@ def freeze_repository(
     """Freeze both commit trees, their diff, and supplied acceptance evidence."""
     _requirements(requirements, acceptance)
     _tests(tests, required_tests)
-    if not isinstance(repo, Path):
-        raise TypeError("repository must be a Path")
-    try:
-        repo = repo.resolve(strict=True)
-    except OSError as error:
-        raise ValueError(f"repository cannot be opened: {error}") from error
-    if not repo.is_dir():
-        raise ValueError("repository must be a directory")
-    if "\n" in str(repo) or "\r" in str(repo):
-        raise ValueError("repository path contains a line ending")
-    repository = (
-        _git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-        .decode("utf-8")
-        .removesuffix("\n")
-    )
+    repo = _repository_dir(repo)
+    repository = _common_directory(repo)
     baseline_id = _resolve_commit(repo, baseline)
     candidate_id = _resolve_commit(repo, candidate)
     files = _files(repo, baseline_id, "baseline") + _files(
         repo, candidate_id, "candidate"
     )
     return FrozenSnapshot(
-        repository=str(Path(repository).resolve()),
+        repository=repository,
         baseline=baseline_id,
         candidate=candidate_id,
         diff=_diff(repo, baseline_id, candidate_id),
@@ -327,14 +337,30 @@ def freeze_repository(
 
 
 def freeze_diff(
-    diff: str, requirements: str, acceptance: tuple[str, ...]
+    diff: str,
+    requirements: str,
+    acceptance: tuple[str, ...],
+    *,
+    repository: Path | None = None,
 ) -> FrozenSnapshot:
-    """Create a report-only input without repository or test provenance."""
+    """Freeze report-only text with optional Git common-directory ownership."""
     _requirements(requirements, acceptance)
     _string(diff, "diff")
     if len(diff.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
         raise ValueError("diff exceeds the snapshot byte limit")
-    return FrozenSnapshot(None, None, None, diff, requirements, acceptance, (), ())
+    return FrozenSnapshot(
+        None,
+        None,
+        None,
+        diff,
+        requirements,
+        acceptance,
+        (),
+        (),
+        bound_repository=_common_directory(_repository_dir(repository))
+        if repository is not None
+        else None,
+    )
 
 
 def materialize(snapshot: FrozenSnapshot, destination: Path) -> None:

@@ -70,7 +70,7 @@ def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
     if args is None:
         return None
     stored = args.copy()
-    for field in ("original_goal", "confirmed_goal", "requirements"):
+    for field in ("original_goal", "confirmed_goal", "requirements", "diff"):
         if field in args:
             stored[field] = {"length": len(args[field])}
     if "declarations" in args:
@@ -78,11 +78,10 @@ def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
             name: len(args["declarations"][name])
             for name in ("dependencies", "decisions")
         }
-    if "document" in args:
-        compact = json.dumps(
-            args["document"], ensure_ascii=False, separators=(",", ":")
-        )
-        stored["document"] = {"length": len(compact)}
+    for field in ("document", "tests", "acceptance"):
+        if field in args:
+            compact = json.dumps(args[field], ensure_ascii=False, separators=(",", ":"))
+            stored[field] = {"length": len(compact)}
     return stored
 
 
@@ -395,6 +394,9 @@ class EnvironmentJobs:
             "parent_id": item.get("parent_id", previous.get("parent_id")),
             "updated_at": updated_at,
         }
+        scope = item.get("scope", previous.get("scope"))
+        if scope:
+            self.navigation[key]["scope"] = scope
 
     def _accept(
         self, identifier: str, action: str, args: dict[str, Any] | None

@@ -2,7 +2,7 @@
 // the next step the readback offers. Buttons follow next_action and the gate fields only.
 
 import { useState } from 'react';
-import type { TaskView } from '../api/types';
+import type { ArtifactRef, TaskView } from '../api/types';
 import { useArchiveMode, useWorkspace } from '../api/workspace';
 import { shortId, timeText, VERIFICATION_LABEL } from '../app/labels';
 import { Link, to } from '../app/router';
@@ -10,6 +10,7 @@ import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
 import { ReadFrame } from '../components/ReadNote';
 import { TaskAttemptEvidence } from './TaskAttemptEvidence';
+import { TaskSessionLogs } from './SessionLogs';
 import { currentTaskReview, ReviewRetry, RoundSummary, useCommands, useSeats } from './bits';
 import { ArtifactLinks, Evidence, Facts, NextNote, Page, Section, useResource } from './common';
 
@@ -18,7 +19,7 @@ const PHASE: Record<string, string> = {
   planning_required: '需要先规划',
 };
 
-export function TaskPanel({ task, detail = false }: { task: TaskView; detail?: boolean }) {
+export function TaskPanel({ task, detail = false, sessionArtifacts }: { task: TaskView; detail?: boolean; sessionArtifacts?: readonly ArtifactRef[] }) {
   const ws = useWorkspace();
   const archive = useArchiveMode();
   const next = archive ? null : task.next_action;
@@ -69,6 +70,8 @@ export function TaskPanel({ task, detail = false }: { task: TaskView; detail?: b
           {kind === 'budget_exhausted' || kind === 'reconciliation_required' || (kind === 'user_decision' && !lastRound) ? <p className="action-why"><NextNote next={next} /></p> : null}
         </div>
       </Section>
+
+      {sessionArtifacts ? <TaskSessionLogs attempts={task.attempts} artifacts={sessionArtifacts} /> : null}
 
       <Section title="测试" note="工作台运行登记过的命令，不用模型。">
         {task.tests.length ? (
@@ -130,12 +133,12 @@ function TestLogs({ taskRunId, implementation, test }: { taskRunId: string; impl
 }
 
 export function TaskPage({ id }: { id: string }) {
-  const read = useResource<TaskView>('task', id, { implementation: 1 });
+  const read = useResource<TaskView>('task', id, { implementation: 1, session_logs: 1 });
   const task = read.data?.id === id ? read.data.data : null;
   return (
     <Page kicker={`实施 · ${shortId(id)}`} title="实施和审核">
       <ReadFrame read={{ ...read, data: task }} what="实施记录">
-        {(t) => <TaskPanel key={id} task={t} detail />}
+        {(t) => <TaskPanel key={id} task={t} detail sessionArtifacts={read.data?.artifacts ?? []} />}
       </ReadFrame>
     </Page>
   );

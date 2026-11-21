@@ -38,6 +38,7 @@ class FrozenSnapshot:
     tests: tuple[TestEvidence, ...]
     files: tuple[FrozenFile, ...]
     required_tests: tuple[tuple[str, ...], ...] = ()
+    bound_repository: str | None = None
 
     @property
     def snapshot_id(self) -> str:
@@ -48,7 +49,7 @@ class FrozenSnapshot:
 
     def to_dict(self) -> dict[str, Any]:
         """Return independent, JSON-native containers for the entire input."""
-        return {
+        result = {
             "repository": self.repository,
             "baseline": self.baseline,
             "candidate": self.candidate,
@@ -61,6 +62,9 @@ class FrozenSnapshot:
             "files": [asdict(item) for item in self.files],
             "required_tests": [list(command) for command in self.required_tests],
         }
+        if self.bound_repository is not None:
+            result["bound_repository"] = self.bound_repository
+        return result
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> "FrozenSnapshot":
@@ -83,4 +87,5 @@ class FrozenSnapshot:
             ),
             files=tuple(FrozenFile(**item) for item in value["files"]),
             required_tests=tuple(tuple(command) for command in value["required_tests"]),
+            bound_repository=value.get("bound_repository"),
         )

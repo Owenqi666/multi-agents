@@ -79,16 +79,24 @@ export function parseDiff(text: string): DiffFile[] {
   let hunk: DiffHunk | null = null;
   let oldNo = 0;
   let newNo = 0;
+  let oldEnd = 0;
+  let newEnd = 0;
   const lines = text.split('\n');
   if (lines[lines.length - 1] === '') lines.pop();
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     if (line.startsWith('diff --git ')) {
       const [a, b] = headerPaths(line.slice('diff --git '.length));
       file = { oldPath: a, newPath: b, status: 'modified', binary: false, similarity: null, modeChange: null, hunks: [] };
       files.push(file);
       hunk = null;
       continue;
+    }
+    const next = lines[index + 1];
+    if ((!file || (hunk && oldNo >= oldEnd && newNo >= newEnd)) && line.startsWith('--- ') && next?.startsWith('+++ ')) {
+      file = { oldPath: null, newPath: null, status: 'modified', binary: false, similarity: null, modeChange: null, hunks: [] };
+      files.push(file);
+      hunk = null;
     }
     if (!file) continue;
     if (hunk) {
@@ -102,13 +110,15 @@ export function parseDiff(text: string): DiffFile[] {
     if (h) {
       oldNo = Number(h[1]);
       newNo = Number(h[3]);
+      oldEnd = oldNo + Number(h[2] ?? 1);
+      newEnd = newNo + Number(h[4] ?? 1);
       hunk = { header: line, section: h[5] ?? '', lines: [] };
       file.hunks.push(hunk);
       continue;
     }
     hunk = null;
-    if (line.startsWith('--- ')) file.oldPath = side(line.slice(4));
-    else if (line.startsWith('+++ ')) file.newPath = side(line.slice(4));
+    if (line.startsWith('--- ')) file.oldPath = side(line.slice(4).split('\t')[0]!);
+    else if (line.startsWith('+++ ')) file.newPath = side(line.slice(4).split('\t')[0]!);
     else if (line.startsWith('new file mode')) file.status = 'added';
     else if (line.startsWith('deleted file mode')) file.status = 'deleted';
     else if (line.startsWith('rename from ')) { file.status = 'renamed'; file.oldPath = unquotePath(line.slice(12)); }
@@ -121,6 +131,10 @@ export function parseDiff(text: string): DiffFile[] {
     else if (line.startsWith('Binary files ') || line === 'GIT binary patch') file.binary = true;
   }
   for (const f of files) {
+    if (f.status === 'modified' && f.hunks.length) {
+      if (f.oldPath === null && f.newPath !== null) f.status = 'added';
+      if (f.newPath === null && f.oldPath !== null) f.status = 'deleted';
+    }
     if (f.status === 'added') f.oldPath = null;
     if (f.status === 'deleted') f.newPath = null;
   }

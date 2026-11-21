@@ -8,22 +8,23 @@ import os
 import re
 import stat
 from contextlib import nullcontext
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from multi_agent.adapters.runtime_decode import CodexReroute, codex_reroutes
 from multi_agent.cli.integration_cli import _view as integration_view
 from multi_agent.cli.integration_verification import verification_view
 from multi_agent.cli.project_stage import stage_view
 from multi_agent.cli.review_inputs import load_review_input
-from multi_agent.cli.runner import view_round
+from multi_agent.cli.runner import confirmation_seats, view_round
 from multi_agent.cli.snapshot import MAX_SNAPSHOT_BYTES, _diff, _git, _path
 from multi_agent.cli.task_cli import _plan_view, _task_view
 from multi_agent.cli.task_evidence import MAX_MANIFEST_BYTES
 from multi_agent.cli.task_review_cli import view_task_review
 from multi_agent.cli.task_test_cli import _existing_lease, view_task_test
 from multi_agent.cli.task_test_evidence import inspect_task_test_command
+from multi_agent.core.events import thaw_json
 from multi_agent.core.integration import IntegrationCandidate
 from multi_agent.core.review_input import (
     ExecutedReviewInput,
@@ -31,6 +32,8 @@ from multi_agent.core.review_input import (
     ReviewInput,
     review_source,
 )
+from multi_agent.core.snapshot import FrozenSnapshot
+from multi_agent.core.state import RoundStatus
 from multi_agent.store.integration_store import IntegrationStore
 from multi_agent.store.project_store import ProjectStore
 
@@ -40,6 +43,8 @@ from .workspace import Workspace
 _IDENTITY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
 _COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 _SHA256 = re.compile(r"[0-9a-f]{64}")
+_MODEL_SESSION_LOG = re.compile(r"(?:codex|claude)-[0-9a-f]{32}\.jsonl")
+_SESSION_LOG_KINDS = frozenset({"task", "review", "task-review"})
 _PROJECT_SCHEMA = {
     "project": 12,
     "goal": 12,
@@ -128,6 +133,11 @@ def _read_snapshot(store: IntegrationStore, identifier: str) -> ReviewInput:
     return value
 
 
+def _snapshot_repository(value: ReviewInput) -> str | None:
+    source = review_source(value)
+    return source.repository or source.bound_repository
+
+
 def _owned(
     store: _ResourceStore,
     common: str,
@@ -162,7 +172,7 @@ def _owned(
         snapshot = _read_snapshot(store, snapshot_id)
         if kind == "task-review" and not isinstance(snapshot, ExecutedReviewInput):
             raise KeyError(identifier)
-        repository = review_source(snapshot).repository
+        repository = _snapshot_repository(snapshot)
     else:
         match kind:
             case "project":
@@ -194,6 +204,8 @@ def _resource_options(kind: str, query: _Query) -> dict[str, str]:
     allowed = {"history"} if kind in _HISTORY else set()
     if kind in {"plan", "task"}:
         allowed.add("implementation")
+    if kind in _SESSION_LOG_KINDS:
+        allowed.add("session_logs")
     if kind == "task-test":
         allowed = {"implementation_attempt", "test_attempt"}
     options = _query(query, allowed)
@@ -201,6 +213,8 @@ def _resource_options(kind: str, query: _Query) -> dict[str, str]:
         raise ValueError("history must be 1")
     if "implementation" in options and options["implementation"] != "1":
         raise ValueError("implementation must be 1")
+    if "session_logs" in options and options["session_logs"] != "1":
+        raise ValueError("session_logs must be 1")
     return options
 
 
@@ -262,7 +276,21 @@ def _resource_data(
                 )
             return result
         if kind == "review":
-            return view_round(store, identifier, history=history)
+            view = view_round(store, identifier, history=history)
+            if "session_logs" in options:
+                snapshot = _read_snapshot(store, view["snapshot_id"])
+                independent = isinstance(snapshot, FrozenSnapshot)
+                view["independent_review"] = independent
+                view["can_confirm"] = (
+                    independent
+                    and workspace.archive is None
+                    and view["metadata"]["kind"] == "review"
+                    and view["status"] == RoundStatus.READY_FOR_ASSESSMENT
+                    and view["confirmation_round_id"] is None
+                    and len(view["seats"]) == 2
+                    and bool(confirmation_seats(store.load_round(identifier)))
+                )
+            return view
         if kind == "snapshot":
             value = _read_snapshot(store, identifier)
             return {"snapshot_id": value.snapshot_id, "input": value.to_dict()}
@@ -299,7 +327,7 @@ def _snapshot(workspace: Workspace, identifier: str) -> ReviewInput:
     database, common = _scope(workspace, "snapshot", identifier)
     with IntegrationStore.open_readonly(database) as store:
         value = _read_snapshot(store, identifier)
-    if review_source(value).repository != common:
+    if _snapshot_repository(value) != common:
         raise KeyError(identifier)
     return value
 
@@ -465,10 +493,15 @@ def _receipt_artifact(receipt: dict[str, Any]) -> _Artifact | None:
     return _Artifact(source.stem, digest, size, source, (identity[0], identity[1]))
 
 
+def _artifact_root(workspace: Workspace) -> Path:
+    return workspace.archive.path.parent if workspace.archive else workspace.data_dir
+
+
 def _relative_artifact(workspace: Workspace, path: Path) -> Path:
-    if not path.is_absolute() or not path.is_relative_to(workspace.data_dir):
-        raise KeyError("artifact is outside the workspace data directory")
-    relative = path.relative_to(workspace.data_dir)
+    root = _artifact_root(workspace)
+    if not path.is_absolute() or not path.is_relative_to(root):
+        raise KeyError("artifact is outside the workspace's evidence directory")
+    relative = path.relative_to(root)
     if not relative.parts or any(part == ".." for part in relative.parts):
         raise KeyError("artifact has an invalid registered path")
     return relative
@@ -487,7 +520,7 @@ def _sealed_bytes(
 ) -> bytes:
     relative = _relative_artifact(workspace, path)
     directory = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
-    fd = os.open(workspace.data_dir, directory)
+    fd = os.open(_artifact_root(workspace), directory)
     try:
         for part in relative.parts[:-1]:
             child = os.open(part, directory, dir_fd=fd)
@@ -725,6 +758,75 @@ def _task_test_artifacts(
             pass
 
 
+def _record_session_log(
+    workspace: Workspace, artifacts: dict[str, _Artifact], key: str, artifact: _Artifact
+) -> None:
+    source = artifact.source
+    if not isinstance(source, Path) or not _MODEL_SESSION_LOG.fullmatch(source.name):
+        return
+    try:
+        _relative_artifact(workspace, source)
+    except KeyError:
+        return
+    artifacts[key] = replace(artifact, stream="session")
+
+
+def _task_session_logs(
+    workspace: Workspace, identifier: str, task: dict[str, Any]
+) -> dict[str, _Artifact]:
+    artifacts: dict[str, _Artifact] = {}
+    for attempt in task["attempts"]:
+        number = attempt["runtime"]["number"]
+        logs = _task_log_artifacts(workspace, identifier, attempt)
+        for index, artifact in enumerate(logs, 1):
+            _record_session_log(
+                workspace, artifacts, f"session-task-{number}-{index}", artifact
+            )
+    return artifacts
+
+
+def _review_session_logs(
+    workspace: Workspace, identifier: str, round_view: dict[str, Any]
+) -> dict[str, _Artifact]:
+    artifacts: dict[str, _Artifact] = {}
+    with _ResourceStore.open_readonly(workspace.database) as store:
+        evidence = cast(dict[str, Any], thaw_json(store.load_execution(identifier)))
+    for seat_index, seat in enumerate(round_view["seats"], 1):
+        seat_key = seat["key"]
+        for attempt in seat["attempts"]:
+            number = attempt["number"]
+            record = evidence.get(seat_key, {}).get(str(number))
+            if not isinstance(record, dict):
+                continue
+            for index, receipt in enumerate(record.get("session_logs", ()), 1):
+                artifact = _receipt_artifact(receipt)
+                if artifact is None or not isinstance(artifact.source, Path):
+                    continue
+                parent = artifact.source.parent
+                if parent.parts[-4:] != (
+                    "logs",
+                    identifier,
+                    seat_key,
+                    str(number),
+                ) or str(parent) != record.get("log_dir"):
+                    continue
+                _record_session_log(
+                    workspace,
+                    artifacts,
+                    f"session-review-{seat_index}-{number}-{index}",
+                    artifact,
+                )
+    return artifacts
+
+
+def _session_logs(
+    workspace: Workspace, kind: str, identifier: str, value: dict[str, Any]
+) -> dict[str, _Artifact]:
+    if kind == "task":
+        return _task_session_logs(workspace, identifier, value)
+    return _review_session_logs(workspace, identifier, value)
+
+
 def _artifacts(
     workspace: Workspace, kind: str, identifier: str, value: dict[str, Any]
 ) -> dict[str, _Artifact]:
@@ -779,6 +881,14 @@ def _artifact_coordinates(key: str) -> dict[str, int]:
             }
         case ["seat", seat, index]:
             return {"seat": int(seat), "log_index": int(index)}
+        case ["session", "task", attempt, index]:
+            return {"implementation_attempt": int(attempt), "log_index": int(index)}
+        case ["session", "review", seat, attempt, index]:
+            return {
+                "seat": int(seat),
+                "review_attempt": int(attempt),
+                "log_index": int(index),
+            }
         case ["frozen", index, _stream]:
             return {"frozen_index": int(index)}
         case ["planner", index]:
@@ -816,6 +926,9 @@ def read_resource(
         if kind == "task-test"
         else {}
     )
+    artifacts = _artifacts(workspace, kind, identifier, data)
+    if "session_logs" in query:
+        artifacts.update(_session_logs(workspace, kind, identifier, data))
     return {
         "kind": kind,
         "id": identifier,
@@ -823,7 +936,11 @@ def read_resource(
         "artifacts": [
             {
                 "artifact_id": _artifact_id(
-                    kind, identifier, options, key, artifact.sha256
+                    kind,
+                    identifier,
+                    {"session_logs": ["1"]} if key.startswith("session-") else options,
+                    key,
+                    artifact.sha256,
                 ),
                 "key": key,
                 "coordinates": _artifact_coordinates(key),
@@ -831,7 +948,7 @@ def read_resource(
                 "byte_count": artifact.byte_count,
                 "sha256": artifact.sha256,
             }
-            for key, artifact in _artifacts(workspace, kind, identifier, data).items()
+            for key, artifact in artifacts.items()
         ],
     }
 
@@ -858,7 +975,8 @@ def read_artifact(
         if not (
             all(isinstance(item, str) for item in (kind, identifier, key, digest))
             and isinstance(selection, dict)
-            and set(selection) <= {"implementation_attempt", "test_attempt"}
+            and set(selection)
+            <= {"implementation_attempt", "test_attempt", "session_logs"}
             and all(
                 isinstance(value, list)
                 and len(value) == 1
@@ -891,7 +1009,12 @@ def read_artifact(
                 "lock_busy": True,
             }
         data = _resource_data(workspace, kind, identifier, selection)
-        artifact = _artifacts(workspace, kind, identifier, data).get(key)
+        sources = (
+            _session_logs(workspace, kind, identifier, data)
+            if key.startswith("session-") and "session_logs" in selection
+            else _artifacts(workspace, kind, identifier, data)
+        )
+        artifact = sources.get(key)
         if artifact is None or artifact.sha256 != digest:
             raise KeyError(artifact_id)
         source = artifact.source
@@ -910,7 +1033,7 @@ def read_artifact(
             else source[offset : offset + limit]
         )
     next_offset = offset + len(part)
-    return {
+    response = {
         "stream": artifact.stream,
         "text": part.decode("utf-8", errors="replace"),
         "offset": offset,
@@ -919,6 +1042,9 @@ def read_artifact(
         "sha256": artifact.sha256,
         "truncated": next_offset < artifact.byte_count,
     }
+    if key.startswith("session-"):
+        response["raw_base64"] = base64.b64encode(part).decode("ascii")
+    return response
 
 
 def _result_field(value: object, key: str) -> object:
@@ -934,6 +1060,7 @@ def _first_result_line(*values: object) -> str | None:
 
 def references(action: str, result: object) -> list[dict[str, str]]:
     """Collect explicit product IDs from normal and partially successful results."""
+    independent = action.startswith("review.")
     items: dict[tuple[str, str], dict[str, str]] = {}
     revised_integrations: dict[str, str] = {}
 
@@ -989,7 +1116,9 @@ def references(action: str, result: object) -> list[dict[str, str]]:
             target.removeprefix("refs/heads/") if isinstance(target, str) else None
         )
         review_parent = (
-            value.get("task_run_id") or value.get("integration_id") or parent
+            value.get("snapshot_id")
+            if independent
+            else value.get("task_run_id") or value.get("integration_id") or parent
         )
         for field, kind, owner, label in (
             ("project_id", "project", None, project_label),
@@ -1010,7 +1139,12 @@ def references(action: str, result: object) -> list[dict[str, str]]:
                 value.get("rebased_from") or value.get("stage_run_id"),
                 branch_label,
             ),
-            ("snapshot_id", "snapshot", value.get("round_id"), None),
+            (
+                "snapshot_id",
+                "snapshot",
+                None if independent else value.get("round_id"),
+                None,
+            ),
             (
                 "source_snapshot_id",
                 "snapshot",
@@ -1073,4 +1207,21 @@ def references(action: str, result: object) -> list[dict[str, str]]:
     visit(result)
     for child_id, source_id in revised_integrations.items():
         items["integration", child_id]["parent_id"] = source_id
+    if independent:
+        for (kind, _), item in items.items():
+            if kind == "snapshot":
+                item["scope"] = "independent_review"
+                item["label"] = (
+                    "粘贴补丁"
+                    if _result_field(result, "report_only") is True
+                    else "审核快照"
+                )
+            elif kind == "review":
+                item["scope"] = "independent_review"
+                metadata = _result_field(result, "metadata")
+                item["label"] = (
+                    "交叉确认"
+                    if _result_field(metadata, "kind") == "confirmation"
+                    else "独立审核"
+                )
     return list(items.values())

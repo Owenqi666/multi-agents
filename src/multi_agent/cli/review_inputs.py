@@ -34,6 +34,17 @@ from .task_test_evidence import (
 
 MAX_REVIEW_INPUT_BYTES = 128 * 1024 * 1024
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
+_SOURCE_FIELDS = {
+    "repository",
+    "baseline",
+    "candidate",
+    "diff",
+    "requirements",
+    "acceptance",
+    "tests",
+    "files",
+    "required_tests",
+}
 
 
 def _object(value: object, keys: set[str] | None = None) -> dict[str, Any]:
@@ -76,20 +87,7 @@ def _log(value: object) -> ExecutedLog:
 
 
 def _source(value: object) -> FrozenSnapshot:
-    raw = _object(
-        value,
-        {
-            "repository",
-            "baseline",
-            "candidate",
-            "diff",
-            "requirements",
-            "acceptance",
-            "tests",
-            "files",
-            "required_tests",
-        },
-    )
+    raw = _object(value, _SOURCE_FIELDS)
     for name in ("repository", "baseline", "candidate", "diff", "requirements"):
         _string(raw[name], f"review source {name}")
     _array(raw["acceptance"])
@@ -374,12 +372,34 @@ def _decode_integration_review(
     return result
 
 
+def _decode_bound_patch(raw: dict[str, Any], expected_id: str | None) -> FrozenSnapshot:
+    _object(raw, _SOURCE_FIELDS | {"bound_repository"})
+    repository = _string(raw["bound_repository"], "bound repository", nonempty=True)
+    path = PurePath(repository)
+    if path.anchor != "/" or ".." in path.parts or str(path) != repository:
+        raise ValueError("bound repository must be a canonical Git common directory")
+    has_commits = any(
+        raw[name] is not None for name in ("repository", "baseline", "candidate")
+    )
+    has_evidence = any(raw[name] != [] for name in ("tests", "files", "required_tests"))
+    if has_commits or has_evidence:
+        raise ValueError("a bound patch cannot contain commit or test evidence")
+    _string(raw["diff"], "diff")
+    _requirements(raw["requirements"], tuple(_array(raw["acceptance"])))
+    result = FrozenSnapshot.from_dict(raw)
+    if expected_id is not None and result.snapshot_id != expected_id:
+        raise ValueError("bound patch does not match its complete frozen hash")
+    return result
+
+
 def decode_review_input(
     value: object, *, expected_id: str | None = None
 ) -> ReviewInput:
     """Decode only stored bytes; this does not re-authorize a current source."""
     raw = _object(value)
     if "version" not in raw and "kind" not in raw:
+        if "bound_repository" in raw:
+            return _decode_bound_patch(raw, expected_id)
         return FrozenSnapshot.from_dict(raw)
     if raw.get("kind") == "executed_integration_review":
         try:

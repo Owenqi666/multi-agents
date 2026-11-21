@@ -11,7 +11,7 @@ import { candidatesFor, ModelPicker, type PickerChoice } from '../components/Mod
 import { Evidence } from './common';
 
 /** One or two review seats with different models, plus the auto-rework switch. */
-export function useSeats(ws: Workspace | null) {
+export function useSeats(ws: Workspace | null, { independent = false } = {}) {
   const [count, setCount] = useState<1 | 2>(2);
   const [a, setA] = useState<PickerChoice | null>(null);
   const [b, setB] = useState<PickerChoice | null>(null);
@@ -33,7 +33,7 @@ export function useSeats(ws: Workspace | null) {
       </div>
       <ModelPicker ws={ws} role="review" value={a} onChange={onA} label="审核席位 1" />
       {count === 2 ? <ModelPicker ws={ws} role="review" value={b} onChange={onB} label="审核席位 2" exclude={a?.model ?? null} /> : null}
-      <label className="check"><input type="checkbox" checked={autoRework} onChange={(e) => setAutoRework(e.target.checked)} /> 需要返工时自动返工、重测和复审（最多一次）</label>
+      {independent ? null : <label className="check"><input type="checkbox" checked={autoRework} onChange={(e) => setAutoRework(e.target.checked)} /> 需要返工时自动返工、重测和复审（最多一次）</label>}
     </div>
   );
   return { form, seats, valid, autoRework };
@@ -66,16 +66,17 @@ function retryableSeats(round: ReviewRound): string[] {
 }
 
 /** Retry the failed or unstarted seats in the frozen round that owns them. */
-export function ReviewRetry({ round, integrationId, onDone }: {
+export function ReviewRetry({ round, integrationId, independent = false, onDone }: {
   round: ReviewRound | null | undefined;
   integrationId?: string;
+  independent?: boolean;
   onDone?: (job: Job) => void;
 }) {
   if (!round) return null;
   const seatKeys = retryableSeats(round);
   if (!seatKeys.length) return null;
   return (
-    <ActionButton action={integrationId ? 'integration.retry_review' : 'task.retry_review'}
+    <ActionButton action={independent ? 'review.retry' : integrationId ? 'integration.retry_review' : 'task.retry_review'}
       label={`补跑失败的席位（${seatKeys.join('、')}）`}
       args={() => ({ ...(integrationId ? { integration_id: integrationId } : {}), round_id: round.round_id, seat_keys: seatKeys })}
       onDone={onDone} />

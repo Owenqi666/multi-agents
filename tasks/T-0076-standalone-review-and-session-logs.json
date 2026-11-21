@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0076",
   "goal": "用户能在网页对两个提交或粘贴的补丁独立审核，并按仓库、轮次、席位或实施尝试查看已归档的模型会话日志。",
-  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "baseline_commit": "6a3f7e2c4784bf0f12d2de9bd2084a5c50316e08",
   "write_scope": [
     "frontend/src/**",
     "frontend/e2e/**",

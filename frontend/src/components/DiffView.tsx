@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useEffect, useRef, type ReactNode } from 'react';
 import type { Finding } from '../api/types';
 import { parseDiff, type DiffFile, type DiffLine } from '../diff/parse';
 import { Badge } from './Badge';
@@ -14,6 +14,13 @@ export interface Annotation {
   finding: Finding;
   seat: string;
   anchor: 'old' | 'new';
+}
+
+export interface PatchLocation {
+  side: 'baseline' | 'candidate';
+  path: string;
+  start: number;
+  end: number;
 }
 
 function lineKey(anchor: 'old' | 'new', path: string | null, line: DiffLine): string | null {
@@ -43,14 +50,24 @@ function FindingRow({ a, onOpen }: { a: Annotation; onOpen?: (a: Annotation) => 
 }
 
 /** A unified diff rendered as text. Nothing from the diff is ever treated as markup. */
-export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote }: {
+export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote, location }: {
   diff: string | null;
   annotations?: Annotation[];
   onOpenFinding?: (a: Annotation) => void;
   emptyNote?: ReactNode;
+  location?: PatchLocation;
 }) {
+  const target = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    if (target.current) {
+      target.current.scrollIntoView?.({ block: 'center' });
+      target.current.focus({ preventScroll: true });
+    }
+  }, [diff, location]);
   if (diff === null) return <>{emptyNote}</>;
   const files = parseDiff(diff);
+  const targetOnNew = location?.side === 'candidate';
+  let targetFound = false;
   const byLine = new Map<string, Annotation[]>();
   for (const a of annotations) {
     const key = `${a.anchor}:${a.finding.path}:${a.finding.line_end}`;
@@ -87,10 +104,16 @@ export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote }: {
                         const kc = lineKey('new', f.newPath, l);
                         const kb = lineKey('old', f.oldPath, l);
                         const notes = [...(kc ? byLine.get(kc) ?? [] : []), ...(kb ? byLine.get(kb) ?? [] : [])];
-                        const hot = (kc && marked.has(kc)) || (kb && marked.has(kb));
+                        const selectedPath = targetOnNew ? f.newPath : f.oldPath;
+                        const selectedLine = targetOnNew ? l.new : l.old;
+                        const inRange = !!location && location.path === selectedPath && selectedLine !== null && selectedLine >= location.start && selectedLine <= location.end;
+                        const firstInRange = inRange && !targetFound;
+                        if (firstInRange) targetFound = true;
+                        const hot = inRange || (kc && marked.has(kc)) || (kb && marked.has(kb));
                         return (
                           <Fragment key={li}>
-                            <tr className={`dl dl-${l.kind}${hot ? ' hot' : ''}`} id={kc ? `L-${kc}` : undefined}>
+                            <tr className={`dl dl-${l.kind}${hot ? ' hot' : ''}`} id={kc ? `L-${kc}` : undefined}
+                              ref={firstInRange ? target : undefined} tabIndex={firstInRange ? -1 : undefined} aria-current={firstInRange ? 'location' : undefined}>
                               <td className="no">{l.old ?? ''}</td>
                               <td className="no">{l.new ?? ''}</td>
                               <td className="mk" aria-hidden="true">{l.kind === 'add' ? '+' : l.kind === 'del' ? '−' : ''}</td>
@@ -110,6 +133,7 @@ export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote }: {
           ) : null}
         </section>
       ))}
+      {location && !targetFound ? <p className="muted">补丁中没有 {location.path}:{location.start} 对应的行。</p> : null}
     </div>
   );
 }

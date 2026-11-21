@@ -1,7 +1,8 @@
 import { expect, test } from '@playwright/test';
-import type { IntegrationRecord } from '../src/api/types';
+import type { DirectStage, IntegrationRecord, ReviewRound, TaskView } from '../src/api/types';
 import { act, jobRequest, NetworkLog, OfflineEnv, readback } from './support';
 import { claim, directStage, GOAL, goalToPlan, integrationReview, leavesToIntegration, reviewCandidate } from './flow';
+import { checkSessionLog, sessionArtifacts, sessionResource } from './session-logs';
 
 test('accept：从目标走到接受，含一个直接阶段和一个分派阶段', async ({ page }) => {
   const env = await OfflineEnv.start('accept');
@@ -19,6 +20,13 @@ test('accept：从目标走到接受，含一个直接阶段和一个分派阶�
     await page.goBack();
     await claim(page, 'amount', 'direct');
     await directStage(page);
+    const direct = await readback<DirectStage>(page, page.url().replace('/stages/', '/api/resources/stage/'));
+    const task = await sessionResource<TaskView>(page, env.url, 'task', direct.task_run_id!);
+    const taskRound = await sessionResource<ReviewRound>(page, env.url, 'review', task.data.reviews.at(-1)!.round_id);
+    await page.goto(`${env.url}/tasks/${task.data.task_run_id}`);
+    const solLog = await checkSessionLog(page, env.url, sessionArtifacts(task, { implementation_attempt: 1 }), 'gpt-6.2-sol');
+    await page.goto(`${env.url}/reviews/${taskRound.data.round_id}`);
+    const taskReviewLog = await checkSessionLog(page, env.url, sessionArtifacts(taskRound, { seat: 1, review_attempt: 1 }), 'actual-claude');
     await page.goto(planUrl);
     await claim(page, 'summary', 'delegate');
     await leavesToIntegration(page);
@@ -27,6 +35,10 @@ test('accept：从目标走到接受，含一个直接阶段和一个分派阶�
     const first = await readback<IntegrationRecord>(page, integrationApi);
     const firstRound = first.reviews.at(-1)!;
     expect(firstRound.assessment?.status).toBe('ready');
+    const integrationRound = await sessionResource<ReviewRound>(page, env.url, 'review', firstRound.round_id);
+    await page.locator(`.round-head a[href="/reviews/${firstRound.round_id}"]`).click();
+    const integrationReviewLog = await checkSessionLog(page, env.url, sessionArtifacts(integrationRound, { seat: 1, review_attempt: 1 }), 'actual-claude');
+    await page.goBack();
     await act(page, '重新测试');
     const retested = await readback<IntegrationRecord>(page, integrationApi);
     expect(retested.test?.attempt).toBe(2);
@@ -61,6 +73,7 @@ test('accept：从目标走到接受，含一个直接阶段和一个分派阶�
     expect(net.lockViolations(), '作业未结束期间没有抢锁读取').toEqual([]);
     await net.record('accept', {
       result: 'passed', same_page_after_refresh: here, registered_logs: ['consultation', 'project-plan'],
+      session_logs: { sol: solLog, task_review: taskReviewLog, integration_review: integrationReviewLog },
       retest: { historical_round: firstRound.round_id, historical_test: firstRound.test_attempt,
         current_round: newRound.round_id, current_test: newRound.test_attempt, accepted_round: accepted.acceptance?.review_round_id },
     });

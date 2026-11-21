@@ -48,6 +48,7 @@ export function Facts({ rows }: { rows: [string, ReactNode][] }) {
 const ROUTE_OF: Record<string, string> = {
   project: 'projects', consultation: 'consultations', goal: 'goals', 'project-plan': 'plans', stage: 'stages',
   plan: 'task-plans', task: 'tasks', integration: 'integrations', review: 'reviews', 'task-review': 'reviews',
+  snapshot: 'snapshots',
 };
 
 /** A link to a record by kind and opaque id. */
@@ -57,9 +58,10 @@ export function RecordLink({ kind, id, label }: { kind: string; id: string; labe
   return base ? <Link href={to(base, id)}>{text}</Link> : <span>{text}</span>;
 }
 
-export function ArtifactLinks({ artifacts, label, locking = false }: {
+export function ArtifactLinks({ artifacts, label, linkText, locking = false }: {
   artifacts: readonly ArtifactRef[];
   label?: (artifact: ArtifactRef) => string;
+  linkText?: (artifact: ArtifactRef) => string;
   locking?: boolean;
 }) {
   if (!artifacts.length) return null;
@@ -71,7 +73,7 @@ export function ArtifactLinks({ artifacts, label, locking = false }: {
         if (locking) query.set('locking', '1');
         return (
           <li key={artifact.artifact_id}>
-            <Link href={`${to('logs', artifact.artifact_id)}?${query}`}>{title}</Link>
+            <Link href={`${to('logs', artifact.artifact_id)}?${query}`} aria-label={linkText ? title : undefined}>{linkText?.(artifact) ?? title}</Link>
             {artifact.byte_count !== undefined ? <span className="stamp"> {artifact.byte_count.toLocaleString('en-US')} 字节</span> : null}
           </li>
         );

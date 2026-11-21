@@ -6,6 +6,7 @@ import runpy
 import sys
 import time
 import tomllib
+from hashlib import sha256
 from pathlib import Path
 
 from offline_fixture import (
@@ -19,6 +20,7 @@ from offline_fixture import (
     PLANNING_QUESTION_REQUIREMENTS,
     READY,
     STANDALONE_PLAN,
+    STANDALONE_REVIEW,
     STATUS,
     TASK_EVIDENCE,
     WELCOME,
@@ -86,6 +88,8 @@ def _planning(frozen):
 
 
 def _review(root, scenario, provider, frozen):
+    if scenario == STANDALONE_REVIEW:
+        return _standalone_review(root, provider, frozen)
     if frozen.get("kind") == "executed_integration_review":
         if scenario == "dual-partial" and provider == "claude":
             first = root / "runtime" / f"{frozen['integration_id']}-first-claude-seat"
@@ -118,6 +122,60 @@ def _review(root, scenario, provider, frozen):
                 ],
             }, "success"
     return {"summary": "The offline candidate is ready.", "findings": []}, "success"
+
+
+def _standalone_review(root, provider, frozen):
+    for _ in range(15):
+        os.write(2, b"offline review diagnostic " * 28 + b"\n")
+    os.write(2, f"{provider} independent review payload end\n".encode())
+    if (path := Path("confirmation-targets.json")).is_file():
+        return {
+            "summary": f"{provider} confirmed the frozen patch line.",
+            "confirmations": [
+                {
+                    "target_seat": item["target_seat"],
+                    "finding_id": item["finding_id"],
+                    "decision": "agree",
+                    "reason": "The same line appears in this frozen patch.",
+                }
+                for item in json.loads(path.read_text())
+            ],
+        }, "success"
+
+    pasted = frozen["repository"] is None
+    if pasted and provider == "claude":
+        digest = sha256(Path("diff.patch").read_bytes()).hexdigest()
+        marker = root / "runtime" / f"review-claude-first-{digest}"
+        try:
+            marker.touch(exist_ok=False)
+        except FileExistsError:
+            pass
+        else:
+            return {}, "model-error"
+    side = "baseline" if pasted and provider == "codex" else "candidate"
+    line, quote = {
+        (True, "baseline"): (3, "AMOUNT = 0"),
+        (True, "candidate"): (5, "AMOUNT = 1"),
+        (False, "candidate"): (1, "AMOUNT = 1"),
+    }[pasted, side]
+    return {
+        "summary": f"{provider} checked the frozen amount.",
+        "findings": [
+            {
+                "id": f"offline-{side}-blocker",
+                "severity": "P1",
+                "category": "correctness",
+                "side": side,
+                "path": AMOUNT,
+                "line_start": line,
+                "line_end": line,
+                "quote": quote,
+                "title": f"Amount blocker on the {side} side",
+                "impact": "The amount does not satisfy the declared threshold.",
+                "rationale": "The frozen line contains the hard-coded amount.",
+            }
+        ],
+    }, "success"
 
 
 def _implement(root, scenario, prompt):

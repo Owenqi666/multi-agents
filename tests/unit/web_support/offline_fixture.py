@@ -7,7 +7,15 @@ import sys
 from pathlib import Path
 
 STANDALONE_PLAN = "standalone-plan"
-SCENARIOS = ("accept", "rework", "dual-partial", "cancel", STANDALONE_PLAN)
+STANDALONE_REVIEW = "standalone-review"
+SCENARIOS = (
+    "accept",
+    "rework",
+    "dual-partial",
+    "cancel",
+    STANDALONE_PLAN,
+    STANDALONE_REVIEW,
+)
 AMOUNT = "backend/amount.py"
 STATUS = "frontend/status.js"
 BANNER = "frontend/banner.js"
@@ -163,6 +171,24 @@ def create_fixture(root: Path, scenario: str) -> dict[str, str]:
                 "-c",
                 "user.email=offline@example.invalid",
                 *command,
+            ],
+            cwd=repository,
+            env=env,
+            check=True,
+        )
+    if scenario == STANDALONE_REVIEW:
+        (repository / AMOUNT).write_text("AMOUNT = 1\n", encoding="utf-8")
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                "user.name=Offline Fixture",
+                "-c",
+                "user.email=offline@example.invalid",
+                "commit",
+                "--quiet",
+                "-am",
+                "Change the synthetic review candidate",
             ],
             cwd=repository,
             env=env,

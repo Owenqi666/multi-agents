@@ -56,9 +56,23 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 - `usage_evidence` 为 `null` 或 `{source,counts}`。使用该次尝试最后一条已应用的用量事件。Codex 的 `total.*` 是该线程累计值，`last.*` 是最后一次报告的用量。两个口径分别显示。Claude 的 `client_estimated_cost_usd` 是客户端估算，包含报告值为零的情况。
 - `runtime_reroutes` 为 `null` 或按报告顺序排列的 `{source,from_model,to_model,reason}` 列表。Codex 项来自通过该尝试凭据核验的原始日志，只纳入相同线程和回合的 `model/rerouted`。核验成功但未记录改派时返回空列表。缺少已登记的日志、线程回合或证据不能核验时为 `null`。工作台的备选决定在派发记录里查看。
 
+### 独立代码审核
+
+从「审核」可冻结提交对或粘贴的补丁。提交对可带用户提供的测试证据 `{required_commands:[argv],results:[{commit,command,exit_code,log}]}`。服务只保存这些声明，审核页面标记其来源。粘贴补丁保留原始文本和需求。服务从绑定仓库解析 Git common dir，作为 `bound_repository` 进入已冻结快照的内容哈希。同一补丁在两个仓库各有独立快照。没有可靠仓库归属的旧粘贴快照只留在原数据库。
+
+冻结后打开同一个 `snapshot_id` 发起单席或双席审核。双席使用两个不同模型。补跑按原 `round_id` 选择失败席位，继续使用原快照和原配置。若双席均已出具报告且有可交叉确认的阻塞意见，可从父轮发起确认。结论按 `assessment.status` 与审核意见展示。即使子进程退出码为 0，P0 或 P1 仍可以阻塞接受。粘贴补丁可定位意见指向的旧侧或新侧补丁行，其文件引用保持报告原有的核验状态。
+
+`GET /api/runs?kind=snapshot` 与 `GET /api/runs?kind=review` 返回新独立审核登记时，条目有 `scope:"independent_review"`。轮次的 `parent_id` 是对应的快照 ID。快照和轮次可通过直接链接读回。只读归档开放已有的资源和日志，禁止提交审核动作。
+
+### 模型会话日志
+
+`GET /api/resources/{task,task-review,review}/{id}?session_logs=1` 额外列出可用的模型回合日志。任务按实施尝试分别登记。审核按轮次、席位和席位尝试分别登记，经由 `review` 打开单任务、集成或独立审核轮均可查看。独立轮次的同一读取还返回 `independent_review` 和 `can_confirm`，后者基于父轮的实际状态和可确认意见。
+
+日志句柄沿用 `/api/artifacts/{id}`。模型会话每页附 `raw_base64`，按偏移顺序拼接即可处理跨页的 UTF-8 字符。`byte_count` 和 `sha256` 对应完整的已封存日志。每页重新核验仓库归属、已登记路径、文件身份、长度和摘要。日志被移动、改写或超出既有大小上限时，页面无法读出内容。旧运行缺少已封存凭据时，详情提示没有可读的会话记录。冻结的测试输出继续作为独立条目保留。
+
 ### 找回作业、取消和并发
 
-新作业的 `args` 记录提交的业务字段。`original_goal`、`confirmed_goal` 和 `requirements` 各用 `{"length":字符数}` 代替，`document.length` 计算紧凑 JSON 的字符数，`declarations` 保存依赖与决定的条数。只在对应动作的作业参数中做这项缩减，领域回执仍按原契约返回。四个 UTC ISO 8601 字段分别记录受理（`created_at`）、开始（`started_at`）、请求取消（`cancel_requested_at`）和观察到结束（`finished_at`）的时刻。尚未发生或缺少证据时为 `null`。CLI 退出后，`stderr_tail` 取 stderr 最后 8192 个原始字节，以 UTF-8 替换解码，空 stderr 为 `""`。运行中和缺字段的旧记录均返回 `null`。刷新页面后先查作业列表，再按原 `job_id` 恢复轮询。
+新作业的 `args` 记录提交的业务字段。`original_goal`、`confirmed_goal`、`requirements` 和 `diff` 各用 `{"length":字符数}` 代替。`document`、`tests` 和 `acceptance` 记录紧凑 JSON 的字符数。`declarations` 保存依赖与决定的条数。只在对应动作的作业参数中做这项缩减，领域回执仍按原契约返回。四个 UTC ISO 8601 字段分别记录受理（`created_at`）、开始（`started_at`）、请求取消（`cancel_requested_at`）和观察到结束（`finished_at`）的时刻。尚未发生或缺少证据时为 `null`。CLI 退出后，`stderr_tail` 取 stderr 最后 8192 个原始字节，以 UTF-8 替换解码，空 stderr 为 `""`。运行中和缺字段的旧记录均返回 `null`。刷新页面后先查作业列表，再按原 `job_id` 恢复轮询。
 
 任何一个 CLI 作业处于 `queued`、`running` 或 `cancelling` 时，提交第二个 CLI 作业返回 HTTP 409，错误码 `busy`，现有作业的 ID 在 `error.details.active_job_id`。请求不会排队。取消回执说明停止请求已登记，需继续轮询到 `finished`，以真实退出码和领域回执判断结果。本机在假 Fable 已进入规划回合后取消 `project.plan`，观察到退出码 1、`result.status:"failed"`、`result.error.failure_category:"cancelled"`、`stderr_tail:""`。服务重启时失去控制的作业记为 `interrupted`。环境检查可以与 CLI 作业同时运行，每个供应商一次。
 
@@ -80,6 +94,8 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | 任务与集成测试命令 | `test-<测试尝试>-<命令序号>-<n>` | `{test_attempt,sequence,log_index}` |
 | 需求咨询席位 | `seat-<席位>-<i>` | `{seat,log_index}` |
 | 审核冻结的测试输出 | `frozen-<i>-<stream>` | `{frozen_index}` |
+| 实施会话 | `session-task-<尝试>-<i>` | `{implementation_attempt,log_index}` |
+| 审核会话 | `session-review-<席位序号>-<尝试>-<i>` | `{seat,review_attempt,log_index}`，席位序号从 1 起，与该轮 `seats` 顺序对应 |
 | 规划 | `planner-<i>` | `{log_index}` |
 
 `GET /api/diffs/task/{id}?against=parent` 和 `GET /api/diffs/integration/{id}?against=parent` 返回从 `parent_candidate` 到当前 `candidate` 的 diff，`baseline` 保留原始基线。任务返工使用当前实施尝试记录的来源候选。修订集成先查 `rebased_from`，其次只采用直接生成本次子集成的返工记录。无父候选、候选未核验或作业占锁时，`diff` 为 `null`，分别返回 `no_parent`、`not_verified` 或 `lock_busy` 及对应的 `unavailable_reason`。省略查询参数仍读从原基线算起的累计 diff，快照 diff 使用原接口。
@@ -160,6 +176,10 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | `task.review` | `task_run_id,implementation_attempt,test_attempt,seats,auto_rework?` | `task-review run`。`round_id,snapshot_id` 和单审或双审结果。 |
 | `task.retry_review` | `round_id,seat_keys?` | `task-review retry`。原轮次与重试结果。 |
 | `task.confirm`、`task.rework` | `round_id` | `task-review confirm` 或 `task rework`。对应确认轮或返工实施。 |
+| `review.freeze` | `requirements,acceptance`，另选 `baseline,candidate,tests?` 或 `diff` | 顶层 `freeze`。提交模式用绑定仓库，粘贴模式带服务提供的 `--diff-repository`。返回 `snapshot_id`。 |
+| `review.run` | `snapshot_id,seats` | 顶层 `run`。返回对应的 `round_id` 和席位结论。 |
+| `review.retry` | `round_id,seat_keys?` | 顶层 `retry`。同轮只补失败席位，保留成功结果。 |
+| `review.confirm` | `round_id` | 顶层 `confirm`。在父轮的冻结快照上发起交叉确认。 |
 | `integration.create` | `task_run_ids,target` | `integration create`。显式选择成员的通用集成。 |
 | `integration.test` | `integration_id` | `integration test`。覆盖冻结目标规则中的完整注册测试。 |
 | `integration.review` | `integration_id,seats,auto_rework?,test_attempt?` | `integration review`。同一集成候选的审核与快照。 |

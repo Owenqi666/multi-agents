@@ -10,6 +10,9 @@ from pathlib import Path
 import pytest
 
 from multi_agent.cli import snapshot as boundary
+from multi_agent.cli.main import main
+from multi_agent.cli.review_inputs import decode_review_input
+from multi_agent.cli.runner import ensure_external
 from multi_agent.cli.snapshot import freeze_diff, freeze_repository, materialize
 from multi_agent.core.snapshot import FrozenFile, FrozenSnapshot
 from multi_agent.core.snapshot import TestEvidence as Evidence
@@ -298,12 +301,109 @@ def test_diff_only_has_no_repository_or_test_evidence() -> None:
     value = freeze_diff("--- a/a\n+++ b/a\n", REQUIREMENTS, ACCEPTANCE)
     assert value.repository is value.baseline is value.candidate is None
     assert value.files == value.tests == value.required_tests == ()
+    assert "bound_repository" not in value.to_dict()
     assert FrozenSnapshot.from_dict(value.to_dict()) == value
     assert freeze_diff("", REQUIREMENTS, ACCEPTANCE).diff == ""
     with pytest.raises(ValueError):
         freeze_diff("diff", "", ACCEPTANCE)
     with pytest.raises(ValueError):
         freeze_diff("diff", REQUIREMENTS, ())
+
+
+def test_bound_patch_cli_preserves_text_and_shares_identity_only_with_linked_worktree(
+    repository, tmp_path, capsys
+) -> None:
+    repo, baseline, _ = repository
+    linked = tmp_path / "linked"
+    git(repo, "worktree", "add", "--detach", str(linked), baseline)
+    other = tmp_path / "other"
+    other.mkdir()
+    git(other, "init", "--quiet", "--template=")
+    diff = tmp_path / "paste.diff"
+    patch = "--- a/a\r\n+++ b/a\r\n@@ -1 +1 @@\r\n-old\r\n+新\r\n"
+    diff.write_bytes(patch.encode())
+    requirements = tmp_path / "requirements.txt"
+    requirement_text = "保留原文\r\n"
+    requirements.write_bytes(requirement_text.encode())
+    arguments = ["--data-dir", str(tmp_path / "data")]
+    inputs = ["--requirements", str(requirements), "--acceptance", "更新文件"]
+
+    def freeze_patch(root):
+        assert (
+            main(
+                [
+                    *arguments,
+                    "freeze",
+                    "--diff",
+                    str(diff),
+                    "--diff-repository",
+                    str(root),
+                    *inputs,
+                ]
+            )
+            == 0
+        )
+        return json.loads(capsys.readouterr().out)
+
+    frozen = freeze_patch(repo)
+    assert frozen["report_only"]
+    assert frozen["bound_repository"] == str((repo / ".git").resolve())
+    assert frozen == freeze_patch(linked)
+    assert frozen["snapshot_id"] != freeze_patch(other)["snapshot_id"]
+
+    assert main([*arguments, "snapshot", frozen["snapshot_id"]]) == 0
+    stored = json.loads(capsys.readouterr().out)["input"]
+    assert stored["diff"] == patch
+    assert stored["requirements"] == requirement_text
+    assert stored["repository"] is stored["baseline"] is stored["candidate"] is None
+    assert stored["tests"] == stored["files"] == stored["required_tests"] == []
+    snapshot = decode_review_input(stored, expected_id=frozen["snapshot_id"])
+    ensure_external(tmp_path / "data", snapshot)
+    with pytest.raises(ValueError, match="outside the target repository"):
+        ensure_external(repo / "data", snapshot)
+    with pytest.raises(ValueError, match="complete frozen hash"):
+        decode_review_input(
+            {**stored, "bound_repository": str((other / ".git").resolve())},
+            expected_id=frozen["snapshot_id"],
+        )
+    with pytest.raises(ValueError, match="cannot contain commit or test evidence"):
+        decode_review_input({**stored, "candidate": baseline})
+    with pytest.raises(ValueError, match="canonical Git common directory"):
+        decode_review_input({**stored, "bound_repository": "relative/.git"})
+
+    assert (
+        main(
+            [
+                *arguments,
+                "freeze",
+                "--repo",
+                str(repo),
+                "--diff-repository",
+                str(other),
+                *inputs,
+            ]
+        )
+        == 2
+    )
+    assert "--diff-repository requires --diff" in capsys.readouterr().err
+    archive_data = repo / ".git" / "review-data"
+    assert (
+        main(
+            [
+                "--data-dir",
+                str(archive_data),
+                "freeze",
+                "--diff",
+                str(diff),
+                "--diff-repository",
+                str(repo),
+                *inputs,
+            ]
+        )
+        == 2
+    )
+    assert "outside the repository Git metadata" in capsys.readouterr().err
+    assert not archive_data.exists()
 
 
 def test_empty_tree_and_submodule_metadata(tmp_path) -> None:

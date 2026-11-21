@@ -13,7 +13,7 @@ from multi_agent.store import ReviewStore
 
 from .errors import report_refusal, report_unexpected_error, structured_errors
 from .review_inputs import load_review_input
-from .snapshot import _git, freeze_diff, freeze_repository
+from .snapshot import _common_directory, _git, freeze_diff, freeze_repository
 
 
 def read_text(path: Path) -> str:
@@ -112,6 +112,9 @@ def parser() -> argparse.ArgumentParser:
     source = freeze.add_mutually_exclusive_group(required=True)
     source.add_argument("--repo", type=Path)
     source.add_argument("--diff", type=Path)
+    freeze.add_argument(
+        "--diff-repository", type=Path, help="bind a pasted patch to a Git repository"
+    )
     freeze.add_argument("--baseline")
     freeze.add_argument("--candidate")
     freeze.add_argument("--requirements", type=Path, required=True)
@@ -163,7 +166,6 @@ def parser() -> argparse.ArgumentParser:
 
 
 def freeze_input(args: argparse.Namespace, store: ReviewStore) -> dict[str, Any]:
-    requirements = read_text(args.requirements)
     acceptance = tuple(args.acceptance)
     if args.repo is not None:
         if args.baseline is None or args.candidate is None:
@@ -173,7 +175,7 @@ def freeze_input(args: argparse.Namespace, store: ReviewStore) -> dict[str, Any]
             args.repo,
             args.baseline,
             args.candidate,
-            requirements,
+            read_text(args.requirements),
             acceptance,
             evidence,
             required_tests=required,
@@ -185,9 +187,14 @@ def freeze_input(args: argparse.Namespace, store: ReviewStore) -> dict[str, Any]
             or args.tests is not None
         ):
             raise ValueError("diff-only input cannot include commit or test evidence")
-        snapshot = freeze_diff(read_text(args.diff), requirements, acceptance)
+        snapshot = freeze_diff(
+            args.diff.read_bytes().decode("utf-8"),
+            args.requirements.read_bytes().decode("utf-8"),
+            acceptance,
+            repository=args.diff_repository,
+        )
     store.save_snapshot(snapshot.snapshot_id, snapshot.to_dict())
-    return {
+    result: dict[str, Any] = {
         "snapshot_id": snapshot.snapshot_id,
         "repository": snapshot.repository,
         "baseline": snapshot.baseline,
@@ -197,6 +204,9 @@ def freeze_input(args: argparse.Namespace, store: ReviewStore) -> dict[str, Any]
         "test_records": len(snapshot.tests),
         "required_commands": snapshot.required_tests,
     }
+    if snapshot.bound_repository is not None:
+        result["bound_repository"] = snapshot.bound_repository
+    return result
 
 
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
@@ -205,12 +215,12 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
         return dispatch_project(args)
     repository = getattr(args, "repo", None)
+    if args.command == "freeze" and args.diff_repository is not None:
+        if args.diff is None:
+            raise ValueError("--diff-repository requires --diff")
+        repository = args.diff_repository
     if repository is not None:
-        common = Path(
-            _git(repository, "rev-parse", "--path-format=absolute", "--git-common-dir")
-            .decode()
-            .rstrip("\n")
-        ).resolve()
+        common = Path(_common_directory(repository))
         if args.data_dir.expanduser().resolve().is_relative_to(common):
             raise ValueError(
                 "data directory must be outside the repository Git metadata"

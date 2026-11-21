@@ -116,6 +116,7 @@ export interface RunItem {
   label: string;
   parent_id: Id | null;
   updated_at: string;
+  scope?: string;
 }
 
 export interface Project {
@@ -142,6 +143,7 @@ export interface ArtifactPage {
   sha256?: string | null;
   truncated?: boolean;
   text: string | null;
+  raw_base64?: string;
   lock_busy?: boolean;
 }
 
@@ -163,6 +165,31 @@ export interface FrozenFile {
   text: string | null;
   oid: string;
   mode: string;
+}
+
+export interface UserTestEvidence {
+  required_commands: string[][];
+  results: { commit: string; command: string[]; exit_code: number; log: string }[];
+}
+
+export interface StandaloneSnapshotInput {
+  kind?: string;
+  baseline: string | null;
+  candidate: string | null;
+  diff: string;
+  requirements: string;
+  acceptance: string[];
+  tests: UserTestEvidence['results'];
+  required_tests: string[][];
+  files: Pick<FrozenFile, 'side' | 'path'>[];
+}
+
+export interface ReviewSnapshot {
+  snapshot_id: Id;
+  input: StandaloneSnapshotInput | {
+    kind: 'executed_task_review' | 'executed_integration_review';
+    source: Record<string, unknown>;
+  };
 }
 
 // ---- Project layer -------------------------------------------------------------------
@@ -415,6 +442,8 @@ export interface ReviewRound {
   confirmation_round_id?: Id | null;
   verification?: string;
   source_current?: boolean;
+  independent_review?: boolean;
+  can_confirm?: boolean;
 }
 
 export interface TaskView {
