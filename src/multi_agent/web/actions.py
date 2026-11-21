@@ -22,6 +22,8 @@ _ADVISORY = frozenset(("astra", "fable"))
 _LEAF = frozenset(("terra", "sonnet"))
 _IMPLEMENTATION = _LEAF | {"sol"}
 _REVIEW = _ADVISORY | _IMPLEMENTATION | {"opus"}
+_DRAFT = frozenset(("fable", "opus", "sonnet"))
+_PLAN_REVIEW = frozenset(("astra", "sol", "terra"))
 
 
 class UnknownAction(ValueError):
@@ -275,6 +277,10 @@ def _stage(command: _Command, action: str) -> None:
                     *_role(command.args["implementation"], _LEAF, implementation=True),
                 )
             )
+        if "card_review" in command.args:
+            command.argv.extend(
+                ("--card-review", *_role(command.args["card_review"], _REVIEW))
+            )
         command.baseline()
         command.boolean("review_only")
         command.boolean("refreeze")
@@ -285,6 +291,54 @@ def _stage(command: _Command, action: str) -> None:
             raise ActionConflict(
                 "the stage needs a verified candidate for every delegated leaf"
             )
+
+
+def _planning_declarations(value: object) -> str:
+    declarations = _fields(value, ("dependencies", "decisions"))
+    entries = {
+        "dependencies": ("task_id", "baseline_commit", "source", "detail"),
+        "decisions": ("question", "resolution", "source", "detail"),
+    }
+    for name, fields in entries.items():
+        for item in _array(declarations[name], name, minimum=0):
+            declaration = _fields(item, fields)
+            for key in fields:
+                _string(declaration[key], key, nonempty=True)
+    return json.dumps(declarations, ensure_ascii=False, allow_nan=False)
+
+
+def _planning(command: _Command, action: str) -> None:
+    if action == "plan.retry":
+        identifier = _identifier(command.args["planning_run_id"], "planning_run_id")
+        plan = read_resource(
+            command.workspace, "plan", identifier, {"implementation": ["1"]}
+        )["data"]
+        if not plan["retry_configurable"]:
+            raise ActionConflict(
+                "the standalone plan cannot be retried in its current state"
+            )
+        command.storage()
+        command.argv.extend(("--retry", identifier))
+        return
+
+    command.storage(repository=True, runtime_directory=True)
+    command.baseline()
+    command.text_file("requirements")
+    for name, provider, families in (
+        ("draft", "claude", _DRAFT),
+        ("plan_review", "codex", _PLAN_REVIEW),
+    ):
+        if name in command.args:
+            role = _fields(command.args[name], ("model", "effort"))
+            _, model, effort = _role({"provider": provider, **role}, families)
+            command.argv.extend((_flag(name), model, effort))
+    if "declarations" in command.args:
+        command.input_file(
+            "declarations",
+            ".json",
+            _planning_declarations(command.args["declarations"]),
+        )
+    command.bins()
 
 
 def _task_run(command: _Command, action: str) -> None:
@@ -408,7 +462,7 @@ _ACTIONS: dict[str, _Spec] = {
         "project stage leaf",
         _stage,
         ("stage_run_id", "card_id"),
-        ("implementation", "baseline", "review_only", "refreeze"),
+        ("implementation", "card_review", "baseline", "review_only", "refreeze"),
     ),
     "project.stage.integrate": (
         "project stage integrate",
@@ -416,6 +470,13 @@ _ACTIONS: dict[str, _Spec] = {
         ("stage_run_id",),
         ("target",),
     ),
+    "plan.create": (
+        "task plan",
+        _planning,
+        ("baseline", "requirements"),
+        ("draft", "plan_review", "declarations"),
+    ),
+    "plan.retry": ("task plan", _planning, ("planning_run_id",), ()),
     "task.run": ("task run", _task_run, ("planning_run_id",), _STRATEGY),
     "task.retry": ("task run", _task_run, ("planning_run_id",), ()),
     "task.run_batch": ("task run-batch", _task_run, ("planning_run_ids",), _STRATEGY),

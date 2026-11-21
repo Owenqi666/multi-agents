@@ -134,16 +134,67 @@ def test_delegated_stage_split_projects_two_leaves_and_verifies_exact_integratio
 
     invalid = helpers.module_cli(*leaf_args, first_id, *executor, first_model, "ultra")
     assert invalid.returncode == 2 and "effort" in invalid.stderr
+    same_as_drafter = helpers.module_cli(
+        *leaf_args,
+        first_id,
+        *executor,
+        first_model,
+        "high",
+        "--card-review",
+        "codex",
+        "gpt-6.2-sol",
+        "high",
+        "--review-only",
+    )
+    assert (
+        same_as_drafter.returncode == 2 and "distinct model" in same_as_drafter.stderr
+    )
     assert helpers.successful(*show_args) == split
     assert sum(item["kind"] == "split" for item in helpers.records(wire)) == 1
     assert all(item["kind"] != "leaf-review" for item in helpers.records(wire))
 
-    first, second = [
-        helpers.successful(
-            *leaf_args, card_id, *executor, model, "high", "--review-only"
-        )
-        for card_id, model in ((first_id, first_model), (second_id, second_model))
-    ]
+    fable = {"provider": "claude", "model": "claude-fable-5-2", "effort": "high"}
+    opus = {"provider": "claude", "model": "claude-opus-5-5", "effort": "high"}
+    helpers.configure(claude, mode="model-error")
+    failed = helpers.successful(
+        *leaf_args,
+        first_id,
+        *executor,
+        first_model,
+        "high",
+        "--card-review",
+        "claude",
+        "claude-fable-5-2",
+        "high",
+        "--review-only",
+        code=1,
+    )
+    assert failed["task_run_id"] is None and not failed["review_ready"]
+    assert failed["planning"]["phase"] == "failed"
+    helpers.configure(claude, mode="success")
+    change = helpers.module_cli(
+        *leaf_args,
+        first_id,
+        "--card-review",
+        "claude",
+        "claude-opus-5-5",
+        "high",
+        "--review-only",
+    )
+    assert change.returncode == 2 and "exact card reviewer" in change.stderr
+    first = helpers.successful(*leaf_args, first_id, "--review-only")
+    second = helpers.successful(
+        *leaf_args, second_id, *executor, second_model, "high", "--review-only"
+    )
+    assert first["planning_run_id"] == failed["planning_run_id"]
+    assert (
+        first["planning"]["attempts"]["review"][:1]
+        == failed["planning"]["attempts"]["review"]
+    )
+    assert [
+        row["request"]["request"] for row in first["planning"]["attempts"]["review"]
+    ] == [fable, fable]
+    assert second["planning"]["attempts"]["review"][0]["request"]["request"] == opus
     pending = helpers.successful(*show_args)
     assert all(
         leaf["review_ready"] and leaf["task_run_id"] is None
@@ -186,7 +237,23 @@ def test_delegated_stage_split_projects_two_leaves_and_verifies_exact_integratio
     ]
 
     captured = helpers.records(wire)
-    reviews = [item for item in captured if item["kind"] == "leaf-review"]
+    review_runs = [item for item in captured if item["kind"] == "leaf-review"]
+    assert [item["input"]["review_request"] for item in review_runs] == [
+        fable,
+        fable,
+        opus,
+    ]
+    reviewer_argv = [
+        item["argv"]
+        for item in captured
+        if item["kind"] == "spawn" and item["argv"][:1] == ["-p"]
+    ]
+    assert [argv[argv.index("--model") + 1] for argv in reviewer_argv] == [
+        fable["model"],
+        fable["model"],
+        opus["model"],
+    ]
+    reviews = review_runs[1:]
     launches = helpers.records(workflow.base / "implementation-wire.jsonl")
     deliveries = [item for item in launches if item["kind"] == "implementation"]
     assert len(reviews) == len(deliveries) == 2

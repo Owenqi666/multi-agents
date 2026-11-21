@@ -23,6 +23,7 @@ import { useIntegrationHistory } from '../stage/integrationLineage';
 import { belongsToStage } from '../stage/jobScope';
 import { Stage } from '../stage/Stage';
 import { TaskPanel } from './TaskPage';
+import { PlanningAttempts } from './PlanningAttempts';
 import { Evidence, Facts, NextNote, Page, Raw, Section, useResource } from './common';
 
 function Gate({ ok, label }: { ok: boolean; label: string }) {
@@ -112,6 +113,8 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
   const archive = useArchiveMode();
   const [exec, setExec] = useState<PickerChoice | null>(null);
   const [stop, setStop] = useState(true);
+  const [overrideReview, setOverrideReview] = useState(false);
+  const [review, setReview] = useState<PickerChoice | null>(null);
   const onExec = useCallback((v: PickerChoice | null) => setExec(v), []);
   const planning = nz(leaf.planning);
   const impl = nz(leaf.implementation);
@@ -119,9 +122,15 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
   const last = impl?.attempts[impl.attempts.length - 1];
   const claimed = planning !== null;
   const waiting = leaf.unmet_dependencies.length > 0;
-  const canRefreeze = claimed && !leaf.review_ready && !waiting && upstreamChanged(leaf, stage.leaves);
+  const canRefreeze = claimed && !leaf.task_run_id && !leaf.review_ready && !waiting && upstreamChanged(leaf, stage.leaves);
   const baseline = planning?.card?.baseline_commit;
   const req = requestFrom(ws, 'implementation', exec);
+  const stageInput = stage.planning.details?.input;
+  const frozenReview = planning?.details?.input?.review_request;
+  const reviewer = overrideReview ? requestFrom(ws, 'review', review) : null;
+  const budget = planning?.budget?.review ?? (frozenReview ? planning?.budget?.[frozenReview.provider] : undefined);
+  const canRetryReview = !leaf.task_run_id && !waiting && !leaf.review_ready && !impl?.attempts.length && planning?.next_action?.kind === 'plan_retry'
+    && ['awaiting_review', 'failed', 'cancelled'].includes(planning.phase) && (budget?.remaining ?? 1) > 0;
   return (
     <li className="leaf">
       <div className="leaf-head">
@@ -134,17 +143,33 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
       </div>
       {leaf.blocked_reason ? <p className="muted">{leaf.blocked_reason}</p> : null}
       {executor ? <p className="row"><span className="stamp">执行者</span>{last ? <Evidence reportedModel={last.runtime?.reported_model} reportedEffort={last.runtime?.reported_effort} request={executor} /> : <span>请求 {executor.model} · {executor.effort}</span>}</p> : null}
-      {archive ? null : <div className="form-actions">
+      {planning ? <PlanningAttempts label="卡片复核" attempts={planning.attempts.review} request={frozenReview} /> : null}
+      {archive ? null : <div className={claimed ? 'form-actions' : 'leaf-claim-fields'}>
         {!claimed ? (
           <>
             <ModelPicker ws={ws} role="implementation" value={exec} onChange={onExec} label="执行者" only={['Terra', 'Sonnet']} />
+            <div className="plan-models">
+              <label className="check">
+                <input type="checkbox" checked={overrideReview} onChange={(event) => setOverrideReview(event.target.checked)} /> 为此子卡指定复核模型
+              </label>
+              {overrideReview ? <ModelPicker ws={ws} role="review" value={review} onChange={setReview} label="子卡复核"
+                exclude={stageInput?.draft_request?.model ?? stage.planning.attempts.draft.at(-1)?.request.request.model} />
+                : stageInput?.review_request ? <span className="stamp">继承阶段复核 <code>{stageInput.review_request.model}</code> · {stageInput.review_request.effort}</span> : null}
+            </div>
             <label className="check"><input type="checkbox" checked={stop} onChange={(e) => setStop(e.target.checked)} /> 复核后先停下，不马上实施</label>
-            <ActionButton action="project.stage.leaf" label="领取子卡" disabled={!req || waiting} reason={waiting ? '依赖的子卡还没完成。' : '先选执行者。'}
-              args={() => ({ stage_run_id: stage.stage_run_id, card_id: leaf.card_id, implementation: req, ...(stop ? { review_only: true } : {}) })} />
+            <ActionButton action="project.stage.leaf" label="领取子卡" disabled={!req || waiting || (overrideReview && !reviewer)}
+              reason={waiting ? '依赖的子卡还没完成。' : !req ? '先选执行者。' : '先选好复核模型和档位。'}
+              args={() => ({
+                stage_run_id: stage.stage_run_id, card_id: leaf.card_id, implementation: req,
+                ...(reviewer ? { card_review: reviewer } : {}), ...(stop ? { review_only: true } : {}),
+              })} />
           </>
         ) : canRefreeze ? (
           <ActionButton action="project.stage.leaf" primary label="重新冻结并复核"
             args={() => ({ stage_run_id: stage.stage_run_id, card_id: leaf.card_id, refreeze: true, review_only: true })} />
+        ) : canRetryReview ? (
+          <ActionButton action="project.stage.leaf" label="重试卡片复核"
+            args={() => ({ stage_run_id: stage.stage_run_id, card_id: leaf.card_id, review_only: true })} />
         ) : leaf.review_ready && !waiting && planning && !impl?.attempts.length ? (
           <ActionButton action="task.run" primary label="实施" args={() => ({ planning_run_id: planning.planning_run_id })} />
         ) : leaf.review_ready && !waiting && impl && impl.next_action?.kind === 'run' && impl.attempts.length ? (
@@ -162,7 +187,7 @@ function DelegateBody({ stage, ws }: { stage: DelegateStage; ws: Workspace | nul
   return (
     <>
       <PlanningBlock stage={stage} />
-      <Section title="子卡" note="互不依赖的子卡可以并行实施；有依赖的等前面的完成。每张卡的复核者沿用阶段的设置。">
+      <Section title="子卡" note="首次领取可以为子卡选复核模型。默认使用阶段设置。互不依赖的子卡可以并行实施。">
         {stage.leaves.length ? <ul className="leaf-list">{stage.leaves.map((l) => <LeafRow key={l.card_id} stage={stage} leaf={l} ws={ws} />)}</ul> : <p className="muted">拆分核验通过后才会列出子卡。</p>}
         {ready.length >= 2 ? (
           <ActionButton action="task.run_batch" label={`并行实施 ${ready.length} 张子卡`} args={() => ({ planning_run_ids: ready.map((l) => l.planning_run_id) })} />

@@ -45,9 +45,11 @@ uv run python -m multi_agent.web --repository "$REPO" --data-dir "$ARCHIVE_VIEW_
 
 Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必须等于该 URL。HTTP 错误使用 `{error:{code,message,details?}}`。进入作业后，计划、阶段、测试或审核可能返回业务拒绝。检查实际 `exit_code`、`result` 和 `error`，其中退出 1 或 130 的作业也可能保留有效的领域回执。重启后，以原 `job_id` 和领域 ID 读回。失去原进程控制权的作业显示 `interrupted`，查询仍可查看 SQLite 已保存的领域状态。恢复工作使用明确的续跑动作。普通查询和环境检查无模型回合。
 
-### 单卡派发与实施证据
+### 单卡规划、派发与实施证据
 
-工作台「单卡」可用 `planning_run_id` 打开同仓库的独立规划。`GET /api/resources/plan/{id}?implementation=1` 的 `dispatch_configurable` 在该独立卡已审核、已核验且等待首次实施时为 `true`。提交 `task.run` 时可指定 `implementation`，并按尝试顺序传 `fallbacks`。准备事件 `task_execution_prepared.dispatch_policy` 会冻结完整备选链。已绑定的直接阶段和委派子卡沿用上游冻结的配置。普通重试只提供 `planning_run_id`。如果前一次回合报告所选模型不可用，重试按冻结链重新选取合规且未明确不可用的模型，并保存 `decision.selection_history` 与 `decision.reason`。
+从「单卡」可新建独立规划，也可从「规划历史」或用 `planning_run_id` 回到同仓库的记录。首次创建将需求和可选声明写入私有输入文件，按指定基线冻结。草拟和规划复核可分别覆盖默认模型与档位。声明包含 `dependencies` 和 `decisions` 两个数组，`source` 为 `user_declared`。依赖声明的 `baseline_commit` 须等于冻结提交。`GET /api/resources/plan/{id}?implementation=1` 的 `standalone` 标记独立规划，达到可重试状态时返回 `retry_configurable:true`。补跑只提交原规划 ID，保留之前的尝试和输入。回答阻塞问题时可从详情带入原基线、需求和声明，提交为一个新规划。
+
+`GET /api/resources/plan/{id}?implementation=1` 的 `dispatch_configurable` 在该独立卡已审核、已核验且等待首次实施时为 `true`。提交 `task.run` 时可指定 `implementation`，并按尝试顺序传 `fallbacks`。准备事件 `task_execution_prepared.dispatch_policy` 会冻结完整备选链。已绑定的直接阶段和委派子卡沿用上游冻结的配置。普通重试只提供 `planning_run_id`。如果前一次回合报告所选模型不可用，重试按冻结链重新选取合规且未明确不可用的模型，并保存 `decision.selection_history` 与 `decision.reason`。
 
 `GET /api/resources/task/{id}?implementation=1` 每次尝试的 `request.worktree` 是登记的工作树。`request.decision.requested` 保存显式请求，`request.decision.choice` 是工作台选出的派发值，`runtime.reported_model` 和 `runtime.reported_effort` 来自运行时报告。加 `implementation=1` 时，每次尝试还附带 `usage_evidence` 与 `runtime_reroutes` 两项证据。
 
@@ -56,7 +58,7 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 
 ### 找回作业、取消和并发
 
-新作业的 `args` 记录提交的业务字段。`original_goal` 和 `confirmed_goal` 各用 `{"length":字符数}` 代替，`document.length` 计算紧凑 JSON 的字符数。只在对应动作的作业参数中做这项缩减，领域回执仍按原契约返回。四个 UTC ISO 8601 字段分别记录受理（`created_at`）、开始（`started_at`）、请求取消（`cancel_requested_at`）和观察到结束（`finished_at`）的时刻。尚未发生或缺少证据时为 `null`。CLI 退出后，`stderr_tail` 取 stderr 最后 8192 个原始字节，以 UTF-8 替换解码，空 stderr 为 `""`。运行中和缺字段的旧记录均返回 `null`。刷新页面后先查作业列表，再按原 `job_id` 恢复轮询。
+新作业的 `args` 记录提交的业务字段。`original_goal`、`confirmed_goal` 和 `requirements` 各用 `{"length":字符数}` 代替，`document.length` 计算紧凑 JSON 的字符数，`declarations` 保存依赖与决定的条数。只在对应动作的作业参数中做这项缩减，领域回执仍按原契约返回。四个 UTC ISO 8601 字段分别记录受理（`created_at`）、开始（`started_at`）、请求取消（`cancel_requested_at`）和观察到结束（`finished_at`）的时刻。尚未发生或缺少证据时为 `null`。CLI 退出后，`stderr_tail` 取 stderr 最后 8192 个原始字节，以 UTF-8 替换解码，空 stderr 为 `""`。运行中和缺字段的旧记录均返回 `null`。刷新页面后先查作业列表，再按原 `job_id` 恢复轮询。
 
 任何一个 CLI 作业处于 `queued`、`running` 或 `cancelling` 时，提交第二个 CLI 作业返回 HTTP 409，错误码 `busy`，现有作业的 ID 在 `error.details.active_job_id`。请求不会排队。取消回执说明停止请求已登记，需继续轮询到 `finished`，以真实退出码和领域回执判断结果。本机在假 Fable 已进入规划回合后取消 `project.plan`，观察到退出码 1、`result.status:"failed"`、`result.error.failure_category:"cancelled"`、`stderr_tail:""`。服务重启时失去控制的作业记为 `interrupted`。环境检查可以与 CLI 作业同时运行，每个供应商一次。
 
@@ -67,7 +69,7 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | 读取上述六类资源的日志页 | HTTP 200，保留 `stream,text,offset,next_offset,byte_count,sha256,truncated`，`text`、`next_offset` 和未取得的值为 `null`，带 `lock_busy:true` |
 | 其他资源、冻结快照和已登记的作业日志 | 照常读取，按原端点规则检查资源归属和句柄 |
 
-服务让需要仓库执行锁的读取逐个执行，包括 `project.stage.integrate` 提交前检查。在途读取完成后才启动新 CLI 子进程。网页看到 `lock_busy` 可保留现有显示，等作业结束再取一次。`lock_busy` 表示本服务的读取闸拒绝了本次读取。CLI 写作业在相同的仓库执行锁上最多等一秒，应对外部终端的短暂核验读取。持续占用仍会拒绝，读回仍以实际核验为准。
+服务让需要仓库执行锁的读取逐个执行，包括 `project.stage.integrate` 和 `plan.retry` 提交前检查。在途读取完成后才启动新 CLI 子进程。网页看到 `lock_busy` 可保留现有显示，等作业结束再取一次。`lock_busy` 表示本服务的读取闸拒绝了本次读取。CLI 写作业在相同的仓库执行锁上最多等一秒，应对外部终端的短暂核验读取。持续占用仍会拒绝，读回仍以实际核验为准。
 
 ### 日志坐标与返工差异
 
@@ -147,8 +149,10 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | `project.revise` | `plan_id,document` | `project revise PLAN_ID --document FILE`。新 `plan_id` 和 `source_plan_id`。 |
 | `project.stage.start` | `plan_id,stage_id,mode?,baseline?,sol?,card_review?` | `project stage start`。`stage_run_id,execution_baseline`，直做候选或委派叶子。再次提交已领取的委派阶段时须传原 `mode:"delegate"`，省略会按 CLI 默认的 `direct` 校验。 |
 | `project.stage.resume` | `stage_run_id,prepare?` | `project stage resume`。用原阶段继续明确可恢复的工作。 |
-| `project.stage.leaf` | `stage_run_id,card_id,implementation?,baseline?,review_only?,refreeze?` | `project stage leaf`。叶卡的 `planning_run_id`、复核与候选。初次领取需要实施角色。 |
+| `project.stage.leaf` | `stage_run_id,card_id,implementation?,card_review?,baseline?,review_only?,refreeze?` | `project stage leaf`。首次领取需实施角色，可用 `card_review` 配置该叶卡的复核角色，省略时继承阶段值。重试或重新冻结时沿用原配置。 |
 | `project.stage.integrate` | `stage_run_id,target?` | `project stage integrate`。全组叶子的 `integration_id,target_ref,target_baseline,candidate`。 |
+| `plan.create` | `baseline,requirements,draft?,plan_review?,declarations?` | `task plan`。角色为 `{model,effort}`，草拟使用 Claude，复核使用 Codex。回执包含 `planning_run_id`。 |
+| `plan.retry` | `planning_run_id` | `task plan --retry`。仅接收绑定仓库的可重试独立规划。 |
 | `task.run` | `planning_run_id,implementation?,fallbacks?,task_type?` | `task run`。单卡的 `task_run_id` 和实施证据。 |
 | `task.retry` | `planning_run_id` | `task run --retry`。沿用原配置。 |
 | `task.run_batch` | `planning_run_ids,implementation?,fallbacks?,task_type?` | `task run-batch`。分别返回每个任务的实施证据。 |

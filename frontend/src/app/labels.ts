@@ -11,6 +11,8 @@ export const ACTION_LABEL: Record<string, string> = {
   'project.stage.resume': '恢复阶段',
   'project.stage.leaf': '领取子卡',
   'project.stage.integrate': '合并子卡',
+  'plan.create': '单卡规划',
+  'plan.retry': '重试规划',
   'task.run': '实施',
   'task.retry': '重试实施',
   'task.run_batch': '并行实施子卡',

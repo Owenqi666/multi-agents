@@ -1,10 +1,12 @@
 import { expect, test, type Page } from '@playwright/test';
-import type { DelegateStage, IntegrationRecord, ReviewRound, TaskView } from '../src/api/types';
+import type { DelegateStage, IntegrationRecord, PlanningView, ReviewRound, TaskView } from '../src/api/types';
 import { claim, directStage, goalToPlan, integrationReview, reviewCandidate } from './flow';
 import { act, jobRequest, NetworkLog, OfflineEnv, pick, readback } from './support';
 
 const DUAL: [string, string][] = [['claude-opus-5-5', 'low'], ['gpt-6.2-astra', 'low']];
 const END = 'END OF OFFLINE DIAGNOSTIC';
+const OVERRIDE_REVIEW = { provider: 'claude', model: 'claude-fable-5-2', effort: 'low' };
+const INHERITED_REVIEW = { provider: 'claude', model: 'claude-opus-5-5', effort: 'low' };
 
 async function continueConfirmation(page: Page, base: string, parent: ReviewRound, action: string, onRoundPage: boolean) {
   const id = parent.confirmation_round_id!;
@@ -57,16 +59,34 @@ test('review-fixes：上游返工后重新冻结下游子卡，并补跑任务�
     const upstream = page.locator('.leaf').filter({ has: page.getByText('T-0800', { exact: true }) });
     const downstream = page.locator('.leaf').filter({ has: page.getByText('T-0801', { exact: true }) });
     await expect(downstream.getByRole('button', { name: '领取子卡' })).toBeDisabled();
+    const chooseReview = '为此子卡指定复核模型';
     await pick(upstream, '执行者', 'claude-sonnet-5-5', 'low');
+    await upstream.getByLabel(chooseReview, { exact: true }).check();
+    await pick(upstream, '子卡复核', OVERRIDE_REVIEW.model, OVERRIDE_REVIEW.effort);
+    const claimUpstream = jobRequest(page, 'project.stage.leaf');
     await act(page, '领取子卡', upstream);
+    expect((await claimUpstream).postDataJSON().args).toMatchObject({ card_id: 'T-0800', card_review: OVERRIDE_REVIEW });
     await act(page, '实施', upstream);
     await pick(downstream, '执行者', 'claude-sonnet-5-5', 'low');
+    await expect(downstream.getByLabel(chooseReview, { exact: true })).not.toBeChecked();
+    const claimDownstream = jobRequest(page, 'project.stage.leaf');
     await act(page, '领取子卡', downstream);
+    const downstreamArgs = (await claimDownstream).postDataJSON().args;
+    expect(downstreamArgs.card_id).toBe('T-0801');
+    expect(downstreamArgs).not.toHaveProperty('card_review');
     await expect(downstream.getByRole('button', { name: '实施', exact: true })).toBeEnabled();
     const initial = await readback<DelegateStage>(page, stageApi);
     const oldPlan = initial.leaves[1]!.planning_run_id!;
     const oldCandidate = initial.leaves[0]!.candidate!;
     expect(initial.leaves[1]!.planning?.card?.baseline_commit).toBe(oldCandidate);
+    const leafReviewers = [];
+    for (const [index, requested] of [OVERRIDE_REVIEW, INHERITED_REVIEW].entries()) {
+      const leaf = initial.leaves[index]!;
+      const frozen = await readback<PlanningView>(page, `${env.url}/api/resources/plan/${leaf.planning_run_id}?implementation=1`);
+      expect(frozen.details?.input?.review_request).toEqual(requested);
+      expect(frozen.attempts.review[0]!.request.request).toEqual(requested);
+      leafReviewers.push({ card_id: leaf.card_id, requested });
+    }
 
     await upstream.getByRole('link', { name: '实施详情' }).click();
     const taskApi = `${env.url}/api/resources/task/${page.url().split('/').at(-1)}`;
@@ -123,6 +143,7 @@ test('review-fixes：上游返工后重新冻结下游子卡，并补跑任务�
       result: 'passed', stale_baseline: oldCandidate, refrozen_baseline: newCandidate,
       prior_plan: oldPlan, refrozen_plan: refrozen.leaves[1]!.planning_run_id, can_integrate: true,
       task_confirmation: taskConfirmation, integration_confirmation: integrationConfirmation,
+      leaf_reviewers: leafReviewers,
       registered_logs_paged: ['integration', 'frozen review input'], final_record: page.url(),
     });
   } catch (e) {

@@ -1,8 +1,10 @@
 import { useCallback, useRef, useState } from 'react';
+import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
-import type { PlanningView, Workspace } from '../api/types';
-import { useWorkspace } from '../api/workspace';
-import { VERIFICATION_LABEL } from '../app/labels';
+import { useRead } from '../api/reads';
+import type { PlanningView, RunItem, Workspace } from '../api/types';
+import { useArchiveMode, useWorkspace, useWorkspaceWritesAllowed } from '../api/workspace';
+import { shortId, timeText, VERIFICATION_LABEL } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
 import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
@@ -10,11 +12,20 @@ import { candidatesFor, ModelPicker, requestFrom, type PickerChoice } from '../c
 import { ReadFrame } from '../components/ReadNote';
 import { EnvironmentHint } from './GoalPages';
 import { Facts, NextNote, Page, Raw, Section, useResource } from './common';
+import { PlanningAttempts } from './PlanningAttempts';
+
+const PHASE: Record<string, string> = {
+  pending: '等待规划', drafting: '草拟中', reviewing: '复核中', awaiting_validation: '等待核验',
+  awaiting_review: '等待复核', revision_required: '需要修改', reconciliation_required: '待对账',
+  failed: '失败', cancelling: '正在取消', cancelled: '已取消', ready: '已复核', bound: '已绑定实施',
+};
 
 export function OpenTaskPlanPage() {
   const [id, setId] = useState('');
+  const writesAllowed = useWorkspaceWritesAllowed();
+  const history = useRead<{ items: RunItem[] }>('runs/plan', () => api.runs('plan'), { locking: false, pollWhileJob: true });
   return (
-    <Page title="打开单卡规划">
+    <Page title="打开单卡规划" aside={writesAllowed ? <Link className="btn primary" href="/task-plans/new">新建单卡规划</Link> : undefined}>
       <Section title="已有规划" note="输入在这个仓库中生成的规划运行 ID。">
         <form className="task-plan-open form-actions" onSubmit={(event) => {
           event.preventDefault();
@@ -25,6 +36,19 @@ export function OpenTaskPlanPage() {
           </label>
           <button className="btn primary" type="submit" disabled={!id.trim()}>打开规划</button>
         </form>
+      </Section>
+      <Section title="规划历史">
+        <ReadFrame read={history} what="规划历史">
+          {({ items }) => {
+            const plans = items.filter((item) => item.kind === 'plan');
+            return plans.length ? <ul className="plain-list" aria-label="规划历史">
+              {plans.map((plan) => <li key={plan.id}>
+                <Link href={to('task-plans', plan.id)}>{plan.label} <code>{shortId(plan.id)}</code></Link>
+                <span className="stamp">{timeText(plan.updated_at)}</span>
+              </li>)}
+            </ul> : <p className="muted">工作台还没有登记规划。</p>;
+          }}
+        </ReadFrame>
       </Section>
     </Page>
   );
@@ -127,23 +151,68 @@ function DispatchForm({ planId, stale }: { planId: string; stale: boolean }) {
 export function TaskPlanPage({ id }: { id: string }) {
   const read = useResource<PlanningView>('plan', id, { implementation: 1 });
   const plan = read.data?.id === id ? read.data.data : null;
+  const archive = useArchiveMode();
+  const writesAllowed = useWorkspaceWritesAllowed();
   return (
     <Page title="单卡规划" aside={<Link className="btn small" href="/task-plans">打开其他规划</Link>}>
       <ReadFrame read={{ ...read, data: plan }} what="单卡规划">
-        {(record) => (
-          <>
-            <Section title="卡片" note={<NextNote next={record.next_action} />}>
+        {(record) => {
+          const input = record.details?.input;
+          const questions = record.questions ?? [];
+          const blocked = questions.some((question) => question.blocks_dispatch && !question.resolution);
+          const next = record.next_action;
+          return <>
+            <Section title="卡片" note={archive ? undefined : blocked ? '回答阻塞问题后新建一份规划。'
+              : next?.kind === 'plan_retry' ? next.detail : <NextNote next={next} />}>
               <Facts rows={[
                 ['规划运行 ID', <code className="task-data">{record.planning_run_id}</code>],
                 ['目标', typeof record.card?.goal === 'string' ? record.card.goal : '—'],
+                ['状态', PHASE[record.phase] ?? record.phase],
                 ['核验', <Badge tone={record.verification === 'verified' ? 'ok' : 'warn'}>{VERIFICATION_LABEL[record.verification] ?? record.verification}</Badge>],
               ]} />
+              {record.details?.validation_error ? <p className="goal-text">{record.details.validation_error}</p> : null}
+              {record.details?.source_errors?.length ? <ul className="plain-list">{record.details.source_errors.map((error, index) => <li className="task-data" key={index}>{error}</li>)}</ul> : null}
               {record.card ? <Raw value={record.card} label="完整任务卡" /> : null}
               {record.task_run_id ? <div><Link className="btn" href={to('tasks', record.task_run_id)}>实施详情</Link></div> : null}
+              {writesAllowed && record.retry_configurable === true && !record.task_run_id ? (
+                <ActionButton action="plan.retry" label="重试规划" disabled={read.stale} args={() => ({ planning_run_id: record.planning_run_id })}
+                  onDone={(job) => {
+                    if (window.location.pathname === to('task-plans', id) && job.exit_code !== 0 && !job.resources?.some((resource) => resource.kind === 'plan' && resource.id === id)) {
+                      navigate(to('jobs', job.job_id));
+                    }
+                  }} />
+              ) : null}
             </Section>
-            {record.dispatch_configurable === true && !record.task_run_id ? <DispatchForm planId={id} stale={read.stale} /> : null}
-          </>
-        )}
+            {questions.length ? (
+              <Section title="规划问题">
+                <ul className="plan-question-list">
+                  {questions.map((question, index) => (
+                    <li key={index}>
+                      <p className="row"><Badge tone={question.blocks_dispatch && !question.resolution ? 'warn' : 'muted'}>{question.resolution ? '已回答' : question.blocks_dispatch ? '阻塞实施' : '待回答'}</Badge>
+                        <span className="task-data">{question.question}</span></p>
+                      {question.resolution ? <p className="goal-text">{question.resolution}</p> : null}
+                      {writesAllowed && question.blocks_dispatch && !question.resolution && input && record.standalone ? (
+                        <Link className="btn small" href={`/task-plans/new?${new URLSearchParams({ from: id, question: String(index) })}`}>回答后新建规划</Link>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              </Section>
+            ) : null}
+            {writesAllowed && !blocked && record.dispatch_configurable === true && !record.task_run_id ? <DispatchForm planId={id} stale={read.stale} /> : null}
+            <Section title="规划尝试">
+              <PlanningAttempts label="草拟尝试" attempts={record.attempts.draft} request={input?.draft_request} />
+              <PlanningAttempts label="复核尝试" attempts={record.attempts.review} request={input?.review_request} />
+            </Section>
+            {input ? (
+              <Section title="冻结输入">
+                {input.requirements ? <pre className="goal-text">{input.requirements}</pre> : null}
+                {input.frozen_rules?.baseline_commit ? <Facts rows={[[ '基线提交', <code className="task-data">{input.frozen_rules.baseline_commit}</code> ]]} /> : null}
+                <Raw value={input} label="完整冻结输入" />
+              </Section>
+            ) : null}
+          </>;
+        }}
       </ReadFrame>
     </Page>
   );

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0075",
   "goal": "用户能在网页独立创建、重试单卡规划，运行审核通过的任务卡，并在委派阶段为具体子卡选择卡片复核模型。",
-  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "baseline_commit": "49514894d6240bcedde9aab40ae7d68710cb8140",
   "write_scope": [
     "frontend/src/**",
     "frontend/e2e/**",

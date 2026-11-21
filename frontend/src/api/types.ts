@@ -259,6 +259,7 @@ export interface Runtime {
   number: number;
   status: string;
   failure_category?: string | null;
+  detail?: string | null;
   reported_model: string | null;
   reported_effort: string | null;
   result?: unknown;
@@ -270,6 +271,36 @@ export interface PlanningAttempt {
   runtime: Runtime | null;
 }
 
+export interface PlanningDependency {
+  task_id: string;
+  baseline_commit: string;
+  source: string;
+  detail: string;
+}
+
+export interface PlanningDecision {
+  question: string;
+  resolution: string;
+  source: string;
+  detail: string;
+}
+
+export interface PlanningQuestion {
+  question: string;
+  blocks_dispatch: boolean;
+  resolution?: string | null;
+}
+
+export interface PlanningInputView {
+  card?: { test_refs?: string[] };
+  requirements?: string;
+  frozen_rules?: { baseline_commit?: string; rules?: { commands?: { name: string }[] } };
+  draft_request?: RoleRequest;
+  review_request?: RoleRequest;
+  dependencies?: PlanningDependency[];
+  decisions?: PlanningDecision[];
+}
+
 export interface PlanningView {
   planning_run_id: Id;
   task_run_id: Id | null;
@@ -279,8 +310,12 @@ export interface PlanningView {
   attempts: { draft: PlanningAttempt[]; review: PlanningAttempt[] };
   next_action: NextAction | null;
   planning_kind?: 'stage_split';
+  standalone?: boolean;
   dispatch_configurable?: boolean;
-  details?: { input?: { card?: { test_refs?: string[] }; frozen_rules?: { rules?: { commands?: { name: string }[] } } } };
+  retry_configurable?: boolean;
+  questions?: PlanningQuestion[];
+  budget?: Record<string, { limit: number; used: number; remaining: number }> | null;
+  details?: { input?: PlanningInputView; validation_error?: string | null; source_errors?: string[] };
   draft_projection?: {
     executor?: RoleRequest;
     dependencies?: {

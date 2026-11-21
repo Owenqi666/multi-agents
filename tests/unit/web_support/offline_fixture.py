@@ -6,7 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-SCENARIOS = ("accept", "rework", "dual-partial", "cancel")
+STANDALONE_PLAN = "standalone-plan"
+SCENARIOS = ("accept", "rework", "dual-partial", "cancel", STANDALONE_PLAN)
 AMOUNT = "backend/amount.py"
 STATUS = "frontend/status.js"
 BANNER = "frontend/banner.js"
@@ -15,6 +16,10 @@ DRAFT = 'export const status = "draft";\n'
 READY = 'export const status = "ready";\n'
 WELCOME = 'export const banner = "welcome";\n'
 TASK_EVIDENCE = "task-evidence"
+PLANNING_QUESTION_REQUIREMENTS = (
+    "Implement the amount after the reporting cutoff decision.\n"
+)
+PLANNING_QUESTION = "Which reporting cutoff should the amount use?"
 EVIDENCE_PLANS = {
     "codex": ("T-0810", AMOUNT, "Implement the standalone amount.\n"),
     "claude": ("T-0811", STATUS, "Implement the standalone status.\n"),
@@ -77,7 +82,7 @@ def _rules(scenario):
                 "default_effort": "low",
                 **(
                     {"allowed_models": ["gpt-6.2-sol", "gpt-6.1-terra"]}
-                    if scenario == TASK_EVIDENCE
+                    if scenario in (TASK_EVIDENCE, STANDALONE_PLAN)
                     else {}
                 ),
             },

@@ -15,6 +15,8 @@ from multi_agent.core.dispatch import ImplementationChoice, resolve_dispatch
 from multi_agent.core.planning import (
     PlanningInput,
     PlanningPhase,
+    PlanningRequest,
+    PlanningState,
     ProjectedDependency,
     ProjectedDraft,
     planning_json,
@@ -247,6 +249,18 @@ def _executor(fields: list[str]) -> ImplementationChoice:
     return choice
 
 
+def _check_frozen_roles(
+    state: PlanningState,
+    executor: ImplementationChoice | None,
+    reviewer: PlanningRequest | None,
+) -> None:
+    assert state.projection is not None
+    if executor is not None and executor != state.projection.executor:
+        raise ValueError("an existing leaf retains its exact executor and baseline")
+    if reviewer is not None and reviewer != state.planning_input.review_request:
+        raise ValueError("an existing leaf retains its exact card reviewer")
+
+
 def _claim(
     args: argparse.Namespace,
     store: ProjectStore,
@@ -255,15 +269,19 @@ def _claim(
     repo: Path,
     common: Path,
     *,
+    executor: ImplementationChoice | None,
+    reviewer: PlanningRequest | None,
     previous_id: str | None = None,
 ) -> str:
-    previous = store.load_planning(previous_id) if previous_id is not None else None
-    prior = previous.projection if previous is not None else None
-    if args.implementation is not None:
-        executor = _executor(args.implementation)
-    elif prior is not None:
+    prior = None
+    if previous_id is not None:
+        previous = store.load_planning(previous_id)
+        _check_frozen_roles(previous, executor, reviewer)
+        prior = previous.projection
+        assert prior is not None
         executor = prior.executor
-    else:
+        reviewer = previous.planning_input.review_request
+    if executor is None:
         raise ValueError("first claim requires --implementation PROVIDER MODEL EFFORT")
     attempt, cards, manifest = inspect_project_split(store, stage.planning_run_id)
     selected = next(
@@ -283,6 +301,12 @@ def _claim(
     card = replace(definition, baseline_commit=baseline)
     resolve_dispatch(card, rules, requested=executor)
     parent = store.load_planning_input(stage.planning_run_id)
+    reviewer = parent.review_request if reviewer is None else reviewer
+    if (reviewer.provider, reviewer.model) == (
+        parent.draft_request.provider,
+        parent.draft_request.model,
+    ):
+        raise ValueError("the independent card reviewer must use a distinct model")
     projection = ProjectedDraft(
         stage.stage_run_id,
         stage.planning_run_id,
@@ -319,7 +343,7 @@ def _claim(
         + planning_json(handoff),
         rules,
         parent.draft_request,
-        parent.review_request,
+        reviewer,
     )
     parse_planning_draft(
         planning_json(card.to_dict()),
@@ -352,28 +376,40 @@ def launch_leaf(
     if str(common) != goal["git_common_dir"]:
         raise ValueError("repository Git metadata differs from the confirmed goal")
     identifier = store.leaf_runs(stage.stage_run_id).get(args.card_id)
-    if args.refreeze:
-        if identifier is None:
-            raise ValueError("refreezing requires an existing leaf")
+    if args.refreeze and identifier is None:
+        raise ValueError("refreezing requires an existing leaf")
+    requested_executor = (
+        _executor(args.implementation) if args.implementation is not None else None
+    )
+    requested_reviewer = (
+        PlanningRequest(*args.card_review) if args.card_review is not None else None
+    )
+    continuing = identifier is not None and not args.refreeze
+    if not continuing:
         identifier = _claim(
-            args, store, database, stage, repo, common, previous_id=identifier
+            args,
+            store,
+            database,
+            stage,
+            repo,
+            common,
+            executor=requested_executor,
+            reviewer=requested_reviewer,
+            previous_id=identifier,
         )
-    elif identifier is None:
-        identifier = _claim(args, store, database, stage, repo, common)
+    assert identifier is not None
     state = store.load_planning(identifier)
     projection = state.projection
     assert projection is not None
     executor = projection.executor
-    if (
-        args.implementation is not None
-        and _executor(args.implementation) != executor
-        or (
+    if continuing:
+        _check_frozen_roles(state, requested_executor, requested_reviewer)
+        if (
             args.baseline is not None
             and _resolve_commit(repo, args.baseline)
             != state.planning_input.frozen_rules.baseline_commit
-        )
-    ):
-        raise ValueError("an existing leaf retains its exact executor and baseline")
+        ):
+            raise ValueError("an existing leaf retains its exact executor and baseline")
     inspect_projected_draft(store, identifier, state)
     parent = store.load_planning(stage.planning_run_id).current("draft")
     assert parent is not None

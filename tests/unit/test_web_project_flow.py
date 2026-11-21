@@ -1,6 +1,7 @@
 """Run the project lifecycle through real loopback HTTP, Git and SQLite."""
 
 import json
+import sqlite3
 import time
 from http.client import HTTPConnection
 
@@ -248,8 +249,9 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
         )
         assert missing.returncode == 2
         assert not helpers.git(repo, "for-each-ref", "--format=%(refname)", branch_ref)
-        for item in delegated["leaves"]:
+        for index, item in enumerate(delegated["leaves"]):
             helpers.configure(claude, role="stage-delegate", capture=str(split_capture))
+            reviewer = {"card_review": FABLE} if index == 0 else {}
             leaf = _job(
                 service,
                 "project.stage.leaf",
@@ -257,11 +259,19 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
                 card_id=item["card_id"],
                 implementation=SONNET,
                 review_only=True,
+                **reviewer,
             )["result"]
             card = leaf["planning"]["card"]
-            assert not _get(
+            leaf_plan = _get(
                 service, f"resources/plan/{leaf['planning_run_id']}?implementation=1"
-            )["data"]["dispatch_configurable"]
+            )["data"]
+            assert not leaf_plan["dispatch_configurable"]
+            assert not leaf_plan["retry_configurable"]
+            assert leaf_plan["details"]["input"]["review_request"] == (
+                FABLE if index == 0 else OPUS
+            )
+            review = leaf_plan["attempts"]["review"][0]["request"]["request"]
+            assert review == leaf_plan["details"]["input"]["review_request"]
             (path,) = card["write_scope"]
             helpers.configure(
                 claude,
@@ -386,3 +396,55 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
         runs = _get(restarted, "runs?kind=stage")["items"]
         assert {item["id"] for item in runs} == {stage_id, direct["stage_run_id"]}
     assert helpers.git(repo, "status", "--porcelain") == ""
+
+
+def test_http_plan_retry_rejects_known_id_in_foreign_workspace(workflow):
+    programs = {provider: str(path) for provider, path in workflow.executables.items()}
+    local = workflow.base / "local-data"
+    requirements = "Keep this frozen:\n" + helpers.REQUIREMENTS
+    helpers.configure(workflow.executables["claude"], mode="model-error")
+    with _serve(workflow.repository, local, programs) as service:
+        job = _job(
+            service,
+            "plan.create",
+            baseline=workflow.baseline,
+            requirements=requirements,
+            exit_code=1,
+            draft={"model": FABLE["model"], "effort": FABLE["effort"]},
+            declarations={"dependencies": [], "decisions": []},
+        )
+        assert job["args"]["requirements"] == {"length": len(requirements)}
+        assert job["args"]["declarations"] == {"dependencies": 0, "decisions": 0}
+        identifier = job["result"]["planning_run_id"]
+        url = f"/api/resources/plan/{identifier}?implementation=1"
+        status, own = _request(service, "GET", url)
+        assert status == 200
+        assert own["data"]["retry_configurable"]
+        assert own["data"]["details"]["input"]["requirements"] == requirements
+        assert own["data"]["phase"] == "failed"
+
+    foreign = workflow.base / "foreign"
+    helpers.git(
+        workflow.base, "clone", "--quiet", str(workflow.repository), str(foreign)
+    )
+    outside = workflow.base / "foreign-data"
+    outside.mkdir(mode=0o700)
+    source = sqlite3.connect(local / "reviews.sqlite3", autocommit=True)
+    destination = sqlite3.connect(outside / "reviews.sqlite3", autocommit=True)
+    try:
+        source.backup(destination)
+    finally:
+        destination.close()
+        source.close()
+
+    with _serve(foreign, outside, programs) as service:
+        assert _request(service, "GET", url)[0] == 404
+        status, response = _request(
+            service,
+            "POST",
+            "/api/jobs",
+            {"action": "plan.retry", "args": {"planning_run_id": identifier}},
+        )
+        assert status == 404
+        assert response["error"]["code"] == "not_found"
+        assert _get(service, "jobs")["items"] == []

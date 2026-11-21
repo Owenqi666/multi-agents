@@ -223,19 +223,25 @@ def _resource_data(
         if kind == "plan":
             plan = _plan_view(store, identifier, history)
             if "implementation" in options:
-                plan["dispatch_configurable"] = (
-                    workspace.archive is None
-                    and plan["phase"] == "ready"
-                    and plan["verification"] == "verified"
-                    and plan["next_action"]["kind"] == "run"
-                    and "draft_projection" not in plan
+                schema = store._connection.execute("PRAGMA user_version").fetchone()[0]
+                standalone = (
+                    "draft_projection" not in plan
                     and "planning_kind" not in plan
                     and (
-                        store._connection.execute("PRAGMA user_version").fetchone()[0]
-                        < _PROJECT_SCHEMA["stage"]
+                        schema < _ARCHIVE_SCHEMA["stage"]
                         or store.stage_for_planning(identifier) is None
                     )
                 )
+                plan["standalone"] = standalone
+                writable = workspace.archive is None and standalone
+                next_action = plan["next_action"]["kind"]
+                plan["dispatch_configurable"] = (
+                    writable
+                    and plan["phase"] == "ready"
+                    and plan["verification"] == "verified"
+                    and next_action == "run"
+                )
+                plan["retry_configurable"] = writable and next_action == "plan_retry"
             return plan
         if kind == "task":
             task = _task_view(store, database, identifier, history)

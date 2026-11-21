@@ -1,5 +1,6 @@
 """Check the HTTP action boundary against the real product argument parser."""
 
+import json
 import stat
 import sys
 
@@ -143,3 +144,102 @@ def test_frozen_task_retry_does_not_override_policy(action_context):
         prepare("task.retry", planning_run_id="plan-known", implementation=ASTRA)
     with pytest.raises(ValueError, match="identifier"):
         prepare("task.retry", planning_run_id="--help")
+
+
+def test_plan_create_passes_roles_and_private_frozen_inputs(action_context):
+    workspace, directory, owned, prepare = action_context
+    baseline = "a" * 40
+    requirements = "保留精确需求。\r\n第二行\n"
+    declarations = {
+        "dependencies": [
+            {
+                "task_id": "T-0003",
+                "baseline_commit": baseline,
+                "source": "user_declared",
+                "detail": "在指定提交已验收",
+            }
+        ],
+        "decisions": [
+            {
+                "question": "选哪一种？",
+                "resolution": "第一种",
+                "source": "user_declared",
+                "detail": "用户确认",
+            }
+        ],
+    }
+    draft = {key: FABLE[key] for key in ("model", "effort")}
+    review = {key: ASTRA[key] for key in ("model", "effort")}
+    argv = prepare(
+        "plan.create",
+        baseline=baseline,
+        requirements=requirements,
+        draft=draft,
+        plan_review=review,
+        declarations=declarations,
+    )
+    parsed = parser().parse_args(argv[4:])
+    assert (parsed.task_operation, parsed.baseline, parsed.retry) == (
+        "plan",
+        baseline,
+        None,
+    )
+    assert parsed.repository == workspace.repository
+    assert parsed.directory == workspace.data_dir / "web-run-job-id"
+    assert parsed.database == workspace.data_dir / "reviews.sqlite3"
+    assert (parsed.codex_bin, parsed.claude_bin) == (
+        "/trusted/codex",
+        "/trusted/claude",
+    )
+    assert parsed.draft == list(draft.values())
+    assert parsed.plan_review == list(review.values())
+    assert parsed.requirements.read_bytes() == requirements.encode()
+    assert json.loads(parsed.declarations.read_text()) == declarations
+    for path in (parsed.requirements, parsed.declarations):
+        assert path.parent == directory
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert owned == []
+
+
+def test_plan_retry_is_scoped_and_passes_only_the_same_frozen_id(
+    action_context, monkeypatch
+):
+    workspace, directory, _, prepare = action_context
+    checked = []
+
+    def read(workspace_arg, kind, identifier, query):
+        checked.append((workspace_arg, kind, identifier, query))
+        if identifier == "foreign-plan":
+            raise KeyError(identifier)
+        return {"data": {"retry_configurable": identifier == "owned-plan"}}
+
+    monkeypatch.setattr(actions, "read_resource", read)
+    argv = prepare("plan.retry", planning_run_id="owned-plan")
+    parsed = parser().parse_args(argv[4:])
+    assert parsed.retry == "owned-plan"
+    assert parsed.database == workspace.data_dir / "reviews.sqlite3"
+    assert all(
+        getattr(parsed, field) is None
+        for field in (
+            "repository",
+            "directory",
+            "baseline",
+            "requirements",
+            "draft",
+            "plan_review",
+            "declarations",
+            "codex_bin",
+            "claude_bin",
+        )
+    )
+    with pytest.raises(KeyError, match="foreign-plan"):
+        prepare("plan.retry", planning_run_id="foreign-plan")
+    with pytest.raises(actions.ActionConflict, match="cannot be retried"):
+        prepare("plan.retry", planning_run_id="stage-plan")
+    with pytest.raises(ValueError, match="unexpected"):
+        prepare("plan.retry", planning_run_id="owned-plan", requirements="new input")
+    assert checked == [
+        (workspace, "plan", identifier, {"implementation": ["1"]})
+        for identifier in ("owned-plan", "foreign-plan", "stage-plan")
+    ]
+    assert not list(directory.iterdir())

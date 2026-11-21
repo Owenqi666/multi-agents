@@ -15,7 +15,10 @@ from offline_fixture import (
     CODEX_MODELS,
     DRAFT,
     EVIDENCE_PLANS,
+    PLANNING_QUESTION,
+    PLANNING_QUESTION_REQUIREMENTS,
     READY,
+    STANDALONE_PLAN,
     STATUS,
     TASK_EVIDENCE,
     WELCOME,
@@ -59,6 +62,20 @@ def _planning(frozen):
     for identifier, path, requirement in EVIDENCE_PLANS.values():
         if frozen["requirements"] == requirement:
             return card(identifier, path)
+    if frozen["requirements"] == PLANNING_QUESTION_REQUIREMENTS:
+        question = {"question": PLANNING_QUESTION, "blocks_dispatch": True}
+        resolution = next(
+            (
+                decision["resolution"]
+                for decision in frozen["decisions"]
+                if decision["question"] == PLANNING_QUESTION
+                and decision["source"] == "user_declared"
+            ),
+            None,
+        )
+        if resolution is not None:
+            question["resolution"] = resolution
+        return {**card("T-0812", AMOUNT), "open_questions": [question]}
     requirement, handoff = frozen["requirements"].split("\n", 1)
     selected = json.loads(handoff)["selected_stage"]["stage_id"]
     if requirement.startswith("Split only selected_stage") and selected == "summary":
@@ -130,7 +147,16 @@ def _response(root, scenario, provider, prompt):
     if prompt.startswith("Implementation template:"):
         return _implement(root, scenario, prompt)
     if (path := Path("planning-input.json")).is_file():
-        return _planning(json.loads(path.read_text())), "success"
+        frozen = json.loads(path.read_text())
+        if (
+            scenario == STANDALONE_PLAN
+            and provider == "claude"
+            and frozen["requirements"] == EVIDENCE_PLANS["codex"][2]
+        ):
+            context = json.loads(Path(".planning-context.json").read_text())
+            if context["stage"] == "draft" and context["attempt"] == 1:
+                return {}, "model-error"
+        return _planning(frozen), "success"
     if (path := Path("consultation-input.json")).is_file():
         frozen = json.loads(path.read_text())
         return {

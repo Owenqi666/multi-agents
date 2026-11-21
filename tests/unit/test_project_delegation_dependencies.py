@@ -76,7 +76,16 @@ def test_delegated_dependency_must_refreeze_after_upstream_rework(workflow):
         *helpers.run_arguments(workflow, upstream["planning_run_id"], implementation)
     )
     first_sha, task_id = first["candidate"], first["task_run_id"]
-    old_leaf = helpers.successful(*leaf, downstream_id, *executor, "--review-only")
+    old_leaf = helpers.successful(
+        *leaf,
+        downstream_id,
+        *executor,
+        "--card-review",
+        "claude",
+        "claude-fable-5-2",
+        "high",
+        "--review-only",
+    )
     old_id = old_leaf["planning_run_id"]
     old_projection = old_leaf["planning"]["draft_projection"]
     assert old_leaf["review_ready"] and old_leaf["task_run_id"] is None
@@ -136,10 +145,30 @@ def test_delegated_dependency_must_refreeze_after_upstream_rework(workflow):
         assert rejected.returncode == 2 and "changed after review" in rejected.stderr
     assert helpers.successful(*show) == stale
 
+    for override, reason in (
+        (("--card-review", "claude", "claude-opus-5-5", "high"), "exact card reviewer"),
+        (
+            ("--implementation", "claude-code", "claude-sonnet-5-5", "medium"),
+            "exact executor",
+        ),
+    ):
+        refused = helpers.module_cli(
+            *leaf, downstream_id, "--refreeze", "--review-only", *override
+        )
+        assert refused.returncode == 2 and reason in refused.stderr
+        assert helpers.successful(*show) == stale
+
     refrozen = helpers.successful(*leaf, downstream_id, "--refreeze", "--review-only")
     new_id = refrozen["planning_run_id"]
     new_projection = refrozen["planning"]["draft_projection"]
     assert refrozen["review_ready"] and new_id != old_id
+    assert refrozen["task_run_id"] is None
+    assert new_projection["executor"] == old_projection["executor"]
+    assert (
+        refrozen["planning"]["details"]["input"]["review_request"]
+        == old_leaf["planning"]["details"]["input"]["review_request"]
+        == {"provider": "claude", "model": "claude-fable-5-2", "effort": "high"}
+    )
     assert refrozen["planning"]["card"]["baseline_commit"] == repaired_sha
     assert new_projection["dependencies"] == [
         {

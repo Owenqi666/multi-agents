@@ -86,6 +86,12 @@ def add_stage_parser(
     leaf.add_argument(
         "--implementation", nargs=3, metavar=("PROVIDER", "MODEL", "EFFORT")
     )
+    leaf.add_argument(
+        "--card-review",
+        nargs=3,
+        metavar=("PROVIDER", "MODEL", "EFFORT"),
+        help="choose this leaf's reviewer on first claim; defaults to the stage reviewer",
+    )
     leaf.add_argument("--baseline")
     leaf.add_argument("--review-only", action="store_true")
     leaf.add_argument(

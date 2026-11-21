@@ -131,12 +131,14 @@ uv run python -m multi_agent --data-dir "$DATA" project stage show "$SUMMARY_RUN
 
 从回执中取 `SUMMARY_RUN_ID` 和两张叶卡的 ID。按 `write_scope` 区分收入卡和支出卡。首次领取时，显式选择符合该卡冻结规则的 Terra 或 Sonnet 及档位。复核输入包含实际基线、父拆分运行与清单摘要、所领条目及最终任务卡哈希。每张叶卡有独立复核决定和实施候选。`stage show` 可用 `blocked_reason` 定位失败，无依赖的兄弟卡可继续领取。
 
+首次领取可用 `--card-review PROVIDER MODEL EFFORT` 为该叶卡单独选择复核者。未指定时继承阶段复核配置。叶卡复核者与父拆分草拟者使用不同型号。复核遇到可重试失败时，执行 `project stage leaf SUMMARY_RUN_ID CARD_ID --review-only` 会复用该叶卡的规划运行 ID、执行者与复核请求。重新冻结时会沿用两项模型配置，并保留原规划供查阅。
+
 ```sh
 uv run python -m multi_agent --data-dir "$DATA" project stage leaf "$SUMMARY_RUN_ID" "$INCOME_CARD" \
-  --implementation codex gpt-6.1-terra medium --review-only
+  --implementation codex gpt-6.1-terra medium --card-review claude claude-fable-5-2 high --review-only
 uv run python -m multi_agent --data-dir "$DATA" project stage leaf "$SUMMARY_RUN_ID" "$EXPENSE_CARD" \
   --implementation codex gpt-6.1-terra medium --review-only
-uv run python -m multi_agent task run-batch "$INCOME_PLANNING_RUN_ID" "$EXPENSE_PLANNING_RUN_ID" \
+uv run python -m multi_agent --data-dir "$DATA" task run-batch "$INCOME_PLANNING_RUN_ID" "$EXPENSE_PLANNING_RUN_ID" \
   --database "$DATA/reviews.sqlite3" --repository "$REPO" --directory "$DATA/summary-work"
 ```
 

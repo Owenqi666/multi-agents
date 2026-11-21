@@ -46,9 +46,13 @@ cd frontend && corepack pnpm build
 
 产物在 `frontend/dist`，不入库（根目录 `.gitignore` 已有 `dist/`）。
 
-## 从已审核的单卡开始实施
+## 规划和实施单卡
 
-在「单卡」输入当前仓库里的规划运行 ID。已有已审核独立规划可以选择主模型和备选模型。留空按冻结规则派发；添加的备选按页面最后排列的顺序冻结，后续在实施详情查看。直接阶段和已领取子卡从阶段页面使用各自冻结的配置。
+在「单卡」新建规划、查阅工作台登记的规划历史，或输入当前仓库已有的规划运行 ID。新建时填基线与需求，可指定 Claude 草拟和 Codex 复核的模型和档位。「冻结声明（可选）」可登记依赖和用户决定。依赖的完整基线 SHA 必须与本次基线一致。
+
+规划详情可查看冻结输入、尝试结果和规划问题。可重试的规划沿用原运行 ID 和冻结请求。遇到阻塞问题时，从「回答后新建规划」带入原基线、需求和声明。原模型和档位在当前环境可选时会一同带入。回答作为新规划的用户决定保存。
+
+已审核的独立规划可以选择实施主模型和备选模型。留空按冻结规则派发。备选按页面最后排列的顺序冻结，后续可在实施详情查看。在分派阶段首次领取子卡时，可为这张卡指定复核模型和档位，默认继承阶段设置。卡片复核读回同时显示请求和运行时报告。重试卡片复核和重新冻结沿用首次选择。
 
 「实施详情」按尝试显示工作树位置、请求、工作台选择、冻结备选链、运行时报告、用量与改派。Codex 的累计用量和最近一次用量分开显示。Claude 报告的费用显示为客户端估算美元。重试沿用首次冻结的设置，缺少证据的字段显示「未确认」。
 
@@ -124,11 +128,14 @@ cd frontend && corepack pnpm run e2e
 | 保存为新版本 | 计划 | `project.revise` | 文档是合法 JSON 且有改动；服务再校验 |
 | 领取这个阶段 | 计划 | `project.stage.start` | 计划已生成、阶段未领取、前置阶段的 `review_satisfied` 均为真。阶段负责人和卡片复核沿用工作区默认值，可手动改选。可填写包含所有前置交付的执行基线 |
 | 恢复阶段 | 阶段 | `project.stage.resume` | 还没有拟卡尝试（带 `prepare: true`），或规划 `next_action.kind` 为 `plan_retry` |
+| 开始单卡规划 | 单卡 | `plan.create` | 基线与需求必填。可选 `draft`、`plan_review` 和 `declarations` |
+| 重试规划 | 单卡规划 | `plan.retry` | 读回允许重试。按原 `planning_run_id` 继续 |
 | 开始实施 | 阶段、实施 | `task.run` | `next_action.kind` 为 `run` 且还没有实施尝试 |
 | 开始实施 | 单卡规划 | `task.run` | 读回允许配置且尚未绑定实施。可选 `implementation` 和顺序排列的 `fallbacks` |
 | 重试实施 | 阶段、实施 | `task.retry` | `next_action.kind` 为 `run` 且已有实施尝试 |
-| 领取子卡 | 阶段（分派） | `project.stage.leaf` | 子卡还没有 `planning`，`unmet_dependencies` 为空；执行者只能选 Terra 或 Sonnet |
-| 重新冻结并复核 | 阶段（分派） | `project.stage.leaf` | 已领取的子卡所冻结的前置候选发生变化，且现有前置候选均可用。提交 `refreeze: true` 和 `review_only: true`，保留旧规划供查看 |
+| 领取子卡 | 阶段（分派） | `project.stage.leaf` | 子卡还没有 `planning`，`unmet_dependencies` 为空。执行者可选 Terra 或 Sonnet，复核席可选 `card_review` |
+| 重试卡片复核 | 阶段（分派） | `project.stage.leaf` | 未绑定实施且复核可重试。传入 `review_only: true`，使用既有复核配置 |
+| 重新冻结并复核 | 阶段（分派） | `project.stage.leaf` | 子卡未绑定实施，冻结的前置候选发生变化，且现有前置候选均可用。提交 `refreeze: true` 和 `review_only: true`，保留旧规划供查看 |
 | 实施（子卡） | 阶段（分派） | `task.run` | 子卡 `review_ready` 为真且还没有实施尝试 |
 | 并行实施 N 张子卡 | 阶段（分派） | `task.run_batch` | 至少两张子卡复核通过、没有实施、没有未满足的依赖 |
 | 运行测试 | 阶段、实施 | `task.test` | `next_action.kind` 为 `task_test`；命令名取任务读回里冻结的规则，默认勾选卡片的 `test_refs` |

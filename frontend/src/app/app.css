@@ -128,6 +128,20 @@ a { color: var(--ink); text-decoration-color: var(--ink-3); text-underline-offse
 .task-counters dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
 .task-reroutes { list-style: none; display: grid; gap: 6px; padding: 0; margin: 0; }
 .task-reroutes li { display: flex; flex-wrap: wrap; gap: 3px 12px; align-items: baseline; }
+.plan-fields, .plan-declaration { min-width: 0; margin: 0; padding: 0; border: 0; }
+.plan-fields .form-row > label { width: min(100%, 33rem); }
+.plan-label { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
+.plan-models, .leaf-claim-fields, .plan-declarations, .plan-declaration, .planning-attempts {
+  display: grid; gap: 10px; align-items: start; min-width: 0;
+}
+.plan-models .picker, .leaf-claim-fields .picker { min-width: 0; max-width: 100%; }
+.plan-models select, .leaf-claim-fields select { min-width: 0; max-width: 100%; }
+.plan-declarations { margin-top: 10px; }
+.plan-declaration { border-top: 1px solid var(--hair); padding-top: 8px; }
+.plan-declaration legend { padding-right: 8px; font-size: 13px; color: var(--ink-2); }
+.plan-attempt-list, .plan-question-list { margin: 0; padding-left: 1.4em; display: grid; gap: 10px; }
+.plan-attempt-list > li > * + *, .plan-question-list > li > * + * { margin-top: 6px; }
+.plan-attempt-list .goal-text, .plan-question-list .goal-text { font-size: 14px; }
 .leaf-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
 .leaf { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 10px; background: var(--plate); }
 .leaf-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }

@@ -13,6 +13,7 @@ import { ProjectsPage, ProjectPage, GoalPage } from '../pages/ProjectPages';
 import { PlanPage } from '../pages/PlanPage';
 import { StagePage } from '../pages/StagePage';
 import { TaskPage } from '../pages/TaskPage';
+import { NewTaskPlanPage } from '../pages/NewTaskPlanPage';
 import { OpenTaskPlanPage, TaskPlanPage } from '../pages/TaskPlanPage';
 import { IntegrationPage } from '../pages/IntegrationPage';
 import { ReviewPage } from '../pages/ReviewPage';
@@ -32,6 +33,7 @@ const ROUTES: Route[] = [
   ['/plans/:id', (p) => <PlanPage id={p.id!} />],
   ['/stages/:id', (p) => <StagePage id={p.id!} />],
   ['/task-plans', () => <OpenTaskPlanPage />],
+  ['/task-plans/new', (_, q) => <NewTaskPlanPage key={q.toString()} from={q.get('from')} questionIndex={q.get('question')} />],
   ['/task-plans/:id', (p) => <TaskPlanPage key={p.id!} id={p.id!} />],
   ['/tasks/:id', (p) => <TaskPage id={p.id!} />],
   ['/integrations/:id', (p) => <IntegrationPage id={p.id!} />],
