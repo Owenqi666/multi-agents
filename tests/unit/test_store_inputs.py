@@ -129,4 +129,4 @@ def test_actual_version_one_upgrade_preserves_history(
         assert store.load_round("old").seats[0].attempts[0].result == {"report": "kept"}
         assert store.list_reviews() == ()
     with sqlite3.connect(path) as db:
-        assert db.execute("PRAGMA user_version").fetchone() == (12,)
+        assert db.execute("PRAGMA user_version").fetchone() == (13,)

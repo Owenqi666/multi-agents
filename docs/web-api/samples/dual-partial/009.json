@@ -1,9 +1,9 @@
 {
   "kind": "consultation",
-  "id": "consultation-10000040000000000000000000000000",
+  "id": "consultation-10000030000000000000000000000000",
   "data": {
     "kind": "goal_consultation",
-    "consultation_id": "consultation-10000040000000000000000000000000",
+    "consultation_id": "consultation-10000030000000000000000000000000",
     "repository": "/sample/scenario/repository",
     "git_common_dir": "/sample/scenario/repository/.git",
     "baseline_commit": "2000001000000000000000000000000000000000",
@@ -27,7 +27,7 @@
     },
     "seats": [
       {
-        "consultation_id": "consultation-10000040000000000000000000000000",
+        "consultation_id": "consultation-10000030000000000000000000000000",
         "number": 1,
         "request": {
           "effort": "low",
@@ -55,28 +55,28 @@
           "exit_code": 0,
           "logs": [
             {
-              "byte_count": 1205,
+              "byte_count": 1204,
               "closed": true,
               "healthy": true,
               "identity": [
                 1,
                 1
               ],
-              "path": "/sample/scenario/data/logs/consultations/consultation-10000040000000000000000000000000/seat-1/claude-environment-10000050000000000000000000000000.jsonl",
+              "path": "/sample/scenario/data/logs/consultations/consultation-10000030000000000000000000000000/seat-1/claude-environment-10000040000000000000000000000000.jsonl",
               "records": 9,
               "resource_id": "log-2",
               "sealed": true,
               "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
             },
             {
-              "byte_count": 3644,
+              "byte_count": 3645,
               "closed": true,
               "healthy": true,
               "identity": [
                 1,
                 2
               ],
-              "path": "/sample/scenario/data/logs/consultations/consultation-10000040000000000000000000000000/seat-1/claude-10000060000000000000000000000000.jsonl",
+              "path": "/sample/scenario/data/logs/consultations/consultation-10000030000000000000000000000000/seat-1/claude-10000050000000000000000000000000.jsonl",
               "records": 8,
               "resource_id": "log-5",
               "sealed": true,
@@ -109,25 +109,25 @@
   },
   "artifacts": [
     {
-      "artifact_id": "art-WyJjb25zdWx0YXRpb24iLCJjb25zdWx0YXRpb24tMTAwMDAwNDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJzZWF0LTEtMSIsIjMwMDAwMDMwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJjb25zdWx0YXRpb24iLCJjb25zdWx0YXRpb24tMTAwMDAwMzAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJzZWF0LTEtMSIsIjMwMDAwMDMwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "seat-1-1",
       "coordinates": {
         "seat": 1,
         "log_index": 1
       },
-      "stream": "claude-environment-10000050000000000000000000000000",
-      "byte_count": 1205,
+      "stream": "claude-environment-10000040000000000000000000000000",
+      "byte_count": 1204,
       "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJjb25zdWx0YXRpb24iLCJjb25zdWx0YXRpb24tMTAwMDAwNDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJzZWF0LTEtMiIsIjMwMDAwMDQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJjb25zdWx0YXRpb24iLCJjb25zdWx0YXRpb24tMTAwMDAwMzAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiLHt9LCJzZWF0LTEtMiIsIjMwMDAwMDQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "seat-1-2",
       "coordinates": {
         "seat": 1,
         "log_index": 2
       },
-      "stream": "claude-10000060000000000000000000000000",
-      "byte_count": 3644,
+      "stream": "claude-10000050000000000000000000000000",
+      "byte_count": 3645,
       "sha256": "3000004000000000000000000000000000000000000000000000000000000000"
     }
   ]

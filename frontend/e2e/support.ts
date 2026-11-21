@@ -19,6 +19,7 @@ export class OfflineEnv {
   private waiting: ((line: string) => void)[] = [];
   url = '';
   standalonePlans: { codex: string; claude: string } | null = null;
+  archive: { snapshotId: string; version: number; files: Record<string, string> } | null = null;
 
   private constructor(private readonly proc: ChildProcess, readonly scenario: string) {
     createInterface({ input: proc.stdout! }).on('line', (line) => {
@@ -42,11 +43,13 @@ export class OfflineEnv {
     let fixture = 'tests/unit/web_support/offline_env.py';
     if (['review-fixes', 'claim'].includes(scenario)) fixture = 'frontend/e2e/review_fixes_env.py';
     if (scenario === 'task-evidence') fixture = 'frontend/e2e/task_evidence_env.py';
+    if (scenario === 'archive') fixture = 'frontend/e2e/archive_env.py';
     const proc = spawn('uv', ['run', 'python', fixture, '--scenario', scenario, '--port', '0', '--frontend-dist', DIST], {
       cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const env = new OfflineEnv(proc, scenario);
     if (scenario === 'task-evidence') env.standalonePlans = JSON.parse(await env.nextLine()) as NonNullable<OfflineEnv['standalonePlans']>;
+    if (scenario === 'archive') env.archive = JSON.parse(await env.nextLine()) as NonNullable<OfflineEnv['archive']>;
     env.url = (await env.nextLine()).trim();
     return env;
   }
@@ -62,6 +65,10 @@ export class OfflineEnv {
     const done = new Promise((r) => this.proc.once('exit', r));
     this.proc.kill('SIGINT');
     await Promise.race([done, new Promise((r) => setTimeout(r, 20_000))]);
+  }
+
+  async archiveInventory(): Promise<Record<string, string>> {
+    return JSON.parse(await this.nextLine(20_000)) as Record<string, string>;
   }
 }
 

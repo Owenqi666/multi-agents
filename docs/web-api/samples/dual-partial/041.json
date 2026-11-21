@@ -1,30 +1,30 @@
 {
   "args": {
-    "stage_run_id": "stage-100001c0000000000000000000000000"
+    "stage_run_id": "stage-100001b0000000000000000000000000"
   },
   "created_at": "2000-01-01T00:01:04.000000+00:00",
   "started_at": "2000-01-01T00:01:05.000000+00:00",
   "finished_at": "2000-01-01T00:01:06.000000+00:00",
   "cancel_requested_at": null,
   "stderr_tail": "",
-  "job_id": "10000330000000000000000000000000",
+  "job_id": "10000320000000000000000000000000",
   "action": "project.stage.integrate",
   "state": "finished",
   "exit_code": 0,
   "result": {
     "operation": "create",
-    "integration_id": "10000340000000000000000000000000",
+    "integration_id": "10000330000000000000000000000000",
     "status": "ready",
     "verification": "verified",
     "repository": "/sample/scenario/repository/.git",
-    "target_ref": "refs/heads/multi-agent/stages/stage-100001c0000000000000000000000000",
+    "target_ref": "refs/heads/multi-agent/stages/stage-100001b0000000000000000000000000",
     "target_baseline": "2000002000000000000000000000000000000000",
     "target_head": "2000002000000000000000000000000000000000",
     "target_is_current": true,
     "members": [
       {
-        "task_run_id": "10000270000000000000000000000000",
-        "planning_run_id": "10000220000000000000000000000000",
+        "task_run_id": "10000260000000000000000000000000",
+        "planning_run_id": "10000210000000000000000000000000",
         "attempt": 1,
         "task_input": {
           "card": {
@@ -109,7 +109,7 @@
               "task_types": []
             }
           },
-          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}",
+          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001c0000000000000000000000000\",\"stage_run_id\":\"stage-100001b0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000080000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000a0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"10000190000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000e0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000100000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}",
           "created_at": "2000-01-01T00:00:53.000000+00:00"
         },
         "delivery": {
@@ -119,14 +119,14 @@
             "frontend/status.js"
           ],
           "digest": "3000037000000000000000000000000000000000000000000000000000000000",
-          "ref": "refs/multi-agent/candidates/10000280000000000000000000000000",
+          "ref": "refs/multi-agent/candidates/10000270000000000000000000000000",
           "tree": "2000008000000000000000000000000000000000"
         },
         "external_dependencies": []
       },
       {
-        "task_run_id": "10000300000000000000000000000000",
-        "planning_run_id": "100002b0000000000000000000000000",
+        "task_run_id": "100002f0000000000000000000000000",
+        "planning_run_id": "100002a0000000000000000000000000",
         "attempt": 1,
         "task_input": {
           "card": {
@@ -211,7 +211,7 @@
               "task_types": []
             }
           },
-          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
+          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001c0000000000000000000000000\",\"stage_run_id\":\"stage-100001b0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000080000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000a0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"10000190000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000e0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000100000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
           "created_at": "2000-01-01T00:01:02.000000+00:00"
         },
         "delivery": {
@@ -221,53 +221,53 @@
             "frontend/banner.js"
           ],
           "digest": "3000044000000000000000000000000000000000000000000000000000000000",
-          "ref": "refs/multi-agent/candidates/10000310000000000000000000000000",
+          "ref": "refs/multi-agent/candidates/10000300000000000000000000000000",
           "tree": "200000a000000000000000000000000000000000"
         },
         "external_dependencies": []
       }
     ],
     "applied": [
-      "10000270000000000000000000000000",
-      "10000300000000000000000000000000"
+      "10000260000000000000000000000000",
+      "100002f0000000000000000000000000"
     ],
     "candidate": {
-      "ref": "refs/multi-agent/integrations/10000340000000000000000000000000",
+      "ref": "refs/multi-agent/integrations/10000330000000000000000000000000",
       "commit": "200000b000000000000000000000000000000000",
       "tree": "200000c000000000000000000000000000000000"
     },
     "conflict": null,
     "source_errors": [],
     "kind": "project_stage_integration",
-    "stage_run_id": "stage-100001c0000000000000000000000000",
+    "stage_run_id": "stage-100001b0000000000000000000000000",
     "stage_id": "summary",
-    "plan_id": "plan-100000b0000000000000000000000000",
+    "plan_id": "plan-100000a0000000000000000000000000",
     "application_target": true
   },
   "error": null,
   "resources": [
     {
       "kind": "project-plan",
-      "id": "plan-100000b0000000000000000000000000"
+      "id": "plan-100000a0000000000000000000000000"
     },
     {
       "kind": "stage",
-      "id": "stage-100001c0000000000000000000000000"
+      "id": "stage-100001b0000000000000000000000000"
     },
     {
       "kind": "integration",
-      "id": "10000340000000000000000000000000"
+      "id": "10000330000000000000000000000000"
     }
   ],
   "artifacts": [
     {
-      "artifact_id": "10000330000000000000000000000000.stdout",
+      "artifact_id": "10000320000000000000000000000000.stdout",
       "stream": "stdout",
       "byte_count": 14566,
       "sha256": "3000049000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "10000330000000000000000000000000.stderr",
+      "artifact_id": "10000320000000000000000000000000.stderr",
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"

@@ -24,7 +24,7 @@ from multi_agent.core.task_test_execution import reserve_task_test_execution
 from multi_agent.core.task_test_input import TaskTestInput
 from multi_agent.core.task_test_state import TaskTestState
 
-from .database import _migration_scripts
+from .database import _migration_scripts, selected_archive
 from .planning_store import PlanningStore
 from .task_codec import decode_task_input
 from .task_test_codec import (
@@ -64,22 +64,29 @@ class TaskTestStore(PlanningStore):
             raise ValueError(
                 "read-only test database must be an existing canonical regular file"
             )
-        connection = sqlite3.connect(
-            location.as_uri() + "?mode=ro",
-            uri=True,
-            timeout=timeout,
-            isolation_level=None,
+        archive = selected_archive.get()
+        archived = archive is not None and archive.path == location
+        minimum = 2 if archived else 5
+        connection = (
+            archive.connect(timeout=timeout)
+            if archive is not None and archived
+            else sqlite3.connect(
+                location.as_uri() + "?mode=ro",
+                uri=True,
+                timeout=timeout,
+                isolation_level=None,
+            )
         )
         try:
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA query_only = ON")
             connection.execute("PRAGMA foreign_keys = ON")
             version = connection.execute("PRAGMA user_version").fetchone()[0]
-            if version < 5 or version not in {
+            if version < minimum or version not in {
                 number for number, _ in _migration_scripts()
             }:
                 raise ValueError(
-                    "read-only test database requires schema version 5 or newer "
+                    f"read-only database requires schema version {minimum} or newer "
                     f"supported by this build (found {version})"
                 )
             after = location.lstat()

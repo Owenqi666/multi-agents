@@ -97,7 +97,7 @@
   {
     "seq": 9,
     "method": "GET",
-    "path": "/api/resources/consultation/consultation-10000040000000000000000000000000",
+    "path": "/api/resources/consultation/consultation-10000030000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -114,7 +114,7 @@
         "baseline": "2000001000000000000000000000000000000000",
         "original_goal": "Build the amount and summary, then outline monthly reporting.\n",
         "confirmed_goal": "Build the amount and summary, then outline monthly reporting.\nUse the checked output format.\n",
-        "consultation_id": "consultation-10000040000000000000000000000000",
+        "consultation_id": "consultation-10000030000000000000000000000000",
         "adoption": "edited"
       }
     },
@@ -124,7 +124,7 @@
   {
     "seq": 11,
     "method": "GET",
-    "path": "/api/jobs/10000070000000000000000000000000",
+    "path": "/api/jobs/10000060000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -133,7 +133,7 @@
   {
     "seq": 12,
     "method": "GET",
-    "path": "/api/resources/goal/goal-10000090000000000000000000000000",
+    "path": "/api/resources/goal/goal-10000080000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -142,7 +142,7 @@
   {
     "seq": 13,
     "method": "GET",
-    "path": "/api/resources/project/project-10000080000000000000000000000000",
+    "path": "/api/resources/project/project-10000070000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -156,7 +156,7 @@
     "request_body": {
       "action": "project.plan",
       "args": {
-        "goal_id": "goal-10000090000000000000000000000000",
+        "goal_id": "goal-10000080000000000000000000000000",
         "planner": {
           "provider": "claude",
           "model": "claude-fable-5-2",
@@ -170,7 +170,7 @@
   {
     "seq": 15,
     "method": "GET",
-    "path": "/api/jobs/100000a0000000000000000000000000",
+    "path": "/api/jobs/10000090000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -179,7 +179,7 @@
   {
     "seq": 16,
     "method": "GET",
-    "path": "/api/resources/project-plan/plan-100000b0000000000000000000000000",
+    "path": "/api/resources/project-plan/plan-100000a0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -193,7 +193,7 @@
     "request_body": {
       "action": "project.stage.start",
       "args": {
-        "plan_id": "plan-100000b0000000000000000000000000",
+        "plan_id": "plan-100000a0000000000000000000000000",
         "stage_id": "amount",
         "mode": "direct",
         "sol": {
@@ -213,7 +213,7 @@
   {
     "seq": 18,
     "method": "GET",
-    "path": "/api/jobs/100000e0000000000000000000000000",
+    "path": "/api/jobs/100000d0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -222,7 +222,7 @@
   {
     "seq": 19,
     "method": "GET",
-    "path": "/api/resources/task/10000110000000000000000000000000",
+    "path": "/api/resources/task/10000100000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -231,7 +231,7 @@
   {
     "seq": 20,
     "method": "GET",
-    "path": "/api/diffs/task/10000110000000000000000000000000",
+    "path": "/api/diffs/task/10000100000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -245,7 +245,7 @@
     "request_body": {
       "action": "task.test",
       "args": {
-        "task_run_id": "10000110000000000000000000000000",
+        "task_run_id": "10000100000000000000000000000000",
         "implementation_attempt": 1,
         "commands": [
           "build",
@@ -260,7 +260,7 @@
   {
     "seq": 22,
     "method": "GET",
-    "path": "/api/jobs/10000180000000000000000000000000",
+    "path": "/api/jobs/10000170000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -269,7 +269,7 @@
   {
     "seq": 23,
     "method": "GET",
-    "path": "/api/resources/task-test/10000110000000000000000000000000",
+    "path": "/api/resources/task-test/10000100000000000000000000000000",
     "query": "implementation_attempt=1&test_attempt=1",
     "request_body": null,
     "status": 200,
@@ -278,7 +278,7 @@
   {
     "seq": 24,
     "method": "GET",
-    "path": "/api/artifacts/art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+    "path": "/api/artifacts/art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
     "query": "offset=0&limit=4096",
     "request_body": null,
     "status": 200,
@@ -292,7 +292,7 @@
     "request_body": {
       "action": "task.review",
       "args": {
-        "task_run_id": "10000110000000000000000000000000",
+        "task_run_id": "10000100000000000000000000000000",
         "implementation_attempt": 1,
         "test_attempt": 1,
         "seats": [
@@ -311,7 +311,7 @@
   {
     "seq": 26,
     "method": "GET",
-    "path": "/api/jobs/10000190000000000000000000000000",
+    "path": "/api/jobs/10000180000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -320,7 +320,7 @@
   {
     "seq": 27,
     "method": "GET",
-    "path": "/api/resources/stage/stage-100000f0000000000000000000000000",
+    "path": "/api/resources/stage/stage-100000e0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -334,7 +334,7 @@
     "request_body": {
       "action": "project.stage.start",
       "args": {
-        "plan_id": "plan-100000b0000000000000000000000000",
+        "plan_id": "plan-100000a0000000000000000000000000",
         "stage_id": "summary",
         "mode": "delegate",
         "sol": {
@@ -354,7 +354,7 @@
   {
     "seq": 29,
     "method": "GET",
-    "path": "/api/jobs/100001b0000000000000000000000000",
+    "path": "/api/jobs/100001a0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -368,7 +368,7 @@
     "request_body": {
       "action": "project.stage.integrate",
       "args": {
-        "stage_run_id": "stage-100001c0000000000000000000000000"
+        "stage_run_id": "stage-100001b0000000000000000000000000"
       }
     },
     "status": 409,
@@ -382,7 +382,7 @@
     "request_body": {
       "action": "project.stage.leaf",
       "args": {
-        "stage_run_id": "stage-100001c0000000000000000000000000",
+        "stage_run_id": "stage-100001b0000000000000000000000000",
         "card_id": "T-0800",
         "implementation": {
           "provider": "claude-code",
@@ -398,7 +398,7 @@
   {
     "seq": 32,
     "method": "GET",
-    "path": "/api/jobs/10000210000000000000000000000000",
+    "path": "/api/jobs/10000200000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -412,7 +412,7 @@
     "request_body": {
       "action": "task.run",
       "args": {
-        "planning_run_id": "10000220000000000000000000000000"
+        "planning_run_id": "10000210000000000000000000000000"
       }
     },
     "status": 202,
@@ -421,7 +421,7 @@
   {
     "seq": 34,
     "method": "GET",
-    "path": "/api/jobs/10000260000000000000000000000000",
+    "path": "/api/jobs/10000250000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -435,7 +435,7 @@
     "request_body": {
       "action": "project.stage.leaf",
       "args": {
-        "stage_run_id": "stage-100001c0000000000000000000000000",
+        "stage_run_id": "stage-100001b0000000000000000000000000",
         "card_id": "T-0801",
         "implementation": {
           "provider": "claude-code",
@@ -451,7 +451,7 @@
   {
     "seq": 36,
     "method": "GET",
-    "path": "/api/jobs/100002a0000000000000000000000000",
+    "path": "/api/jobs/10000290000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -465,7 +465,7 @@
     "request_body": {
       "action": "task.run",
       "args": {
-        "planning_run_id": "100002b0000000000000000000000000"
+        "planning_run_id": "100002a0000000000000000000000000"
       }
     },
     "status": 202,
@@ -474,7 +474,7 @@
   {
     "seq": 38,
     "method": "GET",
-    "path": "/api/jobs/100002f0000000000000000000000000",
+    "path": "/api/jobs/100002e0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -483,7 +483,7 @@
   {
     "seq": 39,
     "method": "GET",
-    "path": "/api/resources/stage/stage-100001c0000000000000000000000000",
+    "path": "/api/resources/stage/stage-100001b0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -497,7 +497,7 @@
     "request_body": {
       "action": "project.stage.integrate",
       "args": {
-        "stage_run_id": "stage-100001c0000000000000000000000000"
+        "stage_run_id": "stage-100001b0000000000000000000000000"
       }
     },
     "status": 202,
@@ -506,7 +506,7 @@
   {
     "seq": 41,
     "method": "GET",
-    "path": "/api/jobs/10000330000000000000000000000000",
+    "path": "/api/jobs/10000320000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -520,7 +520,7 @@
     "request_body": {
       "action": "integration.test",
       "args": {
-        "integration_id": "10000340000000000000000000000000"
+        "integration_id": "10000330000000000000000000000000"
       }
     },
     "status": 202,
@@ -529,7 +529,7 @@
   {
     "seq": 43,
     "method": "GET",
-    "path": "/api/jobs/10000350000000000000000000000000",
+    "path": "/api/jobs/10000340000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -543,7 +543,7 @@
     "request_body": {
       "action": "integration.review",
       "args": {
-        "integration_id": "10000340000000000000000000000000",
+        "integration_id": "10000330000000000000000000000000",
         "seats": [
           {
             "provider": "claude",
@@ -560,7 +560,7 @@
   {
     "seq": 45,
     "method": "GET",
-    "path": "/api/jobs/10000360000000000000000000000000",
+    "path": "/api/jobs/10000350000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -569,7 +569,7 @@
   {
     "seq": 46,
     "method": "GET",
-    "path": "/api/resources/review/10000370000000000000000000000000",
+    "path": "/api/resources/review/10000360000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -587,7 +587,7 @@
   {
     "seq": 48,
     "method": "GET",
-    "path": "/api/diffs/integration/10000340000000000000000000000000",
+    "path": "/api/diffs/integration/10000330000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -601,8 +601,8 @@
     "request_body": {
       "action": "integration.rework",
       "args": {
-        "integration_id": "10000340000000000000000000000000",
-        "round_id": "10000370000000000000000000000000"
+        "integration_id": "10000330000000000000000000000000",
+        "round_id": "10000360000000000000000000000000"
       }
     },
     "status": 202,
@@ -611,7 +611,7 @@
   {
     "seq": 50,
     "method": "GET",
-    "path": "/api/jobs/10000380000000000000000000000000",
+    "path": "/api/jobs/10000370000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -620,7 +620,7 @@
   {
     "seq": 51,
     "method": "GET",
-    "path": "/api/diffs/integration/100003a0000000000000000000000000",
+    "path": "/api/diffs/integration/10000390000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -629,7 +629,7 @@
   {
     "seq": 52,
     "method": "GET",
-    "path": "/api/diffs/integration/100003a0000000000000000000000000",
+    "path": "/api/diffs/integration/10000390000000000000000000000000",
     "query": "against=parent",
     "request_body": null,
     "status": 200,
@@ -643,8 +643,8 @@
     "request_body": {
       "action": "integration.accept",
       "args": {
-        "integration_id": "100003a0000000000000000000000000",
-        "round_id": "100003e0000000000000000000000000"
+        "integration_id": "10000390000000000000000000000000",
+        "round_id": "100003d0000000000000000000000000"
       }
     },
     "status": 202,
@@ -653,7 +653,7 @@
   {
     "seq": 54,
     "method": "GET",
-    "path": "/api/jobs/100003f0000000000000000000000000",
+    "path": "/api/jobs/100003e0000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,
@@ -662,7 +662,7 @@
   {
     "seq": 55,
     "method": "GET",
-    "path": "/api/resources/integration/100003a0000000000000000000000000",
+    "path": "/api/resources/integration/10000390000000000000000000000000",
     "query": null,
     "request_body": null,
     "status": 200,

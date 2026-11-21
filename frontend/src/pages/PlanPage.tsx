@@ -6,6 +6,7 @@ import { api } from '../api/client';
 import { jobs } from '../api/jobs';
 import { lockBusy, useRead } from '../api/reads';
 import type { PlanStage, Project, ProjectPlan, Stage, StageRun, Workspace } from '../api/types';
+import { useArchiveMode, useWorkspace } from '../api/workspace';
 import { shortId, timeText } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
 import { ActionButton } from '../components/Action';
@@ -13,7 +14,7 @@ import { Badge } from '../components/Badge';
 import { EmptyState } from '../components/EmptyState';
 import { ModelPicker, type PickerChoice } from '../components/ModelPicker';
 import { ReadFrame } from '../components/ReadNote';
-import { EnvironmentHint, useWorkspace } from './GoalPages';
+import { EnvironmentHint } from './GoalPages';
 import { ArtifactLinks, Evidence, Facts, Page, Raw, Section, useResource } from './common';
 
 type StageRuns = { plan_id: string; stages: StageRun[] };
@@ -154,6 +155,7 @@ function Revise({ plan }: { plan: ProjectPlan }) {
 }
 
 export function PlanPage({ id }: { id: string }) {
+  const archive = useArchiveMode();
   const read = useResource<ProjectPlan>('project-plan', id);
   const plan = read.data?.data?.plan_id === id ? read.data.data : null;
   const stages = useResource<StageRuns>('project-stages', plan?.status === 'succeeded' ? id : null);
@@ -209,7 +211,7 @@ export function PlanPage({ id }: { id: string }) {
                             <p className="row"><Badge tone="ok">已领取 · {claimed.mode === 'direct' ? '直接' : '分派'}</Badge>
                               <Link className="btn small" href={to('stages', claimed.stage_run_id)}>打开阶段</Link>
                               {claimed.dispatch_error ? <span className="action-why problem">{claimed.dispatch_error}</span> : null}</p>
-                          ) : p.status === 'succeeded' && ws.data ? (
+                          ) : !archive && p.status === 'succeeded' && ws.data ? (
                             <ClaimForm key={p.plan_id} plan={p} stage={s} ws={ws.data} blocker={blocker} />
                           ) : null}
                         </li>
@@ -218,7 +220,7 @@ export function PlanPage({ id }: { id: string }) {
                   </ol>
                   <EnvironmentHint ws={ws.data} />
                 </Section>
-                <Section title="修订"><Revise plan={p} /></Section>
+                {archive ? null : <Section title="修订"><Revise plan={p} /></Section>}
                 <Section title="完整文档"><Raw value={p.document} label="计划文档（JSON）" />{p.markdown ? <details className="raw"><summary>计划书正文</summary><pre>{p.markdown}</pre></details> : null}</Section>
               </>
             ) : null}

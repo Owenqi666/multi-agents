@@ -203,6 +203,9 @@ def _project_goal(command: _Command, action: str) -> None:
     if "project_id" in command.args:
         command.argv.extend(("--project-id", command.owned("project_id", "project")))
     if action == "project.consult":
+        command.argv.extend(
+            ("--consultation-id", f"consultation-{command.input_directory.parent.name}")
+        )
         command.seats(advisors=True)
         command.bins()
         return
@@ -215,6 +218,10 @@ def _project_goal(command: _Command, action: str) -> None:
     elif "adoption" in command.args:
         raise ValueError("adoption requires consultation_id")
     command.token("adoption", ("accepted", "edited"))
+
+
+def _consultation_recovery(command: _Command, _action: str) -> None:
+    command.argv.append(command.owned("consultation_id", "consultation"))
 
 
 def _project_plan(command: _Command, action: str) -> None:
@@ -371,6 +378,12 @@ _ACTIONS: dict[str, _Spec] = {
         ("baseline", "original_goal", "advisors"),
         ("project_id",),
     ),
+    "project.consult.reconcile": (
+        "project reconcile-consultation",
+        _consultation_recovery,
+        ("consultation_id",),
+        (),
+    ),
     "project.confirm": (
         "project confirm",
         _project_goal,
@@ -501,6 +514,7 @@ def prepare_action(
             "multi_agent",
             "--data-dir",
             str(workspace.data_dir),
+            "--structured-errors",
             *subcommand.split(),
         ],
     )

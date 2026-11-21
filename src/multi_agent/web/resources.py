@@ -51,6 +51,21 @@ _PROJECT_SCHEMA = {
 }
 _HISTORY = {"plan", "task", "task-review", "integration", "review"}
 _KINDS = _HISTORY | set(_PROJECT_SCHEMA) | {"task-test", "snapshot"}
+_ARCHIVE_SCHEMA = {
+    "snapshot": 2,
+    "review": 2,
+    "task": 3,
+    "plan": 4,
+    "task-review": 5,
+    "task-test": 5,
+    "integration": 6,
+    "project": 9,
+    "goal": 9,
+    "project-plan": 9,
+    "project-stages": 10,
+    "stage": 10,
+    "consultation": 12,
+}
 _ARTIFACT_PAGE = 65_536
 _ARTIFACT_LIMIT = 128 * 1024 * 1024
 LOCKED_RESOURCE_KINDS = frozenset(
@@ -63,6 +78,10 @@ type _Query = dict[str, list[str]]
 
 class _ResourceStore(ProjectStore, IntegrationStore):
     """Combined domain queries on one read-only connection."""
+
+
+class ArchiveUnsupported(ValueError):
+    """This schema predates the requested resource."""
 
 
 def _query(query: _Query, allowed: set[str]) -> dict[str, str]:
@@ -84,7 +103,7 @@ def _validate_resource_identity(kind: str, identifier: str) -> None:
 
 def _scope(workspace: Workspace, kind: str, identifier: str) -> tuple[Path, str]:
     _validate_resource_identity(kind, identifier)
-    database = workspace.data_dir / "reviews.sqlite3"
+    database = workspace.database
     if database.is_symlink():
         raise ValueError("workspace database must be a regular file")
     if not database.is_file():
@@ -109,14 +128,25 @@ def _read_snapshot(store: IntegrationStore, identifier: str) -> ReviewInput:
     return value
 
 
-def _owned(store: _ResourceStore, common: str, kind: str, identifier: str) -> None:
+def _owned(
+    store: _ResourceStore,
+    common: str,
+    kind: str,
+    identifier: str,
+    *,
+    archive: bool = False,
+) -> None:
     repository: str | None
-    minimum = _PROJECT_SCHEMA.get(kind)
-    if (
-        minimum
-        and store._connection.execute("PRAGMA user_version").fetchone()[0] < minimum
-    ):
-        raise KeyError(identifier)
+    minimum = (_ARCHIVE_SCHEMA if archive else _PROJECT_SCHEMA).get(kind)
+    if minimum is not None:
+        version = store._connection.execute("PRAGMA user_version").fetchone()[0]
+        if version < minimum:
+            if archive:
+                raise ArchiveUnsupported(
+                    f"Archive version {version} does not contain {kind} records "
+                    f"(requires version {minimum})."
+                )
+            raise KeyError(identifier)
     if kind == "integration":
         repository = store.load_integration(identifier).repository
     elif kind == "plan":
@@ -157,7 +187,7 @@ def require_owned(workspace: Workspace, kind: str, identifier: str) -> None:
     """Authorize a domain ID against its recorded Git common directory."""
     database, common = _scope(workspace, kind, identifier)
     with _ResourceStore.open_readonly(database) as store:
-        _owned(store, common, kind, identifier)
+        _owned(store, common, kind, identifier, archive=workspace.archive is not None)
 
 
 def _resource_options(kind: str, query: _Query) -> dict[str, str]:
@@ -189,12 +219,13 @@ def _resource_data(
     history = "history" in options
     database, common = _scope(workspace, kind, identifier)
     with _ResourceStore.open_readonly(database) as store:
-        _owned(store, common, kind, identifier)
+        _owned(store, common, kind, identifier, archive=workspace.archive is not None)
         if kind == "plan":
             plan = _plan_view(store, identifier, history)
             if "implementation" in options:
                 plan["dispatch_configurable"] = (
-                    plan["phase"] == "ready"
+                    workspace.archive is None
+                    and plan["phase"] == "ready"
                     and plan["verification"] == "verified"
                     and plan["next_action"]["kind"] == "run"
                     and "draft_projection" not in plan
@@ -331,7 +362,7 @@ def _parent_candidate(
         if rework is None or rework["child_id"] != identifier:
             return None
         parent_id = rework["source_id"]
-    database = workspace.data_dir / "reviews.sqlite3"
+    database = workspace.database
     with IntegrationStore.open_readonly(database) as store:
         parent = store.load_integration(parent_id)
     if parent.repository != value["repository"]:
@@ -619,7 +650,7 @@ def _add_logs(
 def _integration_artifacts(
     workspace: Workspace, identifier: str, artifacts: dict[str, _Artifact]
 ) -> None:
-    database = workspace.data_dir / "reviews.sqlite3"
+    database = workspace.database
     with IntegrationStore.open_readonly(database) as store:
         if not store.has_integration_verification():
             return
@@ -660,7 +691,7 @@ def _integration_artifacts(
 def _task_test_artifacts(
     workspace: Workspace, value: dict[str, Any], artifacts: dict[str, _Artifact]
 ) -> None:
-    database = workspace.data_dir / "reviews.sqlite3"
+    database = workspace.database
     identifier = value["task_run_id"]
     implementation = value["implementation_attempt"]
     test = value["test_attempt"]

@@ -1,8 +1,8 @@
 {
   "kind": "review",
-  "id": "10000370000000000000000000000000",
+  "id": "10000360000000000000000000000000",
   "data": {
-    "round_id": "10000370000000000000000000000000",
+    "round_id": "10000360000000000000000000000000",
     "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
     "prompt_template_version": "integration-review-v1",
     "metadata": {
@@ -11,8 +11,8 @@
       "timeout": 180,
       "grace": 2,
       "executables": {
-        "claude": "/sample/scenario/bin/claude",
-        "codex": "/sample/scenario/bin/codex"
+        "codex": "/sample/scenario/bin/codex",
+        "claude": "/sample/scenario/bin/claude"
       },
       "parent_round_id": null
     },
@@ -83,7 +83,7 @@
             "models": null
           },
           "finished_at": "2000-01-01T00:01:14.000000+00:00",
-          "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-1/1",
+          "log_dir": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/10000360000000000000000000000000/seat-1/1",
           "started_at": "2000-01-01T00:01:15.000000+00:00",
           "workspace_unchanged": true
         }
@@ -140,7 +140,7 @@
             ]
           },
           "finished_at": "2000-01-01T00:01:16.000000+00:00",
-          "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-2/1",
+          "log_dir": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/10000360000000000000000000000000/seat-2/1",
           "started_at": "2000-01-01T00:01:17.000000+00:00",
           "workspace_unchanged": true
         }
@@ -165,7 +165,7 @@
         "source": "workbench_executed",
         "executed_by_workbench": true,
         "status": "passed",
-        "integration_id": "10000340000000000000000000000000",
+        "integration_id": "10000330000000000000000000000000",
         "test_attempt": 1,
         "test_evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000",
         "required_commands": [
@@ -364,7 +364,7 @@
   },
   "artifacts": [
     {
-      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0xLXN0ZG91dCIsIjMwMDAwMjIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0xLXN0ZG91dCIsIjMwMDAwMjIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "frozen-1-stdout",
       "coordinates": {
         "frozen_index": 1
@@ -374,7 +374,7 @@
       "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0xLXN0ZGVyciIsIjMwMDAwMDYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0xLXN0ZGVyciIsIjMwMDAwMDYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "frozen-1-stderr",
       "coordinates": {
         "frozen_index": 1
@@ -384,7 +384,7 @@
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0yLXN0ZG91dCIsIjMwMDAwMjQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0yLXN0ZG91dCIsIjMwMDAwMjQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "frozen-2-stdout",
       "coordinates": {
         "frozen_index": 2
@@ -394,7 +394,7 @@
       "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM3MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0yLXN0ZGVyciIsIjMwMDAwMjUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJyZXZpZXciLCIxMDAwMDM2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIse30sImZyb3plbi0yLXN0ZGVyciIsIjMwMDAwMjUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "frozen-2-stderr",
       "coordinates": {
         "frozen_index": 2

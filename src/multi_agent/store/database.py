@@ -2,6 +2,11 @@
 
 import json
 import sqlite3
+import stat
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
@@ -36,6 +41,99 @@ def _migration_scripts() -> list[tuple[int, Traversable]]:
         if path.name.endswith(".sql")
     ]
     return sorted(scripts, key=lambda script: script[0])
+
+
+type _FileStamp = tuple[int, int, int, int, int]
+
+
+class ArchiveChanged(ValueError):
+    """The sealed archive changed while it was selected."""
+
+
+def _archive_stamp(path: Path) -> tuple[_FileStamp | None, ...]:
+    records: list[_FileStamp | None] = []
+    for suffix in ("", "-wal", "-shm", "-journal"):
+        candidate = path.with_name(path.name + suffix)
+        try:
+            item = candidate.lstat()
+        except FileNotFoundError:
+            if not suffix:
+                raise
+            records.append(None)
+            continue
+        if not stat.S_ISREG(item.st_mode):
+            raise ValueError(f"Archive entry must be a regular file: {candidate.name}")
+        records.append(
+            (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns, item.st_ctime_ns)
+        )
+    journal = records[-1]
+    if journal is not None and journal[2] > 0:
+        raise ValueError(
+            "Close and checkpoint the source before opening its archive journal."
+        )
+    return tuple(records)
+
+
+@dataclass(frozen=True, slots=True)
+class ArchivedDatabase:
+    """A sealed archive and its sidecar identity, read directly without a migration."""
+
+    path: Path
+    _stamp: tuple[_FileStamp | None, ...]
+
+    @classmethod
+    def open(cls, path: Path) -> Self:
+        location = path.expanduser().resolve(strict=True)
+        return cls(location, _archive_stamp(location))
+
+    def check(self) -> None:
+        try:
+            current = _archive_stamp(self.path)
+        except (OSError, ValueError) as error:
+            raise ArchiveChanged("The selected archive files changed.") from error
+        if current != self._stamp:
+            raise ArchiveChanged("The selected archive files changed.")
+
+    def connect(self, *, timeout: float) -> sqlite3.Connection:
+        self.check()
+        wal = self._stamp[1]
+        with_wal = wal is not None and wal[2] > 0
+        query = "mode=ro&vfs=unix-none" if with_wal else "mode=ro&immutable=1"
+        connection = sqlite3.connect(
+            f"{self.path.as_uri()}?{query}",
+            uri=True,
+            timeout=timeout,
+            isolation_level=None,
+        )
+        try:
+            if with_wal:
+                # The selected archive has no live writers. Keep the WAL index
+                # in memory and leave the archived DB/WAL/SHM untouched.
+                connection.setconfig(sqlite3.SQLITE_DBCONFIG_NO_CKPT_ON_CLOSE, True)
+                connection.execute("PRAGMA locking_mode = EXCLUSIVE")
+            return connection
+        except BaseException:
+            connection.close()
+            raise
+
+
+selected_archive: ContextVar[ArchivedDatabase | None] = ContextVar(
+    "selected_archive", default=None
+)
+
+
+@contextmanager
+def archive_reads(archive: ArchivedDatabase | None) -> Iterator[None]:
+    if archive is None:
+        yield
+        return
+    archive.check()
+    token = selected_archive.set(archive)
+    try:
+        yield
+    finally:
+        selected_archive.reset(token)
+        archive.check()
 
 
 class ReviewStore:

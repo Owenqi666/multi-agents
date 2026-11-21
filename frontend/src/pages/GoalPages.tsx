@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
 import { useRead } from '../api/reads';
+import { useArchiveMode, useWorkspace } from '../api/workspace';
 import type { Advice, Consultation, Job, RunItem, Workspace } from '../api/types';
 import { shortId, timeText } from '../app/labels';
 import { navigate, to } from '../app/router';
@@ -15,14 +16,10 @@ import { candidatesFor, ModelPicker, requestFrom, type PickerChoice } from '../c
 import { ReadFrame } from '../components/ReadNote';
 import { ArtifactLinks, Evidence, Facts, Page, Section, useResource } from './common';
 
-export function useWorkspace() {
-  return useRead<Workspace>('workspace', () => api.workspace(), { locking: false });
-}
-
 /** Codex candidates appear only after a successful environment check; offer it, never run it
  *  on page load. */
 export function EnvironmentHint({ ws }: { ws: Workspace | null }) {
-  if (!ws) return null;
+  if (!ws || ws.read_only) return null;
   const missing = (['codex', 'claude'] as const).filter((p) => !ws.environments[p]);
   if (!missing.length) return null;
   return (
@@ -134,12 +131,23 @@ const SEAT_STATUS: Record<string, [Parameters<typeof Badge>[0]['tone'], string]>
   pending: ['muted', '等待'], running: ['live', '进行中'], succeeded: ['ok', '完成'], failed: ['fail', '失败'],
 };
 
+function consultationError(error: unknown): string | null {
+  if (typeof error === 'string') return error;
+  if (!error || typeof error !== 'object') return null;
+  for (const key of ['detail', 'message'] as const) {
+    const value = (error as Partial<Record<typeof key, unknown>>)[key];
+    if (typeof value === 'string') return value;
+  }
+  return null;
+}
+
 export function ConsultationPage({ id }: { id: string }) {
   const read = useResource<Consultation>('consultation', id);
+  const archive = useArchiveMode();
   const [text, setText] = useState<string | null>(null);
   return (
     <Page kicker={`需求咨询 · ${shortId(id)}`} title="需求咨询">
-      <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what="需求咨询">
+      <ReadFrame read={{ ...read, data: read.data?.id === id ? read.data.data : null }} what="需求咨询">
         {(c) => {
           const draft = c.draft;
           const value = text ?? draft?.draft_goal ?? '';
@@ -147,18 +155,30 @@ export function ConsultationPage({ id }: { id: string }) {
           return (
             <>
               <Section title="原始目标"><pre className="goal-text">{c.original_goal}</pre>
-                <Facts rows={[['基线', <code>{shortId(c.baseline_commit, 10)}</code>], ['开始', timeText(c.started_at)], ['结束', timeText(c.finished_at)]]} />
+                <Facts rows={[
+                  ['基线', <code>{shortId(c.baseline_commit, 10)}</code>],
+                  ['开始', timeText(c.started_at)], ['结束', timeText(c.finished_at)],
+                  ...(c.interrupted_at ? [['中断对账', timeText(c.interrupted_at)] as [string, string]] : []),
+                ]} />
+                {c.status === 'running' && !archive ? (
+                  <ActionButton action="project.consult.reconcile" label="检查并对账"
+                    args={() => ({ consultation_id: c.consultation_id })}
+                    onDone={(job) => {
+                      if (job.exit_code !== 0 && window.location.pathname === to('consultations', id)) navigate(to('jobs', job.job_id));
+                    }} />
+                ) : null}
               </Section>
               {c.seats.map((s) => (
-                <Section key={s.number} title={`顾问 ${s.number}`} note={s.number === 2 ? '读到了第一位的意见' : undefined}>
+                <Section key={s.number} title={`顾问 ${s.number}`} note={s.number === 2 && s.started_at ? '输入中包含第一位顾问的意见。' : undefined}>
                   <p className="row"><Badge tone={SEAT_STATUS[s.status]?.[0] ?? 'muted'}>{SEAT_STATUS[s.status]?.[1] ?? s.status}</Badge>
                     <Evidence reportedModel={s.evidence?.reported_model} reportedEffort={s.evidence?.reported_effort} request={s.request} /></p>
                   {s.advice ? <AdviceView advice={s.advice} /> : s.status === 'pending' ? <p className="loading">还没开始。</p> : null}
+                  {s.error ? <p className="goal-text">{consultationError(s.error) ?? '顾问没有完成。'}</p> : null}
                   <ArtifactLinks artifacts={(read.data?.artifacts ?? []).filter((a) => a.coordinates?.seat === s.number)}
                     label={(a) => `顾问 ${s.number} · ${a.stream ?? '日志'} ${a.coordinates?.log_index ?? ''}`.trim()} />
                 </Section>
               ))}
-              {draft ? (
+              {draft && !archive ? (
                 <Section title="确认目标" note="原样确认记为「原样采纳」，改过再确认记为「改过」。">
                   <textarea className="field big" rows={6} value={value} onChange={(e) => setText(e.target.value)} aria-label="确认的目标" />
                   <div className="form-actions">
@@ -168,8 +188,10 @@ export function ConsultationPage({ id }: { id: string }) {
                       onDone={(job) => { const pid = jobId(job, 'project'); navigate(pid ? to('projects', pid) : to('jobs', job.job_id)); }} />
                   </div>
                 </Section>
+              ) : c.interrupted_at ? (
+                <EmptyState compact title="咨询已中断" body="已保存的顾问意见和历史记录仍可查看。" />
               ) : c.status === 'failed' ? (
-                <EmptyState compact title="咨询没有完成" body="有一位顾问失败，没有可以确认的草稿。可以重新提出目标，或者直接确认原文。" />
+                <EmptyState compact title="咨询没有完成" body={archive ? '这里保留了当时的顾问结果。' : '有一位顾问失败，没有可以确认的草稿。可以重新提出目标，或者直接确认原文。'} />
               ) : null}
             </>
           );

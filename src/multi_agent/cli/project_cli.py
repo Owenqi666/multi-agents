@@ -24,7 +24,7 @@ from multi_agent.core.project_plan import ConfirmedGoal
 from multi_agent.store.project_store import ProjectStore
 
 from .main import data_directory
-from .project_consult import add_consult_parser, consult
+from .project_consult import add_consult_parser, consult, reconcile_consultation
 from .project_stage import add_stage_parser, dispatch_stage
 from .runner import _tree_digest
 from .snapshot import _git, _resolve_commit, _string, freeze_repository, materialize
@@ -285,6 +285,8 @@ def dispatch_project(args: argparse.Namespace) -> dict[str, Any]:
                     )
                     raise SystemExit(status)
             return result
+        if args.project_action == "reconcile-consultation":
+            return reconcile_consultation(store, data_path, args.consultation_id)
         if args.project_action == "plan":
             return _plan(args, store, data_path)
         if args.project_action == "revise":

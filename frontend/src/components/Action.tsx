@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { jobs, useJobs } from '../api/jobs';
 import { useReadsInFlight } from '../api/reads';
+import { useWorkspaceWritesAllowed } from '../api/workspace';
 import { errorText } from '../api/transport';
 import type { Job } from '../api/types';
 import { actionLabel } from '../app/labels';
@@ -23,6 +24,7 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
   confirm?: string;
 }) {
   const { active, submitting, settling, ready } = useJobs();
+  const writesAllowed = useWorkspaceWritesAllowed();
   const reading = useReadsInFlight() > 0 || settling;
   const [mine, setMine] = useState<string | null>(null);
   const [problem, setProblem] = useState<ReactNode>(null);
@@ -31,8 +33,10 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
   // While the page is still reading (just after a job, or on arrival) its buttons may come from
   // the state before; wait for the reading so nothing is submitted twice.
   const blocked = !ready || disabled || busyElsewhere || running || submitting === action || reading;
+  if (!writesAllowed) return null;
 
   const click = async (): Promise<void> => {
+    if (blocked) return;
     const a = args();
     if (!a) return;
     if (confirm && !window.confirm(confirm)) return;

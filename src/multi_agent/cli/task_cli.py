@@ -41,6 +41,7 @@ from multi_agent.core.tasks import TaskCard
 from multi_agent.store.project_store import ProjectStore
 from multi_agent.store.task_review_store import TaskReviewStore
 
+from .errors import report_refusal
 from .planning_context import capture_planning_policy
 from .planning_evidence import (
     bind_planning_task,
@@ -333,7 +334,8 @@ def _task_view(
     store: TaskReviewStore, database: Path, identifier: str, history: bool
 ) -> dict[str, Any]:
     state = store.load_task(identifier)
-    planning_id = store.planning_run_for_task(identifier)
+    schema = store._connection.execute("PRAGMA user_version").fetchone()[0]
+    planning_id = store.planning_run_for_task(identifier) if schema >= 4 else None
     current = state.current_attempt
     prepared = prepared_for_task(current) if current is not None else None
     rework_used = any(
@@ -358,9 +360,10 @@ def _task_view(
             verified = True
         except _ERRORS as error:
             errors.append(str(error))
+    test_stages = store.list_task_test_stages() if schema >= 5 else ()
     tests = [
         view_task_test(database, run_id, attempt)
-        for run_id, attempt in store.list_task_test_stages()
+        for run_id, attempt in test_stages
         if run_id == identifier
     ]
     reviews = []
@@ -1155,10 +1158,7 @@ def main(args: argparse.Namespace) -> int:
         print(json.dumps(value, ensure_ascii=False))
         return 1
     except _ERRORS as error:
-        print(str(error), file=sys.stderr)
-        for note in getattr(error, "__notes__", ()):
-            print(note, file=sys.stderr)
-        return 2
+        return report_refusal(error, prefix="")
     except KeyboardInterrupt as error:
         if args.task_operation == "rework":
             for note in getattr(error, "__notes__", ()):

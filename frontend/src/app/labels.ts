@@ -3,6 +3,7 @@
 export const ACTION_LABEL: Record<string, string> = {
   'environment.refresh': '检查环境',
   'project.consult': '需求咨询',
+  'project.consult.reconcile': '咨询对账',
   'project.confirm': '确认目标',
   'project.plan': '生成计划',
   'project.revise': '修订计划',

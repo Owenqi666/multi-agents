@@ -16,9 +16,11 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import wraps
 from pathlib import Path
+from time import monotonic, sleep
 from uuid import uuid4
 
 from multi_agent.cli import snapshot
+from multi_agent.cli.errors import CLIRefusal
 from multi_agent.core.events import FailureCategory
 from multi_agent.core.integration_rework import IntegrationRepairDelta
 from multi_agent.core.path_patterns import normalize_path, path_matches
@@ -30,6 +32,9 @@ from multi_agent.core.workspaces import (
     WorkspaceInspection,
     WorkspaceRecord,
 )
+
+_WRITER_WAIT_SECONDS = 1.0
+_WRITER_RETRY_SECONDS = 0.02
 
 
 class DeliveryRejected(ValueError):
@@ -108,9 +113,25 @@ def _check_lease(lease: ExecutorLease) -> None:
         raise ValueError("executor lock identity changed")
 
 
+def _acquire_executor(fd: int) -> None:
+    deadline = monotonic() + _WRITER_WAIT_SECONDS
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError as error:
+            remaining = deadline - monotonic()
+            if remaining <= 0:
+                raise CLIRefusal(
+                    "repository_busy",
+                    "repository already has an implementation executor",
+                ) from error
+        sleep(min(remaining, _WRITER_RETRY_SECONDS))
+
+
 @contextmanager
 def executor_lock(repository: Path) -> Iterator[ExecutorLease]:
-    """A cooperative, nonblocking lock shared by all linked worktrees."""
+    """Get the shared repository's exclusive writer lock within a short bound."""
     lease: ExecutorLease | None = None
     fd: int | None = None
     try:
@@ -124,12 +145,7 @@ def executor_lock(repository: Path) -> Iterator[ExecutorLease]:
             )
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError("executor lock must be a regular file")
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as error:
-                raise ValueError(
-                    "repository already has an implementation executor"
-                ) from error
+            _acquire_executor(fd)
             lease = ExecutorLease(source, common, fd)
             _check_lease(lease)
         except (OSError, UnicodeError) as error:

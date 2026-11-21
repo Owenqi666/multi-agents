@@ -311,7 +311,15 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
             round_id=direct_review["round_id"],
             exit_code=2,
         )
-        assert refused["error"] is not None
+        assert refused["result"] is None
+        assert refused["error"] == {
+            "code": "integration_accept_refused",
+            "message": "integration requires its current review round",
+        }
+        assert (
+            "multi-agent: integration requires its current review round"
+            in refused["stderr_tail"]
+        )
         helpers.configure(codex, role="test-service")
         suite = _job(service, "integration.test", integration_id=identifier)["result"][
             "test"

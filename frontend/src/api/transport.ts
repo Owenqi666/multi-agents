@@ -83,6 +83,8 @@ export function errorText(e: unknown): string {
     case 'environment_busy': return '这个提供方的环境检查正在运行。';
     case 'job_unavailable': return '现在不能执行这个操作。';
     case 'not_found': return '找不到这条记录。';
+    case 'archive_read_only': return '归档工作区为只读。';
+    case 'archive_unsupported': return `此归档版本不支持这个记录类型。 ${e.message}`;
     case 'invalid_request': case 'unknown_action': case 'invalid_provider': return '请求不对，服务没有接受。';
     case 'invalid_host': case 'invalid_origin': return '请从服务打印的 http://127.0.0.1:<端口> 地址打开页面。';
     case 'workspace_unavailable': return '服务读取工作区失败，可以重试。';

@@ -20,6 +20,7 @@ from multi_agent.core.task_test_state import TaskTestPhase
 from multi_agent.core.transitions import task_test_phase
 from multi_agent.store.task_test_store import TaskTestStore
 
+from .errors import report_refusal
 from .task_context import _check_lease
 from .task_test_context import capture_task_test_policy
 from .task_test_evidence import inspect_task_test_command
@@ -306,9 +307,6 @@ def main(args: argparse.Namespace) -> int:
         RuntimeError,
         sqlite3.Error,
     ) as error:
-        print(f"multi-agent: {error}", file=sys.stderr)
-        for note in getattr(error, "__notes__", ()):
-            print(note, file=sys.stderr)
-        return 2
+        return report_refusal(error)
     print(json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False))
     return code

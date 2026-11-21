@@ -1,0 +1,32 @@
+{
+  "events": [
+    {"consultation": "before-second", "action": "reserve", "seat": 1, "at": "01"},
+    {"consultation": "before-second", "action": "finish", "seat": 1, "at": "02", "advice": "First draft", "disposition": "applied"},
+    {"consultation": "before-second", "action": "interrupt", "at": "03", "disposition": "applied"},
+    {"consultation": "before-second", "action": "reserve", "seat": 2, "at": "04", "rejected": "interrupted"},
+    {"consultation": "before-second", "action": "finish", "seat": 2, "at": "05", "advice": "Never started", "rejected": "interrupted"},
+    {"consultation": "before-second", "action": "interrupt", "at": "06", "disposition": "history_only"},
+    {"consultation": "during-second", "action": "reserve", "seat": 1, "at": "01"},
+    {"consultation": "during-second", "action": "finish", "seat": 1, "at": "02", "advice": "First draft", "disposition": "applied"},
+    {"consultation": "during-second", "action": "reserve", "seat": 2, "at": "03"},
+    {"consultation": "during-second", "action": "interrupt", "at": "04", "disposition": "applied"},
+    {"consultation": "during-second", "action": "finish", "seat": 2, "at": "05", "advice": "Late second draft", "disposition": "history_only"},
+    {"consultation": "during-second", "action": "finish", "seat": 1, "at": "06", "advice": "Late first draft", "disposition": "history_only"},
+    {"consultation": "during-second", "action": "interrupt", "at": "07", "disposition": "history_only"}
+  ],
+  "expected": {
+    "before-second": {
+      "interrupted_at": "03",
+      "second": {"status": "pending", "started_at": null, "finished_at": null, "error": null},
+      "late": []
+    },
+    "during-second": {
+      "interrupted_at": "04",
+      "second": {"status": "failed", "started_at": "03", "finished_at": null, "error": "project.consultation.interrupted"},
+      "late": [
+        {"number": 2, "finished_at": "05", "draft": "Late second draft"},
+        {"number": 1, "finished_at": "06", "draft": "Late first draft"}
+      ]
+    }
+  }
+}

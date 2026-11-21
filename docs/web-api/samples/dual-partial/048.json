@@ -1,7 +1,7 @@
 {
   "args": {
-    "integration_id": "10000340000000000000000000000000",
-    "round_id": "10000370000000000000000000000000",
+    "integration_id": "10000330000000000000000000000000",
+    "round_id": "10000360000000000000000000000000",
     "seat_keys": [
       "seat-1"
     ]
@@ -11,16 +11,16 @@
   "finished_at": "2000-01-01T00:01:29.000000+00:00",
   "cancel_requested_at": null,
   "stderr_tail": "",
-  "job_id": "10000380000000000000000000000000",
+  "job_id": "10000370000000000000000000000000",
   "action": "integration.retry_review",
   "state": "finished",
   "exit_code": 0,
   "result": {
     "operation": "retry-review",
-    "integration_id": "10000340000000000000000000000000",
+    "integration_id": "10000330000000000000000000000000",
     "test_attempt": 1,
     "review": {
-      "round_id": "10000370000000000000000000000000",
+      "round_id": "10000360000000000000000000000000",
       "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
       "prompt_template_version": "integration-review-v1",
       "metadata": {
@@ -29,8 +29,8 @@
         "timeout": 180,
         "grace": 2,
         "executables": {
-          "claude": "/sample/scenario/bin/claude",
-          "codex": "/sample/scenario/bin/codex"
+          "codex": "/sample/scenario/bin/codex",
+          "claude": "/sample/scenario/bin/claude"
         },
         "parent_round_id": null
       },
@@ -123,7 +123,7 @@
               "models": null
             },
             "finished_at": "2000-01-01T00:01:14.000000+00:00",
-            "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-1/1",
+            "log_dir": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/10000360000000000000000000000000/seat-1/1",
             "started_at": "2000-01-01T00:01:15.000000+00:00",
             "workspace_unchanged": true
           },
@@ -136,7 +136,7 @@
               "models": null
             },
             "finished_at": "2000-01-01T00:01:30.000000+00:00",
-            "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-1/2",
+            "log_dir": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/10000360000000000000000000000000/seat-1/2",
             "started_at": "2000-01-01T00:01:31.000000+00:00",
             "workspace_unchanged": true
           }
@@ -193,7 +193,7 @@
               ]
             },
             "finished_at": "2000-01-01T00:01:16.000000+00:00",
-            "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000/logs/10000370000000000000000000000000/seat-2/1",
+            "log_dir": "/sample/scenario/data/web-run-10000350000000000000000000000000/logs/10000360000000000000000000000000/seat-2/1",
             "started_at": "2000-01-01T00:01:17.000000+00:00",
             "workspace_unchanged": true
           }
@@ -218,7 +218,7 @@
           "source": "workbench_executed",
           "executed_by_workbench": true,
           "status": "passed",
-          "integration_id": "10000340000000000000000000000000",
+          "integration_id": "10000330000000000000000000000000",
           "test_attempt": 1,
           "test_evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000",
           "required_commands": [
@@ -293,7 +293,7 @@
   "resources": [
     {
       "kind": "integration",
-      "id": "10000340000000000000000000000000"
+      "id": "10000330000000000000000000000000"
     },
     {
       "kind": "snapshot",
@@ -301,18 +301,18 @@
     },
     {
       "kind": "review",
-      "id": "10000370000000000000000000000000"
+      "id": "10000360000000000000000000000000"
     }
   ],
   "artifacts": [
     {
-      "artifact_id": "10000380000000000000000000000000.stdout",
+      "artifact_id": "10000370000000000000000000000000.stdout",
       "stream": "stdout",
-      "byte_count": 6103,
+      "byte_count": 6104,
       "sha256": "3000051000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "10000380000000000000000000000000.stderr",
+      "artifact_id": "10000370000000000000000000000000.stderr",
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"

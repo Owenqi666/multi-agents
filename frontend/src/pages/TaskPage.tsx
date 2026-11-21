@@ -3,12 +3,12 @@
 
 import { useState } from 'react';
 import type { TaskView } from '../api/types';
+import { useArchiveMode, useWorkspace } from '../api/workspace';
 import { shortId, timeText, VERIFICATION_LABEL } from '../app/labels';
 import { Link, to } from '../app/router';
 import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
 import { ReadFrame } from '../components/ReadNote';
-import { useWorkspace } from './GoalPages';
 import { TaskAttemptEvidence } from './TaskAttemptEvidence';
 import { currentTaskReview, ReviewRetry, RoundSummary, useCommands, useSeats } from './bits';
 import { ArtifactLinks, Evidence, Facts, NextNote, Page, Section, useResource } from './common';
@@ -20,7 +20,8 @@ const PHASE: Record<string, string> = {
 
 export function TaskPanel({ task, detail = false }: { task: TaskView; detail?: boolean }) {
   const ws = useWorkspace();
-  const next = task.next_action;
+  const archive = useArchiveMode();
+  const next = archive ? null : task.next_action;
   const kind = next?.kind ?? null;
   const card = task.details?.input?.card;
   const available = task.details?.input?.frozen_rules?.rules?.commands?.map((c) => c.name) ?? [];

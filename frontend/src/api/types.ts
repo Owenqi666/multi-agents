@@ -51,6 +51,7 @@ export interface Job {
   started_at?: string | null;
   finished_at?: string | null;
   cancel_requested_at?: string | null;
+  recovery_consultation_id?: Id | null;
   /** Last 8 KiB of stderr once the CLI exited; null while running. */
   stderr_tail?: string | null;
 }
@@ -197,6 +198,7 @@ export interface Consultation {
   started_at: string | null;
   finished_at: string | null;
   status: 'running' | 'succeeded' | 'failed';
+  interrupted_at?: string | null;
   draft: Advice | null;
   seats: ConsultationSeat[];
 }

@@ -3,7 +3,6 @@
 import argparse
 import json
 import sqlite3
-import sys
 from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -30,6 +29,7 @@ from multi_agent.store.project_integration import (
     ProjectIntegrationStore,
 )
 
+from .errors import report_refusal
 from .integration_git import IntegrationGit, _git, read_ref, read_tree
 from .task_candidates import inspect_task_candidate
 from .task_context import _database, _store_database
@@ -492,10 +492,12 @@ def main(args: argparse.Namespace) -> int:
         KeyError,
         sqlite3.Error,
     ) as error:
-        print(f"multi-agent: {error}", file=sys.stderr)
-        for note in getattr(error, "__notes__", ()):
-            print(note, file=sys.stderr)
-        return 2
+        return report_refusal(
+            error,
+            code="integration_accept_refused"
+            if operation == "accept"
+            else "cli_refused",
+        )
     except KeyboardInterrupt:
         return 130
     print(json.dumps(result, ensure_ascii=False))

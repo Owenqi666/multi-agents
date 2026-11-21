@@ -1,7 +1,9 @@
 """Integrate verified managed deliveries through the normal CLI and real Git."""
 
 import json
+import subprocess
 import sys
+import time
 from copy import copy
 
 import test_task_workflow_cli as helpers
@@ -56,6 +58,104 @@ def show(workflow, integration):
         "--database",
         workflow.database,
     )
+
+
+def test_integration_writer_waits_for_an_existing_terminal_task_read(
+    workflow, tmp_path
+):
+    task, _ = implement(
+        workflow, "T-0288", "frontend/status.js", {"frontend/status.js": b"reader\n"}
+    )
+    held = tmp_path / "read-lock-held"
+    release = tmp_path / "read-lock-release"
+    blocked = tmp_path / "write-lock-contended"
+    reader = """
+import sys
+import time
+from contextlib import contextmanager
+from pathlib import Path
+from multi_agent.cli import task_cli
+from multi_agent.cli.main import main
+
+read_lock = task_cli._existing_lease
+
+@contextmanager
+def wait_at_lock(*args):
+    with read_lock(*args) as lease:
+        Path(sys.argv[1]).touch()
+        until = time.monotonic() + 10
+        while not Path(sys.argv[2]).exists():
+            if time.monotonic() >= until:
+                raise RuntimeError('test did not signal read completion')
+            time.sleep(0.005)
+        yield lease
+
+task_cli._existing_lease = wait_at_lock
+raise SystemExit(main(sys.argv[3:]))
+"""
+    writer = """
+import fcntl
+import sys
+from pathlib import Path
+from multi_agent.cli.main import main
+
+flock = fcntl.flock
+
+def signal_contention(fd, operation):
+    try:
+        flock(fd, operation)
+    except BlockingIOError:
+        Path(sys.argv[1]).touch()
+        raise
+
+fcntl.flock = signal_contention
+raise SystemExit(main(sys.argv[2:]))
+"""
+    children = []
+
+    def spawn(script, *arguments):
+        child = subprocess.Popen(
+            [sys.executable, "-c", script, *map(str, arguments)],
+            cwd=helpers.REPOSITORY,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        children.append(child)
+        return child
+
+    def await_signal(marker, child):
+        until = time.monotonic() + 10
+        while not marker.exists() and child.poll() is None and time.monotonic() < until:
+            time.sleep(0.005)
+        assert marker.exists(), marker.name
+
+    try:
+        reading = spawn(
+            reader,
+            held,
+            release,
+            "task",
+            "show",
+            "--task",
+            task["task_run_id"],
+            "--database",
+            workflow.database,
+        )
+        await_signal(held, reading)
+        writing = spawn(writer, blocked, *create_args(workflow, task))
+        await_signal(blocked, writing)
+        release.touch()
+        for child in (reading, writing):
+            stdout, stderr = child.communicate(timeout=15)
+            assert child.returncode == 0, (stdout, stderr)
+            assert json.loads(stdout)["verification"] == "verified"
+    finally:
+        release.touch()
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+            child.communicate(timeout=10)
 
 
 def test_integration_pins_independent_candidates_and_retains_historical_target(

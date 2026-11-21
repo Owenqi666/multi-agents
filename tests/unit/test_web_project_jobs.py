@@ -149,6 +149,13 @@ sys.exit(130 if Path({str(signalled)!r}).exists() else 3)
         ('{"value": true, "value": false}\n', 1, None, "invalid_cli_output"),
         ('{"value": true}\nextra\n', 0, None, "invalid_cli_output"),
         ("", 130, None, "cli_cancelled"),
+        ("", 2, None, "cli_failed"),
+        (
+            '{"kind":"cli_error","error":{"code":"runtime_error","message":"failure"}}',
+            0,
+            None,
+            "invalid_cli_output",
+        ),
     ],
 )
 def test_cli_job_uses_entire_stdout_and_observed_exit(
@@ -175,3 +182,46 @@ def test_cli_job_uses_entire_stdout_and_observed_exit(
             settled["artifacts"][0]["sha256"]
             == hashlib.sha256(stdout.encode()).hexdigest()
         )
+
+
+def test_cli_job_persists_an_unexpected_failure_from_the_launched_controller(
+    tmp_path, repository, monkeypatch
+):
+    data = tmp_path / "data"
+
+    def prepare(*_args, **_kwargs):
+        script = f"""
+from multi_agent.cli import main
+
+def broken_dispatch(_args):
+    raise RuntimeError('fixture failed during an already launched CLI operation')
+
+main.dispatch = broken_dispatch
+raise SystemExit(main.main(['--data-dir', {str(data)!r}, '--structured-errors', 'show']))
+"""
+        return [sys.executable, "-c", script]
+
+    monkeypatch.setattr(server, "prepare_action", prepare)
+    with _serve(repository, data, {}) as service:
+        identifier = _submit(service)
+        job = _wait_for(lambda: _finished(service, identifier))
+        assert job["exit_code"] == 1 and job["started_at"] is not None
+        assert job["result"] is None
+        assert job["error"] == {
+            "code": "cli_runtime_failed",
+            "message": "fixture failed during an already launched CLI operation",
+        }
+        assert "Traceback (most recent call last)" in job["stderr_tail"]
+        assert "RuntimeError: fixture failed" in job["stderr_tail"]
+        stdout = next(item for item in job["artifacts"] if item["stream"] == "stdout")
+        status, output = _request(
+            service, "GET", f"/api/artifacts/{stdout['artifact_id']}"
+        )
+        assert status == 200
+        assert json.loads(output["text"]) == {
+            "kind": "cli_error",
+            "error": job["error"],
+        }
+
+    with _serve(repository, data, {}) as service:
+        assert _request(service, "GET", f"/api/jobs/{identifier}") == (200, job)

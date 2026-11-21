@@ -171,6 +171,45 @@ def test_job_record_counts_unicode_in_compact_document(
         assert finished["stderr_tail"] == ""
 
 
+def test_new_interrupted_consultation_keeps_its_navigation_id(
+    tmp_path, repository, monkeypatch
+):
+    data = tmp_path / "data"
+
+    def prepare(*_args, **_kwargs):
+        return [sys.executable, "-c", "print('{}')"]
+
+    monkeypatch.setattr(server, "prepare_action", prepare)
+    with _serve(repository, data, {}) as service:
+        identifier = _submit(service, "project.consult", {})
+        finished = _wait_for(lambda: _finished(service, identifier))
+        assert "recovery_consultation_id" not in finished
+
+    path = data / "web-environment" / "state.json"
+    state = json.loads(path.read_text())
+    jobs = state["jobs"]
+    recovery_id = f"consultation-{identifier}"
+    assert jobs[identifier]["recovery_consultation_id"] == recovery_id
+    jobs[identifier].update(
+        state="running", exit_code=None, result=None, finished_at=None
+    )
+    old = "a" * 32
+    jobs[old] = _legacy_job(old, "running") | {"action": "project.consult"}
+    path.write_text(json.dumps(state))
+
+    with _serve(repository, data, {}) as service:
+        status, current = _request(service, "GET", f"/api/jobs/{identifier}")
+        assert status == 200 and current["state"] == "interrupted"
+        assert current["recovery_consultation_id"] == recovery_id
+        status, legacy = _request(service, "GET", f"/api/jobs/{old}")
+        assert status == 200 and legacy["state"] == "interrupted"
+        assert "recovery_consultation_id" not in legacy
+        status, recent = _request(service, "GET", "/api/jobs")
+        assert (
+            status == 200 and current in recent["items"] and legacy in recent["items"]
+        )
+
+
 def test_job_list_keeps_an_active_refresh_older_than_the_latest_fifty(
     tmp_path, repository, monkeypatch
 ):

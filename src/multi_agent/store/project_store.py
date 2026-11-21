@@ -18,7 +18,7 @@ from multi_agent.core.project_plan import (
     StageRun,
     render_markdown,
 )
-from multi_agent.core.state import AttemptStatus
+from multi_agent.core.state import AttemptStatus, Disposition
 from multi_agent.core.tasks import TaskCard
 from multi_agent.core.transitions import (
     ProjectConsultationSeatStatus,
@@ -43,6 +43,8 @@ class ProjectStore(TaskReviewStore):
         source_snapshot_id: str,
         advisors: tuple[PlanningRequest, ...],
         started_at: str,
+        *,
+        owner: tuple[int, int] | None = None,
     ) -> None:
         if len(advisors) not in (1, 2):
             raise ValueError("a consultation requires one or two advisors")
@@ -54,7 +56,10 @@ class ProjectStore(TaskReviewStore):
             ):
                 raise ValueError("the project belongs to a different Git repository")
             self._connection.execute(
-                "INSERT INTO project_consultations VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                """INSERT INTO project_consultations
+                   (consultation_id, repository, git_common_dir, baseline_commit,
+                    original_goal, project_id, source_snapshot_id, started_at,
+                    owner_device, owner_inode) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     consultation_id,
                     repository,
@@ -64,6 +69,7 @@ class ProjectStore(TaskReviewStore):
                     project_id,
                     source_snapshot_id,
                     started_at,
+                    *(owner if owner is not None else (None, None)),
                 ),
             )
             self._connection.executemany(
@@ -94,7 +100,7 @@ class ProjectStore(TaskReviewStore):
 
     @staticmethod
     def _consultation_seat_statuses(
-        seats: tuple[sqlite3.Row, ...],
+        seats: tuple[sqlite3.Row, ...], *, interrupted: bool = False
     ) -> tuple[ProjectConsultationSeatStatus, ...]:
         return tuple(
             project_consultation_seat_status(
@@ -102,6 +108,7 @@ class ProjectStore(TaskReviewStore):
                 finished=seat["finished_at"] is not None,
                 advice=seat["advice"] is not None,
                 error=seat["error"] is not None,
+                interrupted=interrupted,
             )
             for seat in seats
         )
@@ -115,10 +122,13 @@ class ProjectStore(TaskReviewStore):
     ) -> None:
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
-            self._consultation_row(consultation_id)
+            consultation = self._consultation_row(consultation_id)
             seats = self._consultation_seats(consultation_id)
             require_project_consultation_seat(
-                self._consultation_seat_statuses(seats), number, settling=False
+                self._consultation_seat_statuses(seats),
+                number,
+                settling=False,
+                interrupted=consultation["interrupted_at"] is not None,
             )
             self._connection.execute(
                 """UPDATE project_consultation_seats SET prompt_template_version = ?,
@@ -135,41 +145,105 @@ class ProjectStore(TaskReviewStore):
         advice: dict[str, Any] | None,
         error: dict[str, Any] | None,
         evidence: dict[str, Any],
-    ) -> None:
+    ) -> Disposition:
+        if (advice is None) == (error is None):
+            raise ValueError("consultation settlement requires advice or an error")
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
-            self._consultation_row(consultation_id)
+            consultation = self._consultation_row(consultation_id)
             seats = self._consultation_seats(consultation_id)
-            require_project_consultation_seat(
-                self._consultation_seat_statuses(seats), number, settling=True
+            disposition = require_project_consultation_seat(
+                self._consultation_seat_statuses(seats),
+                number,
+                settling=True,
+                interrupted=consultation["interrupted_at"] is not None,
             )
-            if (advice is None) == (error is None):
-                raise ValueError("consultation settlement requires advice or an error")
+            values = (
+                finished_at,
+                planning_json(advice) if advice is not None else None,
+                planning_json(error) if error is not None else None,
+                planning_json(evidence),
+                consultation_id,
+                number,
+            )
+            if disposition == Disposition.HISTORY_ONLY:
+                self._connection.execute(
+                    """INSERT INTO project_consultation_late_results
+                       (finished_at, advice, error, evidence, consultation_id, number)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    values,
+                )
+            else:
+                self._connection.execute(
+                    """UPDATE project_consultation_seats SET finished_at = ?, advice = ?,
+                       error = ?, evidence = ? WHERE consultation_id = ? AND number = ?""",
+                    values,
+                )
+            return disposition
+
+    def consultation_owner(self, consultation_id: str) -> tuple[int, int] | None:
+        row = dict(self._consultation_row(consultation_id))
+        device, inode = row.get("owner_device"), row.get("owner_inode")
+        return (device, inode) if device is not None and inode is not None else None
+
+    def reconcile_consultation(
+        self, consultation_id: str, owner: tuple[int, int], interrupted_at: str
+    ) -> Disposition:
+        """Record controller loss while the caller holds the registered owner file."""
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            row = self._consultation_row(consultation_id)
+            seats = self._consultation_seats(consultation_id)
+            if (
+                project_consultation_status(
+                    self._consultation_seat_statuses(seats),
+                    interrupted=row["interrupted_at"] is not None,
+                )
+                != AttemptStatus.RUNNING
+            ):
+                return Disposition.HISTORY_ONLY
+            if (row["owner_device"], row["owner_inode"]) != owner:
+                raise ValueError("consultation owner identity changed")
             self._connection.execute(
-                """UPDATE project_consultation_seats SET finished_at = ?, advice = ?,
-                   error = ?, evidence = ? WHERE consultation_id = ? AND number = ?""",
-                (
-                    finished_at,
-                    planning_json(advice) if advice is not None else None,
-                    planning_json(error) if error is not None else None,
-                    planning_json(evidence),
-                    consultation_id,
-                    number,
-                ),
+                "UPDATE project_consultations SET interrupted_at = ? WHERE consultation_id = ?",
+                (interrupted_at, consultation_id),
             )
+            return Disposition.APPLIED
+
+    def _consultation_late_results(self, consultation_id: str) -> list[dict[str, Any]]:
+        return [
+            {
+                **dict(row),
+                **{
+                    key: json.loads(row[key]) if row[key] is not None else None
+                    for key in ("advice", "error", "evidence")
+                },
+            }
+            for row in self._connection.execute(
+                """SELECT number, finished_at, advice, error, evidence
+                   FROM project_consultation_late_results WHERE consultation_id = ?
+                   ORDER BY sequence""",
+                (consultation_id,),
+            )
+        ]
 
     def show_consultation(self, consultation_id: str) -> dict[str, Any]:
         with self._connection:
             self._connection.execute("BEGIN")
-            consultation = self._consultation_row(consultation_id)
+            consultation = dict(self._consultation_row(consultation_id))
+            consultation.pop("owner_device", None)
+            consultation.pop("owner_inode", None)
+            interrupted_at = consultation.pop("interrupted_at", None)
+            interrupted = interrupted_at is not None
             seats = self._consultation_seats(consultation_id)
-            statuses = self._consultation_seat_statuses(seats)
-            status = project_consultation_status(statuses)
-            return {
+            statuses = self._consultation_seat_statuses(seats, interrupted=interrupted)
+            status = project_consultation_status(statuses, interrupted=interrupted)
+            result = {
                 "kind": "goal_consultation",
-                **dict(consultation),
+                **consultation,
                 "status": status,
-                "finished_at": next(
+                "finished_at": interrupted_at
+                or next(
                     (
                         item["finished_at"]
                         for item in reversed(seats)
@@ -188,15 +262,31 @@ class ProjectStore(TaskReviewStore):
                         "source_snapshot_id": consultation["source_snapshot_id"],
                         "status": seat_status,
                         **{
-                            field: json.loads(seat[field])
-                            if seat[field] is not None
+                            key: json.loads(seat[key])
+                            if seat[key] is not None
                             else None
-                            for field in ("request", "advice", "error", "evidence")
+                            for key in ("request", "advice", "error", "evidence")
                         },
                     }
                     for seat, seat_status in zip(seats, statuses, strict=True)
                 ],
             }
+            if interrupted:
+                result["interrupted_at"] = interrupted_at
+                for seat in result["seats"]:
+                    if (
+                        seat["status"] == AttemptStatus.FAILED
+                        and seat["finished_at"] is None
+                    ):
+                        seat["error"] = {
+                            "detail": "The consultation controller was lost before the runtime result was recorded.",
+                            "failure_category": None,
+                            "retry_after": None,
+                            "raw_type": "project.consultation.interrupted",
+                        }
+                if late_results := self._consultation_late_results(consultation_id):
+                    result["late_results"] = late_results
+            return result
 
     def _adopt_consultation(
         self, goal: ConfirmedGoal, consultation_id: str, adoption: str | None
@@ -229,7 +319,10 @@ class ProjectStore(TaskReviewStore):
             )
         seats = self._consultation_seats(consultation_id)
         if (
-            project_consultation_status(self._consultation_seat_statuses(seats))
+            project_consultation_status(
+                self._consultation_seat_statuses(seats),
+                interrupted=row["interrupted_at"] is not None,
+            )
             != AttemptStatus.SUCCEEDED
         ):
             raise ValueError("confirmation requires a successful consultation")
@@ -301,8 +394,14 @@ class ProjectStore(TaskReviewStore):
             raise KeyError(f"unknown confirmed goal {goal_id}")
         return ConfirmedGoal(**dict(row))
 
+    def _has_project_consultations(self) -> bool:
+        version: int = self._connection.execute("PRAGMA user_version").fetchone()[0]
+        return version >= 12
+
     def _goal_view(self, goal_id: str) -> dict[str, Any]:
         result = asdict(self.load_goal(goal_id))
+        if not self._has_project_consultations():
+            return result
         consultation = self._connection.execute(
             """SELECT consultation_id, adoption, source_snapshot_id
                FROM project_goal_consultations JOIN project_consultations USING (consultation_id)
@@ -373,11 +472,19 @@ class ProjectStore(TaskReviewStore):
                 ),
             )
 
+    def _plan_revision_source(self) -> tuple[str, str]:
+        if self._has_project_consultations():
+            return (
+                "r.source_plan_id",
+                "LEFT JOIN project_plan_revisions AS r USING (plan_id)",
+            )
+        return "NULL AS source_plan_id", ""
+
     def _plan_row(self, plan_id: str) -> sqlite3.Row:
+        source, revisions = self._plan_revision_source()
         row = self._connection.execute(
-            """SELECT p.*, r.source_plan_id FROM project_plans AS p
-               LEFT JOIN project_plan_revisions AS r USING (plan_id)
-               WHERE p.plan_id = ?""",
+            f"""SELECT p.*, {source} FROM project_plans AS p
+                {revisions} WHERE p.plan_id = ?""",
             (plan_id,),
         ).fetchone()
         if row is None:
@@ -454,13 +561,13 @@ class ProjectStore(TaskReviewStore):
                     (project_id,),
                 )
             ]
+            source, revisions = self._plan_revision_source()
             plans = self._connection.execute(
-                """SELECT p.plan_id, g.goal_id, p.started_at, p.finished_at,
-                          r.source_plan_id,
-                          p.document IS NOT NULL AS has_document, p.error IS NOT NULL AS has_error
-                   FROM project_goals AS g JOIN project_plans AS p USING (goal_id)
-                   LEFT JOIN project_plan_revisions AS r USING (plan_id)
-                   WHERE g.project_id = ? ORDER BY p.started_at, p.plan_id""",
+                f"""SELECT p.plan_id, g.goal_id, p.started_at, p.finished_at, {source},
+                           p.document IS NOT NULL AS has_document, p.error IS NOT NULL AS has_error
+                    FROM project_goals AS g JOIN project_plans AS p USING (goal_id)
+                    {revisions}
+                    WHERE g.project_id = ? ORDER BY p.started_at, p.plan_id""",
                 (project_id,),
             )
             return {

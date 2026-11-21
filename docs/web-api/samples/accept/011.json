@@ -7,7 +7,7 @@
     "confirmed_goal": {
       "length": 93
     },
-    "consultation_id": "consultation-10000040000000000000000000000000",
+    "consultation_id": "consultation-10000030000000000000000000000000",
     "adoption": "edited"
   },
   "created_at": "2000-01-01T00:00:15.000000+00:00",
@@ -15,14 +15,14 @@
   "finished_at": "2000-01-01T00:00:17.000000+00:00",
   "cancel_requested_at": null,
   "stderr_tail": "",
-  "job_id": "10000070000000000000000000000000",
+  "job_id": "10000060000000000000000000000000",
   "action": "project.confirm",
   "state": "finished",
   "exit_code": 0,
   "result": {
     "kind": "confirmed_goal",
-    "project_id": "project-10000080000000000000000000000000",
-    "goal_id": "goal-10000090000000000000000000000000",
+    "project_id": "project-10000070000000000000000000000000",
+    "goal_id": "goal-10000080000000000000000000000000",
     "repository": "/sample/scenario/repository",
     "git_common_dir": "/sample/scenario/repository/.git",
     "baseline_commit": "2000001000000000000000000000000000000000",
@@ -30,7 +30,7 @@
     "confirmed_goal": "Build the amount and summary, then outline monthly reporting.\nUse the checked output format.\n",
     "confirmed_at": "2000-01-01T00:00:18.000000+00:00",
     "consultation": {
-      "consultation_id": "consultation-10000040000000000000000000000000",
+      "consultation_id": "consultation-10000030000000000000000000000000",
       "adoption": "edited",
       "source_snapshot_id": "3000002000000000000000000000000000000000000000000000000000000000"
     }
@@ -39,15 +39,15 @@
   "resources": [
     {
       "kind": "project",
-      "id": "project-10000080000000000000000000000000"
+      "id": "project-10000070000000000000000000000000"
     },
     {
       "kind": "goal",
-      "id": "goal-10000090000000000000000000000000"
+      "id": "goal-10000080000000000000000000000000"
     },
     {
       "kind": "consultation",
-      "id": "consultation-10000040000000000000000000000000"
+      "id": "consultation-10000030000000000000000000000000"
     },
     {
       "kind": "snapshot",
@@ -56,13 +56,13 @@
   ],
   "artifacts": [
     {
-      "artifact_id": "10000070000000000000000000000000.stdout",
+      "artifact_id": "10000060000000000000000000000000.stdout",
       "stream": "stdout",
       "byte_count": 926,
       "sha256": "3000007000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "10000070000000000000000000000000.stderr",
+      "artifact_id": "10000060000000000000000000000000.stderr",
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"

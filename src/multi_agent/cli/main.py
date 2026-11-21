@@ -4,7 +4,6 @@ import argparse
 import asyncio
 import json
 import sqlite3
-import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,6 +11,7 @@ from multi_agent.core import SeatConfig
 from multi_agent.core.snapshot import FrozenSnapshot, TestEvidence
 from multi_agent.store import ReviewStore
 
+from .errors import report_refusal, report_unexpected_error, structured_errors
 from .review_inputs import load_review_input
 from .snapshot import _git, freeze_diff, freeze_repository
 
@@ -99,6 +99,11 @@ def parser() -> argparse.ArgumentParser:
     )
     result.add_argument(
         "--data-dir", type=Path, default=Path.home() / ".local/share/multi-agent"
+    )
+    result.add_argument(
+        "--structured-errors",
+        action="store_true",
+        help="also write a JSON envelope to stdout for product failures",
     )
     commands = result.add_subparsers(dest="command", required=True)
     freeze = commands.add_parser(
@@ -279,11 +284,16 @@ def main(argv: list[str] | None = None) -> int:
     from .provider_limits import provider_budget
 
     args = parser().parse_args(argv)
-    scope = budget_for_provider.set(provider_budget(args.data_dir))
-    try:
-        return _main(args)
-    finally:
-        budget_for_provider.reset(scope)
+    with structured_errors(args.structured_errors):
+        try:
+            scope = budget_for_provider.set(provider_budget(args.data_dir))
+            try:
+                return _main(args)
+            finally:
+                budget_for_provider.reset(scope)
+        except Exception as error:
+            report_unexpected_error(error)
+            raise
 
 
 def _main(args: argparse.Namespace) -> int:
@@ -319,8 +329,7 @@ def _main(args: argparse.Namespace) -> int:
         KeyError,
         sqlite3.Error,
     ) as error:
-        print(f"multi-agent: {error}", file=sys.stderr)
-        return 2
+        return report_refusal(error, notes=False)
     print(json.dumps(output, ensure_ascii=False, indent=2, allow_nan=False))
     if args.command == "project" and args.project_action in ("plan", "consult"):
         if args.project_action == "consult" and any(

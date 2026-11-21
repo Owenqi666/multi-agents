@@ -49,7 +49,7 @@ export function currentTaskReview(task: TaskView): ReviewRound | undefined {
 }
 
 export function currentIntegrationReview(integration: IntegrationRecord): ReviewRound | undefined {
-  const latest = integration.reviews.findLast((round) => round.metadata.kind === 'review');
+  const latest = integration.reviews?.findLast((round) => round.metadata.kind === 'review');
   if (integration.superseded_by || !integration.target_is_current) return undefined;
   return latest?.source_current && latest.test_attempt === integration.test?.attempt ? latest : undefined;
 }

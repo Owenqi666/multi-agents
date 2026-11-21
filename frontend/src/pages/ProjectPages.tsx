@@ -3,6 +3,7 @@ import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
 import { useRead } from '../api/reads';
 import type { Goal, Project, RunItem } from '../api/types';
+import { useArchiveMode, useWorkspace, useWorkspaceWritesAllowed } from '../api/workspace';
 import { shortId, timeText } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
 import { ActionButton } from '../components/Action';
@@ -10,18 +11,20 @@ import { Badge } from '../components/Badge';
 import { EmptyState } from '../components/EmptyState';
 import { ModelPicker, requestFrom, type PickerChoice } from '../components/ModelPicker';
 import { ReadFrame } from '../components/ReadNote';
-import { EnvironmentHint, useWorkspace } from './GoalPages';
+import { EnvironmentHint } from './GoalPages';
 import { Facts, Page, Section, useResource } from './common';
 
 export function ProjectsPage() {
+  const writesAllowed = useWorkspaceWritesAllowed();
   const all = useRead<{ items: RunItem[] }>('runs/project', () => api.runs('project'), { locking: false, pollWhileJob: true });
   // Filter here as well: older bridges ignored the kind query.
   const runs = { ...all, data: all.data ? { items: all.data.items.filter((i) => i.kind === 'project') } : null };
   return (
-    <Page kicker="项目" title="项目" aside={<Link className="btn small primary" href="/new">提出目标</Link>}>
+    <Page kicker="项目" title="项目" aside={writesAllowed ? <Link className="btn small primary" href="/new">提出目标</Link> : undefined}>
       <ReadFrame read={runs} what="项目列表">
         {(r) => !r.items.length ? (
-          <EmptyState title="还没有项目" body="确认第一个目标时会新建项目。在终端里用 CLI 建的项目不会出现在这里，可以用它的 ID 直接打开。" action={<Link className="btn primary" href="/new">提出目标</Link>} />
+          <EmptyState title="还没有项目" body={writesAllowed ? '确认第一个目标时会新建项目。在终端里用 CLI 建的项目不会出现在这里，可以用它的 ID 直接打开。' : '可以按类型和 ID 打开已有项目。'}
+            action={writesAllowed ? <Link className="btn primary" href="/new">提出目标</Link> : <Link className="btn" href="/archive">归档</Link>} />
         ) : (
           <ul className="plain-list">
             {r.items.map((p) => <li key={p.id}><Link href={to('projects', p.id)}>{p.label}</Link> <span className="stamp">{timeText(p.updated_at)}</span></li>)}
@@ -50,6 +53,7 @@ function PlanRow({ plan }: { plan: Project['plans'][number] }) {
 
 function GoalBlock({ goal, plans }: { goal: Goal; plans: Project['plans'] }) {
   const ws = useWorkspace();
+  const archive = useArchiveMode();
   const [planner, setPlanner] = useState<PickerChoice | null>(null);
   const onPlanner = useCallback((v: PickerChoice | null) => setPlanner(v), []);
   const req = requestFrom(ws.data, 'planner', planner);
@@ -68,25 +72,26 @@ function GoalBlock({ goal, plans }: { goal: Goal; plans: Project['plans'] }) {
       {mine.length ? <ul className="plain-list">{mine.map((p) => <PlanRow key={p.plan_id} plan={p} />)}</ul> : <p className="muted">还没有计划。</p>}
       {planning ? <p className="stale-note">计划生成中，最多 300 秒；上面的列表会出现进行中的计划。</p> : null}
       <EnvironmentHint ws={ws.data} />
-      <div className="form-actions">
+      {archive ? null : <div className="form-actions">
         <ModelPicker ws={ws.data} role="planner" value={planner} onChange={onPlanner} label="规划者" />
         <ActionButton action="project.plan" primary label={mine.length ? '再生成一版计划' : '生成计划'} disabled={!req} reason="先选好规划者。"
           confirm={mine.length ? '每次提交都会新建一份计划，确定再生成一版？' : undefined}
           args={() => ({ goal_id: goal.goal_id, planner: req })}
           onDone={(job) => { const id = job.resources?.find((r) => r.kind === 'project-plan')?.id; if (id) navigate(to('plans', id)); }} />
-      </div>
+      </div>}
     </Section>
   );
 }
 
 export function ProjectPage({ id }: { id: string }) {
+  const writesAllowed = useWorkspaceWritesAllowed();
   const read = useResource<Project>('project', id);
   return (
     <Page kicker={`项目 · ${shortId(id)}`} title="项目">
       <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what="项目">
         {(p) => p.goals.length ? (
           <>{p.goals.slice().reverse().map((g) => <GoalBlock key={g.goal_id} goal={g} plans={p.plans} />)}</>
-        ) : <EmptyState title="这个项目还没有目标" action={<Link className="btn primary" href="/new">提出目标</Link>} />}
+        ) : <EmptyState title="这个项目还没有目标" action={writesAllowed ? <Link className="btn primary" href="/new">提出目标</Link> : undefined} />}
       </ReadFrame>
     </Page>
   );

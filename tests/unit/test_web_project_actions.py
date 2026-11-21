@@ -52,6 +52,7 @@ def test_project_consult_uses_private_exact_text_and_ordered_advisors(action_con
     assert argv[:4] == [sys.executable, "-P", "-m", "multi_agent"]
     parsed = parser().parse_args(argv[4:])
     assert parsed.data_dir == workspace.data_dir
+    assert parsed.structured_errors is True
     assert parsed.repo == workspace.repository
     assert parsed.advisor == [
         ["claude", "claude-fable-5-2", "high"],

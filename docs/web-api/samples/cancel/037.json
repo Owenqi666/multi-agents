@@ -7,7 +7,7 @@
   "finished_at": "2000-01-01T00:00:58.000000+00:00",
   "cancel_requested_at": null,
   "stderr_tail": null,
-  "job_id": "100002c0000000000000000000000000",
+  "job_id": "100002b0000000000000000000000000",
   "action": "environment.refresh",
   "state": "finished",
   "exit_code": null,

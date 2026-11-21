@@ -8,6 +8,7 @@ import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
 import { useRead } from '../api/reads';
 import type { DelegateStage, DirectStage, Leaf, PlanningView, Stage as StageData, Workspace } from '../api/types';
+import { useArchiveMode, useWorkspace } from '../api/workspace';
 import { nz } from '../api/types';
 import { shortId } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
@@ -21,7 +22,6 @@ import { deriveStory, withRunningJob } from '../stage/derive';
 import { useIntegrationHistory } from '../stage/integrationLineage';
 import { belongsToStage } from '../stage/jobScope';
 import { Stage } from '../stage/Stage';
-import { useWorkspace } from './GoalPages';
 import { TaskPanel } from './TaskPage';
 import { Evidence, Facts, NextNote, Page, Raw, Section, useResource } from './common';
 
@@ -30,6 +30,7 @@ function Gate({ ok, label }: { ok: boolean; label: string }) {
 }
 
 function PlanningBlock({ stage }: { stage: StageData }) {
+  const archive = useArchiveMode();
   const p = stage.planning;
   const draft = p.attempts.draft[p.attempts.draft.length - 1];
   const review = p.attempts.review[p.attempts.review.length - 1];
@@ -37,7 +38,7 @@ function PlanningBlock({ stage }: { stage: StageData }) {
   const kind = p.next_action?.kind;
   const needsResume = !p.attempts.draft.length || kind === 'plan_retry';
   return (
-    <Section title={stage.mode === 'delegate' ? '拆分' : '拟卡和复核'} note={<NextNote next={p.next_action} />}>
+    <Section title={stage.mode === 'delegate' ? '拆分' : '拟卡和复核'} note={archive ? undefined : <NextNote next={p.next_action} />}>
       <Facts rows={[
         ['阶段负责人', draft ? <Evidence reportedModel={draft.runtime?.reported_model} reportedEffort={draft.runtime?.reported_effort} request={draft.request.request} /> : '还没开始'],
         ...(stage.mode === 'direct' ? [['卡片复核', review ? <Evidence reportedModel={review.runtime?.reported_model} reportedEffort={review.runtime?.reported_effort} request={review.request.request} /> : '还没开始'] as [string, React.ReactNode],
@@ -52,8 +53,9 @@ function PlanningBlock({ stage }: { stage: StageData }) {
 }
 
 function IntegrateTarget({ stage, ws }: { stage: DirectStage; ws: Workspace | null }) {
+  const archive = useArchiveMode();
   const [target, setTarget] = useState(ws?.target_branch ?? '');
-  if (!stage.review_satisfied || !stage.task_run_id || stage.implementation?.implementation_attempt == null) return null;
+  if (archive || !stage.review_satisfied || !stage.task_run_id || stage.implementation?.implementation_attempt == null) return null;
   return (
     <Section title="合进目标分支" note="直接模式的阶段到审核通过为止；要把候选合进目标分支，另走创建集成、测试、审核和接受。">
       <div className="form-actions">
@@ -107,6 +109,7 @@ function upstreamChanged(leaf: Leaf, leaves: Leaf[]): boolean {
 }
 
 function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Workspace | null }) {
+  const archive = useArchiveMode();
   const [exec, setExec] = useState<PickerChoice | null>(null);
   const [stop, setStop] = useState(true);
   const onExec = useCallback((v: PickerChoice | null) => setExec(v), []);
@@ -131,7 +134,7 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
       </div>
       {leaf.blocked_reason ? <p className="muted">{leaf.blocked_reason}</p> : null}
       {executor ? <p className="row"><span className="stamp">执行者</span>{last ? <Evidence reportedModel={last.runtime?.reported_model} reportedEffort={last.runtime?.reported_effort} request={executor} /> : <span>请求 {executor.model} · {executor.effort}</span>}</p> : null}
-      <div className="form-actions">
+      {archive ? null : <div className="form-actions">
         {!claimed ? (
           <>
             <ModelPicker ws={ws} role="implementation" value={exec} onChange={onExec} label="执行者" only={['Terra', 'Sonnet']} />
@@ -147,7 +150,7 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
         ) : leaf.review_ready && !waiting && impl && impl.next_action?.kind === 'run' && impl.attempts.length ? (
           <ActionButton action="task.retry" label="重试实施" args={() => ({ planning_run_id: impl.planning_run_id })} />
         ) : null}
-      </div>
+      </div>}
       {(leaf.prior_planning_run_ids ?? []).map((id) => <PriorLeafPlan key={id} id={id} />)}
     </li>
   );

@@ -13,6 +13,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Serve the local workspace API.")
     parser.add_argument("--repository", required=True, type=Path)
     parser.add_argument("--data-dir", required=True, type=Path)
+    parser.add_argument(
+        "--read-only-database",
+        type=Path,
+        metavar="FILE",
+        help="view a sealed database archive",
+    )
     parser.add_argument("--frontend-dist", type=Path, metavar="DIR")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--codex-bin", default="codex")
@@ -23,7 +29,9 @@ def main() -> int:
     if not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
     try:
-        workspace = Workspace.open(args.repository, args.data_dir)
+        workspace = Workspace.open(
+            args.repository, args.data_dir, read_only_database=args.read_only_database
+        )
         executables = {"codex": args.codex_bin, "claude": args.claude_bin}
         for provider, executable in executables.items():
             if "/" in executable:

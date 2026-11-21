@@ -1,8 +1,8 @@
 {
   "kind": "task-test",
-  "id": "10000110000000000000000000000000",
+  "id": "10000100000000000000000000000000",
   "data": {
-    "task_run_id": "10000110000000000000000000000000",
+    "task_run_id": "10000100000000000000000000000000",
     "implementation_attempt": 1,
     "test_attempt": 1,
     "candidate": "2000002000000000000000000000000000000000",
@@ -18,9 +18,9 @@
         "exit_code": 0,
         "verification": "verified",
         "logs": {
-          "stdout": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-1/stdout.bin",
-          "stderr": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-1/stderr.bin",
-          "wire": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-1/wire.jsonl"
+          "stdout": "/sample/scenario/data/web-run-10000170000000000000000000000000/logs/command-1/stdout.bin",
+          "stderr": "/sample/scenario/data/web-run-10000170000000000000000000000000/logs/command-1/stderr.bin",
+          "wire": "/sample/scenario/data/web-run-10000170000000000000000000000000/logs/command-1/wire.jsonl"
         }
       },
       {
@@ -31,9 +31,9 @@
         "exit_code": 0,
         "verification": "verified",
         "logs": {
-          "stdout": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-2/stdout.bin",
-          "stderr": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-2/stderr.bin",
-          "wire": "/sample/scenario/data/web-run-10000180000000000000000000000000/logs/command-2/wire.jsonl"
+          "stdout": "/sample/scenario/data/web-run-10000170000000000000000000000000/logs/command-2/stdout.bin",
+          "stderr": "/sample/scenario/data/web-run-10000170000000000000000000000000/logs/command-2/stderr.bin",
+          "wire": "/sample/scenario/data/web-run-10000170000000000000000000000000/logs/command-2/wire.jsonl"
         }
       }
     ],
@@ -43,7 +43,7 @@
       "cancel_requested": false,
       "declaration_source": "PM",
       "input_hash": "300001f000000000000000000000000000000000000000000000000000000000",
-      "retained_root": "/sample/scenario/data/web-run-10000180000000000000000000000000",
+      "retained_root": "/sample/scenario/data/web-run-10000170000000000000000000000000",
       "stop_scope": "command-request-and-owned-runtime-v1",
       "output_scope": "server-emitted-notifications-v1",
       "command_group_gone": null,
@@ -55,7 +55,7 @@
   },
   "artifacts": [
     {
-      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTEiLCIzMDAwMDIxMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTEiLCIzMDAwMDIxMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
       "key": "test-1-1-1",
       "coordinates": {
         "test_attempt": 1,
@@ -67,7 +67,7 @@
       "sha256": "3000021000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
       "key": "test-1-1-2",
       "coordinates": {
         "test_attempt": 1,
@@ -79,7 +79,7 @@
       "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTMiLCIzMDAwMDA2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTMiLCIzMDAwMDA2MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
       "key": "test-1-1-3",
       "coordinates": {
         "test_attempt": 1,
@@ -91,7 +91,7 @@
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTEiLCIzMDAwMDIzMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTEiLCIzMDAwMDIzMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
       "key": "test-1-2-1",
       "coordinates": {
         "test_attempt": 1,
@@ -99,11 +99,11 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8833,
+      "byte_count": 8831,
       "sha256": "3000023000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTIiLCIzMDAwMDI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTIiLCIzMDAwMDI0MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
       "key": "test-1-2-2",
       "coordinates": {
         "test_attempt": 1,
@@ -115,7 +115,7 @@
       "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDExMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTMiLCIzMDAwMDI1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
+      "artifact_id": "art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0yLTMiLCIzMDAwMDI1MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
       "key": "test-1-2-3",
       "coordinates": {
         "test_attempt": 1,

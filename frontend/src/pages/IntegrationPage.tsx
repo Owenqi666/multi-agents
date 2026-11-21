@@ -3,13 +3,13 @@
 
 import type { ArtifactRef, IntegrationRecord, ReviewRound } from '../api/types';
 import { commitOf } from '../api/types';
+import { useArchiveMode, useWorkspace } from '../api/workspace';
 import { shortId, timeText, VERIFICATION_LABEL } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
 import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
 import { ReadFrame } from '../components/ReadNote';
 import { integrationPredecessor } from '../stage/integrationLineage';
-import { useWorkspace } from './GoalPages';
 import { currentIntegrationReview, openIntegrationRevision, ReviewRetry, RoundSummary, useSeats } from './bits';
 import { ArtifactLinks, Facts, Page, Raw, Section, useResource } from './common';
 
@@ -19,12 +19,14 @@ const UNRESOLVED_CONFIRMATION = new Set(['confirmation_round_incomplete', 'confi
 
 function Body({ it, artifacts }: { it: IntegrationRecord; artifacts: ArtifactRef[] }) {
   const ws = useWorkspace();
+  const archive = useArchiveMode();
   const seats = useSeats(ws.data);
   const test = it.test;
   const tested = test?.status === 'succeeded';
   const acceptance = it.acceptance;
   const conflicted = it.status === 'conflicted';
-  const actionable = !conflicted && !acceptance && !it.superseded_by && it.target_is_current;
+  const actionable = !archive && !conflicted && !acceptance && !it.superseded_by && it.target_is_current;
+  const reviews = it.reviews ?? [];
   const parent = integrationPredecessor(it);
   const sourceReview = currentIntegrationReview(it);
   const current = actionable ? sourceReview : undefined;
@@ -33,7 +35,7 @@ function Body({ it, artifacts }: { it: IntegrationRecord; artifacts: ArtifactRef
   const readRound = confirmationRead.data?.data;
   const confirmation = readRound?.round_id === confirmationId ? readRound ?? null : null;
   const retryRound = current && confirmationId ? confirmation : current;
-  const confirmationBlocked = it.reviews.some((round) =>
+  const confirmationBlocked = reviews.some((round) =>
     round.confirmation_round_id && round.assessment?.reasons.some((reason) => UNRESOLVED_CONFIRMATION.has(reason)));
   const canReview = actionable && test && tested && it.test_evidence_verification === 'verified' && !current && !confirmationBlocked;
   const acceptRound = it.current_eligible && current?.current_eligible ? current : null;
@@ -67,7 +69,7 @@ function Body({ it, artifacts }: { it: IntegrationRecord; artifacts: ArtifactRef
       </Section>
 
       <Section title="审核" note="集成审核的席位键是 seat-1、seat-2。">
-        {it.reviews.length ? it.reviews.map((r) => (
+        {reviews.length ? reviews.map((r) => (
           <div key={r.round_id}>
             <p className="stamp">测试 {r.test_attempt}{r.source_current === false ? ' · 历史审核' : ''}</p>
             <RoundSummary round={r} />

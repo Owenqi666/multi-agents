@@ -13,6 +13,7 @@ from multi_agent.cli.snapshot import _git, _resolve_commit
 from multi_agent.cli.task_inputs import RULES_PATH, freeze_project_rules
 from multi_agent.core.dispatch import resolve_dispatch
 from multi_agent.core.tasks import FrozenProjectRules, ImplementationConfig, TaskCard
+from multi_agent.store.database import ArchivedDatabase
 
 _CLAUDE_EFFORTS = ("low", "medium", "high", "xhigh", "max")
 _MODELS = (
@@ -61,9 +62,12 @@ def private_directory(path: Path, *, parents: bool = False) -> None:
 class Workspace:
     repository: Path
     data_dir: Path
+    archive: ArchivedDatabase | None = None
 
     @classmethod
-    def open(cls, repository: Path, data_dir: Path) -> "Workspace":
+    def open(
+        cls, repository: Path, data_dir: Path, *, read_only_database: Path | None = None
+    ) -> "Workspace":
         repo = repository.expanduser().resolve(strict=True)
         git_dir = Path(
             _git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
@@ -88,8 +92,26 @@ class Workspace:
             raise ValueError(
                 "data directory must be outside the repository and all worktrees"
             )
+        archive = (
+            ArchivedDatabase.open(read_only_database)
+            if read_only_database is not None
+            else None
+        )
+        if archive is not None and (
+            directory.is_relative_to(archive.path.parent)
+            or archive.path.is_relative_to(directory)
+        ):
+            raise ValueError("archive viewing requires a separate data directory")
         private_directory(directory, parents=True)
-        return cls(repo, directory)
+        return cls(repo, directory, archive)
+
+    @property
+    def database(self) -> Path:
+        return (
+            self.archive.path
+            if self.archive is not None
+            else self.data_dir / "reviews.sqlite3"
+        )
 
     def view(self, environments: dict[str, Any]) -> dict[str, Any]:
         branch = (
@@ -115,7 +137,7 @@ class Workspace:
             "head": head,
             "branches": _branches(self.repository),
             "defaults": _stage_defaults(),
-            "read_only": False,
+            "read_only": self.archive is not None,
             "presets": {
                 "source": "workbench_model_presets",
                 "models": [

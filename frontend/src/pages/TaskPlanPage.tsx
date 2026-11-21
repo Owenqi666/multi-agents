@@ -1,13 +1,14 @@
 import { useCallback, useRef, useState } from 'react';
 import { useJobs } from '../api/jobs';
 import type { PlanningView, Workspace } from '../api/types';
+import { useWorkspace } from '../api/workspace';
 import { VERIFICATION_LABEL } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
 import { ActionButton } from '../components/Action';
 import { Badge } from '../components/Badge';
 import { candidatesFor, ModelPicker, requestFrom, type PickerChoice } from '../components/ModelPicker';
 import { ReadFrame } from '../components/ReadNote';
-import { EnvironmentHint, useWorkspace } from './GoalPages';
+import { EnvironmentHint } from './GoalPages';
 import { Facts, NextNote, Page, Raw, Section, useResource } from './common';
 
 export function OpenTaskPlanPage() {

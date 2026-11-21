@@ -8,6 +8,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs, unquote, urlsplit
 
 from multi_agent.adapters.runtime_decode import strict_json_loads
+from multi_agent.store.database import ArchiveChanged, archive_reads
 from multi_agent.store.project_store import ProjectStore
 
 from .actions import ActionConflict, UnknownAction, prepare_action
@@ -15,6 +16,7 @@ from .jobs import ACTION, PROVIDERS, BusyCLI, BusyEnvironment, BusyJob, Environm
 from .resources import (
     LOCKED_DIFF_KINDS,
     LOCKED_RESOURCE_KINDS,
+    ArchiveUnsupported,
     lock_busy_diff,
     lock_busy_resource,
     parent_diff_requested,
@@ -61,10 +63,21 @@ class WorkspaceServer(ThreadingHTTPServer):
             self.jobs = EnvironmentJobs(
                 workspace.data_dir, workspace.repository, executables
             )
-            database = workspace.data_dir / "reviews.sqlite3"
+            database = workspace.database
             if database.is_symlink() or database.exists() and not database.is_file():
                 raise ValueError("workspace database must be a regular file")
-            if database.is_file():
+            if workspace.archive is not None:
+                try:
+                    with (
+                        archive_reads(workspace.archive),
+                        ProjectStore.open_readonly(database),
+                    ):
+                        pass
+                except SQLiteError as error:
+                    raise ValueError(
+                        f"archive database could not be opened: {error}"
+                    ) from error
+            elif database.is_file():
                 try:
                     with ProjectStore(database):
                         pass
@@ -281,7 +294,12 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             target.query, keep_blank_values=True, strict_parsing=True, errors="strict"
         )
         if self.command == "GET":
-            return 200, self._read(server, parts, query)
+            with archive_reads(server.workspace.archive):
+                return 200, self._read(server, parts, query)
+        if server.workspace.archive is not None:
+            raise RequestError(
+                403, "archive_read_only", "The selected archive is read-only."
+            )
         _no_query(query)
         match parts:
             case ["api", "jobs"]:
@@ -313,6 +331,10 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
             status, body = 409, _error("job_unavailable", str(error))
         except UnknownAction as error:
             status, body = 400, _error("unknown_action", str(error))
+        except ArchiveUnsupported as error:
+            status, body = 404, _error("archive_unsupported", str(error))
+        except ArchiveChanged as error:
+            status, body = 409, _error("archive_changed", str(error))
         except KeyError:
             status, body = (
                 404,

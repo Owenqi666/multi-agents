@@ -1,20 +1,20 @@
 {
   "kind": "integration",
-  "id": "100003a0000000000000000000000000",
+  "id": "10000390000000000000000000000000",
   "data": {
     "operation": "show",
-    "integration_id": "100003a0000000000000000000000000",
+    "integration_id": "10000390000000000000000000000000",
     "status": "ready",
     "verification": "verified",
     "repository": "/sample/scenario/repository/.git",
-    "target_ref": "refs/heads/multi-agent/stages/stage-100001c0000000000000000000000000",
+    "target_ref": "refs/heads/multi-agent/stages/stage-100001b0000000000000000000000000",
     "target_baseline": "2000002000000000000000000000000000000000",
     "target_head": "2000002000000000000000000000000000000000",
     "target_is_current": true,
     "members": [
       {
-        "task_run_id": "10000270000000000000000000000000",
-        "planning_run_id": "10000220000000000000000000000000",
+        "task_run_id": "10000260000000000000000000000000",
+        "planning_run_id": "10000210000000000000000000000000",
         "attempt": 1,
         "task_input": {
           "card": {
@@ -99,7 +99,7 @@
               "task_types": []
             }
           },
-          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}",
+          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001c0000000000000000000000000\",\"stage_run_id\":\"stage-100001b0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000080000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000a0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"10000190000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000e0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000100000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}",
           "created_at": "2000-01-01T00:00:53.000000+00:00"
         },
         "delivery": {
@@ -109,14 +109,14 @@
             "frontend/status.js"
           ],
           "digest": "3000037000000000000000000000000000000000000000000000000000000000",
-          "ref": "refs/multi-agent/candidates/10000280000000000000000000000000",
+          "ref": "refs/multi-agent/candidates/10000270000000000000000000000000",
           "tree": "2000008000000000000000000000000000000000"
         },
         "external_dependencies": []
       },
       {
-        "task_run_id": "10000300000000000000000000000000",
-        "planning_run_id": "100002b0000000000000000000000000",
+        "task_run_id": "100002f0000000000000000000000000",
+        "planning_run_id": "100002a0000000000000000000000000",
         "attempt": 1,
         "task_input": {
           "card": {
@@ -201,7 +201,7 @@
               "task_types": []
             }
           },
-          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
+          "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300003c000000000000000000000000000000000000000000000000000000000\",\"entry_index\":1,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001c0000000000000000000000000\",\"stage_run_id\":\"stage-100001b0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000080000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000a0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"10000190000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000e0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000100000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0801\",\"upstream_integration\":null}",
           "created_at": "2000-01-01T00:01:02.000000+00:00"
         },
         "delivery": {
@@ -211,18 +211,18 @@
             "frontend/banner.js"
           ],
           "digest": "3000044000000000000000000000000000000000000000000000000000000000",
-          "ref": "refs/multi-agent/candidates/10000310000000000000000000000000",
+          "ref": "refs/multi-agent/candidates/10000300000000000000000000000000",
           "tree": "200000a000000000000000000000000000000000"
         },
         "external_dependencies": []
       }
     ],
     "applied": [
-      "10000270000000000000000000000000",
-      "10000300000000000000000000000000"
+      "10000260000000000000000000000000",
+      "100002f0000000000000000000000000"
     ],
     "candidate": {
-      "ref": "refs/multi-agent/integrations/100003a0000000000000000000000000",
+      "ref": "refs/multi-agent/integrations/10000390000000000000000000000000",
       "commit": "2000011000000000000000000000000000000000",
       "tree": "2000012000000000000000000000000000000000"
     },
@@ -233,7 +233,7 @@
       "attempt": 1,
       "status": "succeeded",
       "candidate": {
-        "ref": "refs/multi-agent/integrations/100003a0000000000000000000000000",
+        "ref": "refs/multi-agent/integrations/10000390000000000000000000000000",
         "commit": "2000011000000000000000000000000000000000",
         "tree": "2000012000000000000000000000000000000000"
       },
@@ -258,7 +258,7 @@
       ],
       "unexecuted_commands": [],
       "unconfirmed_commands": [],
-      "directory": "/sample/scenario/data/web-run-10000360000000000000000000000000-retest",
+      "directory": "/sample/scenario/data/web-run-10000350000000000000000000000000-retest",
       "result": {
         "status": "succeeded",
         "process_stopped": true,
@@ -277,7 +277,7 @@
             "reported_exit_code": 0,
             "exit_code": 0,
             "process_stopped": true,
-            "manifest_path": "/sample/scenario/data/web-run-10000360000000000000000000000000-retest/logs/command-1/execution.json",
+            "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000-retest/logs/command-1/execution.json",
             "manifest_sha256": "3000057000000000000000000000000000000000000000000000000000000000",
             "qualified": true,
             "reason": null
@@ -296,14 +296,14 @@
             "reported_exit_code": 0,
             "exit_code": 0,
             "process_stopped": true,
-            "manifest_path": "/sample/scenario/data/web-run-10000360000000000000000000000000-retest/logs/command-2/execution.json",
+            "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000-retest/logs/command-2/execution.json",
             "manifest_sha256": "3000058000000000000000000000000000000000000000000000000000000000",
             "qualified": true,
             "reason": null
           }
         ],
         "reason": null,
-        "preparation_path": "/sample/scenario/data/web-run-10000360000000000000000000000000-retest/context/integration-test.json",
+        "preparation_path": "/sample/scenario/data/web-run-10000350000000000000000000000000-retest/context/integration-test.json",
         "preparation_sha256": "3000059000000000000000000000000000000000000000000000000000000000"
       },
       "evidence_hash": "300005a000000000000000000000000000000000000000000000000000000000"
@@ -312,7 +312,7 @@
     "test_source_errors": [],
     "reviews": [
       {
-        "round_id": "100003e0000000000000000000000000",
+        "round_id": "100003d0000000000000000000000000",
         "snapshot_id": "300005b000000000000000000000000000000000000000000000000000000000",
         "prompt_template_version": "integration-review-v1",
         "metadata": {
@@ -370,7 +370,7 @@
                 "models": null
               },
               "finished_at": "2000-01-01T00:01:20.000000+00:00",
-              "log_dir": "/sample/scenario/data/web-run-10000360000000000000000000000000-rereview/logs/100003e0000000000000000000000000/seat-1/1",
+              "log_dir": "/sample/scenario/data/web-run-10000350000000000000000000000000-rereview/logs/100003d0000000000000000000000000/seat-1/1",
               "started_at": "2000-01-01T00:01:21.000000+00:00",
               "workspace_unchanged": true
             }
@@ -391,7 +391,7 @@
             "source": "workbench_executed",
             "executed_by_workbench": true,
             "status": "passed",
-            "integration_id": "100003a0000000000000000000000000",
+            "integration_id": "10000390000000000000000000000000",
             "test_attempt": 1,
             "test_evidence_hash": "300005a000000000000000000000000000000000000000000000000000000000",
             "required_commands": [
@@ -465,29 +465,29 @@
     "current_eligible": false,
     "blocking_findings": [],
     "acceptance": {
-      "acceptance_id": "10000400000000000000000000000000",
-      "integration_id": "100003a0000000000000000000000000",
-      "target_ref": "refs/heads/multi-agent/stages/stage-100001c0000000000000000000000000",
+      "acceptance_id": "100003f0000000000000000000000000",
+      "integration_id": "10000390000000000000000000000000",
+      "target_ref": "refs/heads/multi-agent/stages/stage-100001b0000000000000000000000000",
       "target_baseline": "2000002000000000000000000000000000000000",
       "candidate": {
-        "ref": "refs/multi-agent/integrations/100003a0000000000000000000000000",
+        "ref": "refs/multi-agent/integrations/10000390000000000000000000000000",
         "commit": "2000011000000000000000000000000000000000",
         "tree": "2000012000000000000000000000000000000000"
       },
       "test_attempt": 1,
       "test_evidence_hash": "300005a000000000000000000000000000000000000000000000000000000000",
-      "review_round_id": "100003e0000000000000000000000000",
+      "review_round_id": "100003d0000000000000000000000000",
       "snapshot_id": "300005b000000000000000000000000000000000000000000000000000000000",
       "review_checkpoint_hash": "300005d000000000000000000000000000000000000000000000000000000000",
       "accepted_at": "2000-01-01T00:01:25.000000+00:00"
     },
     "rework": {
-      "rework_id": "10000390000000000000000000000000",
-      "lineage_id": "10000340000000000000000000000000",
-      "source_id": "10000340000000000000000000000000",
-      "child_id": "100003a0000000000000000000000000",
+      "rework_id": "10000380000000000000000000000000",
+      "lineage_id": "10000330000000000000000000000000",
+      "source_id": "10000330000000000000000000000000",
+      "child_id": "10000390000000000000000000000000",
       "request": {
-        "directory": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework",
+        "directory": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework",
         "findings": [
           {
             "finding": {
@@ -508,7 +508,7 @@
             "seat": "seat-1"
           }
         ],
-        "integration_id": "10000340000000000000000000000000",
+        "integration_id": "10000330000000000000000000000000",
         "member": {
           "attempt": 1,
           "delivery": {
@@ -518,11 +518,11 @@
               "frontend/status.js"
             ],
             "digest": "3000037000000000000000000000000000000000000000000000000000000000",
-            "ref": "refs/multi-agent/candidates/10000280000000000000000000000000",
+            "ref": "refs/multi-agent/candidates/10000270000000000000000000000000",
             "tree": "2000008000000000000000000000000000000000"
           },
           "external_dependencies": [],
-          "planning_run_id": "10000220000000000000000000000000",
+          "planning_run_id": "10000210000000000000000000000000",
           "task_input": {
             "card": {
               "acceptance_criteria": [
@@ -607,9 +607,9 @@
                 "version": 1
               }
             },
-            "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001d0000000000000000000000000\",\"stage_run_id\":\"stage-100001c0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000090000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000b0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"100001a0000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000f0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000110000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}"
+            "requirements": "Implement and review only the exact selected leaf card, using the stage below as context.\n{\"parent_projection\":{\"card_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"dependencies\":[],\"entry_hash\":\"300002f000000000000000000000000000000000000000000000000000000000\",\"entry_index\":0,\"executor\":{\"effort\":\"low\",\"model\":\"claude-sonnet-5-5\",\"provider\":\"claude-code\"},\"split_attempt\":1,\"split_manifest_sha256\":\"300002a000000000000000000000000000000000000000000000000000000000\",\"split_run_id\":\"100001c0000000000000000000000000\",\"stage_run_id\":\"stage-100001b0000000000000000000000000\"},\"project_stage\":\"{\\\"architecture\\\": \\\"A backend amount and two independent frontend modules.\\\", \\\"confirmed_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\nUse the checked output format.\\\\n\\\", \\\"execution_baseline\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"goal_id\\\": \\\"goal-10000080000000000000000000000000\\\", \\\"original_goal\\\": \\\"Build the amount and summary, then outline monthly reporting.\\\\n\\\", \\\"other_stages\\\": [{\\\"stage_id\\\": \\\"amount\\\", \\\"title\\\": \\\"Stage amount\\\"}, {\\\"stage_id\\\": \\\"report\\\", \\\"title\\\": \\\"Stage report\\\"}], \\\"plan_id\\\": \\\"plan-100000a0000000000000000000000000\\\", \\\"planning_baseline\\\": \\\"2000001000000000000000000000000000000000\\\", \\\"selected_stage\\\": {\\\"acceptance_criteria\\\": [\\\"The named build and test suite passes\\\"], \\\"approach\\\": \\\"Implement frontend status and banner\\\", \\\"deliverables\\\": [\\\"Implement frontend status and banner\\\"], \\\"depends_on\\\": [\\\"amount\\\"], \\\"goal\\\": \\\"Implement frontend status and banner\\\", \\\"stage_id\\\": \\\"summary\\\", \\\"title\\\": \\\"Stage summary\\\", \\\"workflow\\\": [\\\"Deliver only the selected stage\\\"]}, \\\"shared_interfaces\\\": [\\\"Use the checked output format.\\\"], \\\"verified_prerequisites\\\": [{\\\"candidate\\\": \\\"2000002000000000000000000000000000000000\\\", \\\"implementation_attempt\\\": 1, \\\"review_round_id\\\": \\\"10000190000000000000000000000000\\\", \\\"stage_id\\\": \\\"amount\\\", \\\"stage_run_id\\\": \\\"stage-100000e0000000000000000000000000\\\", \\\"task_run_id\\\": \\\"10000100000000000000000000000000\\\", \\\"test_attempt\\\": 1}]}\",\"selected_leaf\":\"T-0800\",\"upstream_integration\":null}"
           },
-          "task_run_id": "10000270000000000000000000000000"
+          "task_run_id": "10000260000000000000000000000000"
         },
         "requested_actor": {
           "decision": {
@@ -669,8 +669,8 @@
           }
         },
         "review_checkpoint_hash": "3000051000000000000000000000000000000000000000000000000000000000",
-        "review_round_id": "10000370000000000000000000000000",
-        "rework_id": "10000390000000000000000000000000",
+        "review_round_id": "10000360000000000000000000000000",
+        "rework_id": "10000380000000000000000000000000",
         "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
         "test_attempt": 1,
         "test_evidence_hash": "300004d000000000000000000000000000000000000000000000000000000000"
@@ -754,7 +754,7 @@
             }
           ],
           "final_workspace_digest": "3000052000000000000000000000000000000000000000000000000000000000",
-          "manifest_path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/execution.json",
+          "manifest_path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/execution.json",
           "manifest_sha256": "3000053000000000000000000000000000000000000000000000000000000000",
           "ownership": {
             "acquisitions": [
@@ -805,28 +805,28 @@
             "isolations": [],
             "logs": [
               {
-                "byte_count": 1203,
+                "byte_count": 1200,
                 "closed": true,
                 "healthy": true,
                 "identity": [
                   1,
                   38
                 ],
-                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/claude-environment-100003b0000000000000000000000000.jsonl",
+                "path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/claude-environment-100003a0000000000000000000000000.jsonl",
                 "records": 9,
                 "resource_id": "log-2",
                 "sealed": true,
                 "sha256": "3000054000000000000000000000000000000000000000000000000000000000"
               },
               {
-                "byte_count": 14840,
+                "byte_count": 14843,
                 "closed": true,
                 "healthy": true,
                 "identity": [
                   1,
                   39
                 ],
-                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/claude-100003c0000000000000000000000000.jsonl",
+                "path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/claude-100003b0000000000000000000000000.jsonl",
                 "records": 9,
                 "resource_id": "log-5",
                 "sealed": true,
@@ -845,7 +845,7 @@
                 "number": 2
               }
             ],
-            "owner_id": "100003d0000000000000000000000000",
+            "owner_id": "100003c0000000000000000000000000",
             "processes": [
               {
                 "exit_code": 0,
@@ -885,37 +885,37 @@
               }
             ]
           },
-          "preparation_path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/context/preparation.json",
+          "preparation_path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/context/preparation.json",
           "preparation_sha256": "3000056000000000000000000000000000000000000000000000000000000000",
           "process_stopped": true,
           "raw_logs": [
             {
               "metadata": {
-                "byte_count": 1203,
+                "byte_count": 1200,
                 "identity": [
                   1,
                   38
                 ],
                 "mode": 420,
-                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/claude-environment-100003b0000000000000000000000000.jsonl",
+                "path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/claude-environment-100003a0000000000000000000000000.jsonl",
                 "sha256": "3000054000000000000000000000000000000000000000000000000000000000"
               },
-              "path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/claude-environment-100003b0000000000000000000000000.jsonl",
+              "path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/claude-environment-100003a0000000000000000000000000.jsonl",
               "resource_id": "log-2",
               "verified": true
             },
             {
               "metadata": {
-                "byte_count": 14840,
+                "byte_count": 14843,
                 "identity": [
                   1,
                   39
                 ],
                 "mode": 420,
-                "path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/claude-100003c0000000000000000000000000.jsonl",
+                "path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/claude-100003b0000000000000000000000000.jsonl",
                 "sha256": "3000055000000000000000000000000000000000000000000000000000000000"
               },
-              "path": "/sample/scenario/data/web-run-10000360000000000000000000000000-rework/logs/claude-100003c0000000000000000000000000.jsonl",
+              "path": "/sample/scenario/data/web-run-10000350000000000000000000000000-rework/logs/claude-100003b0000000000000000000000000.jsonl",
               "resource_id": "log-5",
               "verified": true
             }
@@ -929,7 +929,7 @@
           },
           "reported_effort": null,
           "reported_model": "actual-claude",
-          "rework_id": "10000390000000000000000000000000",
+          "rework_id": "10000380000000000000000000000000",
           "source_snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
           "version": 1
         },
@@ -943,7 +943,7 @@
   },
   "artifacts": [
     {
-      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwM2EwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMSIsIjMwMDAwNWYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzkwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMSIsIjMwMDAwNWYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "test-1-1-1",
       "coordinates": {
         "test_attempt": 1,
@@ -951,11 +951,11 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8623,
+      "byte_count": 8620,
       "sha256": "300005f000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwM2EwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMiIsIjMwMDAwMjIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzkwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMiIsIjMwMDAwMjIwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "test-1-1-2",
       "coordinates": {
         "test_attempt": 1,
@@ -967,7 +967,7 @@
       "sha256": "3000022000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwM2EwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMyIsIjMwMDAwMDYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzkwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTEtMyIsIjMwMDAwMDYwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "test-1-1-3",
       "coordinates": {
         "test_attempt": 1,
@@ -979,7 +979,7 @@
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwM2EwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMSIsIjMwMDAwNjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzkwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMSIsIjMwMDAwNjAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "test-1-2-1",
       "coordinates": {
         "test_attempt": 1,
@@ -987,11 +987,11 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8921,
+      "byte_count": 8922,
       "sha256": "3000060000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwM2EwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMiIsIjMwMDAwMjQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzkwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMiIsIjMwMDAwMjQwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "test-1-2-2",
       "coordinates": {
         "test_attempt": 1,
@@ -1003,7 +1003,7 @@
       "sha256": "3000024000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwM2EwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMyIsIjMwMDAwMjUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
+      "artifact_id": "art-WyJpbnRlZ3JhdGlvbiIsIjEwMDAwMzkwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIix7fSwidGVzdC0xLTItMyIsIjMwMDAwMjUwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAiXQ",
       "key": "test-1-2-3",
       "coordinates": {
         "test_attempt": 1,

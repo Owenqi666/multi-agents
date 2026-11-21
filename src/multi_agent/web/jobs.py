@@ -33,6 +33,7 @@ ACTION = "environment.refresh"
 _ACTIVE_STATES = {"queued", "running", "cancelling"}
 _FIELDS = ("cli_version", "logged_in", "models", "model_efforts")
 _ARTIFACT = re.compile(r"([0-9a-f]{32})\.(stdout|stderr)")
+_CLI_ERROR_CODE = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _PREVIEW_BYTES = 64 * 1024
 _STDERR_TAIL_BYTES = 8 * 1024
 _RECENT_JOBS = 50
@@ -80,6 +81,13 @@ def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
     return stored
 
 
+def _public_job(job: dict[str, Any]) -> dict[str, Any]:
+    public = dict.fromkeys(_RECORD_FIELDS) | job
+    if job["state"] != "interrupted":
+        public.pop("recovery_consultation_id", None)
+    return public
+
+
 def _cli_result(
     path: Path, exit_code: int
 ) -> tuple[dict[str, Any] | None, dict[str, str] | None]:
@@ -95,6 +103,20 @@ def _cli_result(
         value = strict_json_loads(raw.decode("utf-8"))
         if not isinstance(value, dict):
             raise TypeError("CLI output must be an object")
+        if value.get("kind") == "cli_error":
+            error = value.get("error")
+            if (
+                exit_code == 0
+                or value.keys() != {"kind", "error"}
+                or not isinstance(error, dict)
+                or error.keys() != {"code", "message"}
+                or not isinstance(code := error["code"], str)
+                or not _CLI_ERROR_CODE.fullmatch(code)
+                or not isinstance(message := error["message"], str)
+                or not message.strip()
+            ):
+                raise ValueError("CLI error envelope is malformed")
+            return None, {"code": code, "message": message}
     except (TypeError, ValueError):
         return None, {
             "code": "invalid_cli_output",
@@ -324,7 +346,7 @@ class EnvironmentJobs:
     def get(self, identifier: str) -> dict[str, Any] | None:
         with self.lock:
             job = self.jobs.get(identifier)
-            return dict.fromkeys(_RECORD_FIELDS) | job if job is not None else None
+            return _public_job(job) if job is not None else None
 
     def list_jobs(self) -> dict[str, Any]:
         with self.lock:
@@ -335,7 +357,7 @@ class EnvironmentJobs:
             )
             return {
                 "items": [
-                    dict.fromkeys(_RECORD_FIELDS) | job
+                    _public_job(job)
                     for index, job in enumerate(reversed(ordered))
                     if index < _RECENT_JOBS or job["state"] in _ACTIVE_STATES
                 ]
@@ -372,7 +394,7 @@ class EnvironmentJobs:
     def _accept(
         self, identifier: str, action: str, args: dict[str, Any] | None
     ) -> None:
-        self.jobs[identifier] = {
+        job: dict[str, Any] = {
             **dict.fromkeys(_RECORD_FIELDS),
             "job_id": identifier,
             "action": action,
@@ -384,6 +406,9 @@ class EnvironmentJobs:
             "error": None,
             "resources": [],
         }
+        if action == "project.consult":
+            job["recovery_consultation_id"] = f"consultation-{identifier}"
+        self.jobs[identifier] = job
         try:
             self._save()
         except OSError:

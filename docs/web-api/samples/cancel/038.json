@@ -3,7 +3,7 @@
     "code": "busy",
     "message": "A CLI job is already active.",
     "details": {
-      "active_job_id": "100002b0000000000000000000000000"
+      "active_job_id": "100002a0000000000000000000000000"
     }
   }
 }

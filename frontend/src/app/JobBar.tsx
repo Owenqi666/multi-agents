@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { jobs, useJobs } from '../api/jobs';
 import { errorText } from '../api/transport';
 import type { Job } from '../api/types';
+import { useWorkspaceWritesAllowed } from '../api/workspace';
 import { JobBadge } from '../components/Badge';
 import { actionLabel } from './labels';
 import { Link, to } from './router';
@@ -16,6 +17,7 @@ function elapsed(from: string | null | undefined): string {
  *  running, a cancel button; afterwards, how the last job ended. */
 export function JobBar() {
   const { active, recent, environment } = useJobs();
+  const writesAllowed = useWorkspaceWritesAllowed();
   const [, tick] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const lastActive = useRef<string | null>(null);
@@ -45,7 +47,7 @@ export function JobBar() {
           <JobBadge job={active} />
           <span className="job-bar-action">{actionLabel(active.action)}</span>
           <span className="stamp">{elapsed(active.started_at ?? active.created_at)}</span>
-          {active.state === 'running' ? (
+          {writesAllowed && active.state === 'running' ? (
             <button type="button" className="btn small quiet" onClick={() => { setProblem(null); jobs.cancel(active.job_id).catch((e) => setProblem(errorText(e))); }}>取消作业</button>
           ) : null}
           <Link href={to('jobs', active.job_id)}>作业详情</Link>

@@ -19,6 +19,7 @@ from multi_agent.core.task_execution import prepared_for_task, task_execution_ha
 from multi_agent.store.task_review_store import TaskReviewStore
 
 from . import runner
+from .errors import report_refusal
 from .review_inputs import load_review_input
 from .task_context import (
     _canonical,
@@ -398,9 +399,6 @@ def main(args: argparse.Namespace) -> int:
             print(note, file=sys.stderr)
         return 130
     except (*_READ_ERRORS, RuntimeError) as error:
-        print(f"multi-agent: {error}", file=sys.stderr)
-        for note in getattr(error, "__notes__", ()):
-            print(note, file=sys.stderr)
-        return 2
+        return report_refusal(error)
     print(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False))
     return code

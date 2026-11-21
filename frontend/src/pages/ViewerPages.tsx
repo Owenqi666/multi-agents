@@ -4,13 +4,14 @@ import { useJobs } from '../api/jobs';
 import { HELD, lockBusy, readWithLock, useRead } from '../api/reads';
 import { errorText } from '../api/transport';
 import type { ArtifactPage, Diff, FrozenFile } from '../api/types';
+import { useArchiveMode } from '../api/workspace';
 import { shortId } from '../app/labels';
 import { Link, to } from '../app/router';
 import { DiffView } from '../components/DiffView';
 import { EmptyState } from '../components/EmptyState';
 import { LogBlock } from '../components/LogBlock';
 import { ReadFrame } from '../components/ReadNote';
-import { Page } from './common';
+import { Page, Raw, Section, useResource } from './common';
 
 const UNAVAILABLE: Record<string, string> = {
   lock_busy: '作业运行中，结束后可读。',
@@ -20,7 +21,9 @@ const UNAVAILABLE: Record<string, string> = {
 
 /** Task and integration diffs take the repository lock; snapshot diffs do not. */
 export function DiffPage({ kind, id, against }: { kind: 'task' | 'integration' | 'snapshot'; id: string; against?: 'parent' }) {
+  const archive = useArchiveMode();
   const read = useRead<Diff>(`diff/${kind}/${id}/${against ?? ''}`, () => api.diff(kind, id, against), { locking: kind !== 'snapshot' });
+  const snapshot = useResource<{ input: unknown }>('snapshot', archive && kind === 'snapshot' ? id : null);
   const title = against ? '返工增量' : kind === 'snapshot' ? '冻结的审核输入' : '累计改动';
   return (
     <Page kicker={`diff · ${kind} ${shortId(id)}`} title={title} aside={kind !== 'snapshot' ? (
@@ -37,6 +40,9 @@ export function DiffPage({ kind, id, against }: { kind: 'task' | 'integration' |
           </>
         )}
       </ReadFrame>
+      {snapshot.data?.id === id && snapshot.data.data ? (
+        <Section title="冻结记录"><Raw value={snapshot.data.data.input} label="完整冻结输入" /></Section>
+      ) : null}
     </Page>
   );
 }

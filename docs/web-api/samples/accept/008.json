@@ -23,7 +23,7 @@
   "exit_code": 0,
   "result": {
     "kind": "goal_consultation",
-    "consultation_id": "consultation-10000040000000000000000000000000",
+    "consultation_id": "consultation-10000030000000000000000000000000",
     "repository": "/sample/scenario/repository",
     "git_common_dir": "/sample/scenario/repository/.git",
     "baseline_commit": "2000001000000000000000000000000000000000",
@@ -47,7 +47,7 @@
     },
     "seats": [
       {
-        "consultation_id": "consultation-10000040000000000000000000000000",
+        "consultation_id": "consultation-10000030000000000000000000000000",
         "number": 1,
         "request": {
           "effort": "low",
@@ -75,28 +75,28 @@
           "exit_code": 0,
           "logs": [
             {
-              "byte_count": 1202,
+              "byte_count": 1201,
               "closed": true,
               "healthy": true,
               "identity": [
                 1,
                 1
               ],
-              "path": "/sample/scenario/data/logs/consultations/consultation-10000040000000000000000000000000/seat-1/claude-environment-10000050000000000000000000000000.jsonl",
+              "path": "/sample/scenario/data/logs/consultations/consultation-10000030000000000000000000000000/seat-1/claude-environment-10000040000000000000000000000000.jsonl",
               "records": 9,
               "resource_id": "log-2",
               "sealed": true,
               "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
             },
             {
-              "byte_count": 3643,
+              "byte_count": 3646,
               "closed": true,
               "healthy": true,
               "identity": [
                 1,
                 2
               ],
-              "path": "/sample/scenario/data/logs/consultations/consultation-10000040000000000000000000000000/seat-1/claude-10000060000000000000000000000000.jsonl",
+              "path": "/sample/scenario/data/logs/consultations/consultation-10000030000000000000000000000000/seat-1/claude-10000050000000000000000000000000.jsonl",
               "records": 8,
               "resource_id": "log-5",
               "sealed": true,
@@ -131,7 +131,7 @@
   "resources": [
     {
       "kind": "consultation",
-      "id": "consultation-10000040000000000000000000000000"
+      "id": "consultation-10000030000000000000000000000000"
     },
     {
       "kind": "snapshot",
@@ -142,7 +142,7 @@
     {
       "artifact_id": "10000030000000000000000000000000.stdout",
       "stream": "stdout",
-      "byte_count": 3858,
+      "byte_count": 3860,
       "sha256": "3000005000000000000000000000000000000000000000000000000000000000"
     },
     {

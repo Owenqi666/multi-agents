@@ -1,10 +1,10 @@
 {
   "kind": "goal",
-  "id": "goal-10000090000000000000000000000000",
+  "id": "goal-10000080000000000000000000000000",
   "data": {
     "kind": "confirmed_goal",
-    "project_id": "project-10000080000000000000000000000000",
-    "goal_id": "goal-10000090000000000000000000000000",
+    "project_id": "project-10000070000000000000000000000000",
+    "goal_id": "goal-10000080000000000000000000000000",
     "repository": "/sample/scenario/repository",
     "git_common_dir": "/sample/scenario/repository/.git",
     "baseline_commit": "2000001000000000000000000000000000000000",
@@ -12,7 +12,7 @@
     "confirmed_goal": "Build the amount and summary, then outline monthly reporting.\nUse the checked output format.\n",
     "confirmed_at": "2000-01-01T00:00:18.000000+00:00",
     "consultation": {
-      "consultation_id": "consultation-10000040000000000000000000000000",
+      "consultation_id": "consultation-10000030000000000000000000000000",
       "adoption": "edited",
       "source_snapshot_id": "3000002000000000000000000000000000000000000000000000000000000000"
     }

@@ -1,6 +1,6 @@
 {
   "args": {
-    "goal_id": "goal-10000090000000000000000000000000",
+    "goal_id": "goal-10000080000000000000000000000000",
     "planner": {
       "provider": "claude",
       "model": "claude-fable-5-2",
@@ -12,16 +12,16 @@
   "finished_at": "2000-01-01T00:00:21.000000+00:00",
   "cancel_requested_at": null,
   "stderr_tail": "",
-  "job_id": "100000a0000000000000000000000000",
+  "job_id": "10000090000000000000000000000000",
   "action": "project.plan",
   "state": "finished",
   "exit_code": 0,
   "result": {
     "kind": "project_plan",
-    "plan_id": "plan-100000b0000000000000000000000000",
+    "plan_id": "plan-100000a0000000000000000000000000",
     "goal": {
-      "project_id": "project-10000080000000000000000000000000",
-      "goal_id": "goal-10000090000000000000000000000000",
+      "project_id": "project-10000070000000000000000000000000",
+      "goal_id": "goal-10000080000000000000000000000000",
       "repository": "/sample/scenario/repository",
       "git_common_dir": "/sample/scenario/repository/.git",
       "baseline_commit": "2000001000000000000000000000000000000000",
@@ -29,7 +29,7 @@
       "confirmed_goal": "Build the amount and summary, then outline monthly reporting.\nUse the checked output format.\n",
       "confirmed_at": "2000-01-01T00:00:18.000000+00:00",
       "consultation": {
-        "consultation_id": "consultation-10000040000000000000000000000000",
+        "consultation_id": "consultation-10000030000000000000000000000000",
         "adoption": "edited",
         "source_snapshot_id": "3000002000000000000000000000000000000000000000000000000000000000"
       }
@@ -49,28 +49,28 @@
       "exit_code": 0,
       "logs": [
         {
-          "byte_count": 1202,
+          "byte_count": 1204,
           "closed": true,
           "healthy": true,
           "identity": [
             1,
             3
           ],
-          "path": "/sample/scenario/data/logs/projects/plan-100000b0000000000000000000000000/claude-environment-100000c0000000000000000000000000.jsonl",
+          "path": "/sample/scenario/data/logs/projects/plan-100000a0000000000000000000000000/claude-environment-100000b0000000000000000000000000.jsonl",
           "records": 9,
           "resource_id": "log-2",
           "sealed": true,
           "sha256": "3000009000000000000000000000000000000000000000000000000000000000"
         },
         {
-          "byte_count": 6798,
+          "byte_count": 6800,
           "closed": true,
           "healthy": true,
           "identity": [
             1,
             4
           ],
-          "path": "/sample/scenario/data/logs/projects/plan-100000b0000000000000000000000000/claude-100000d0000000000000000000000000.jsonl",
+          "path": "/sample/scenario/data/logs/projects/plan-100000a0000000000000000000000000/claude-100000c0000000000000000000000000.jsonl",
           "records": 8,
           "resource_id": "log-5",
           "sealed": true,
@@ -164,7 +164,7 @@
   "resources": [
     {
       "kind": "project-plan",
-      "id": "plan-100000b0000000000000000000000000"
+      "id": "plan-100000a0000000000000000000000000"
     },
     {
       "kind": "snapshot",
@@ -172,15 +172,15 @@
     },
     {
       "kind": "project",
-      "id": "project-10000080000000000000000000000000"
+      "id": "project-10000070000000000000000000000000"
     },
     {
       "kind": "goal",
-      "id": "goal-10000090000000000000000000000000"
+      "id": "goal-10000080000000000000000000000000"
     },
     {
       "kind": "consultation",
-      "id": "consultation-10000040000000000000000000000000"
+      "id": "consultation-10000030000000000000000000000000"
     },
     {
       "kind": "snapshot",
@@ -189,13 +189,13 @@
   ],
   "artifacts": [
     {
-      "artifact_id": "100000a0000000000000000000000000.stdout",
+      "artifact_id": "10000090000000000000000000000000.stdout",
       "stream": "stdout",
-      "byte_count": 5876,
+      "byte_count": 5878,
       "sha256": "300000b000000000000000000000000000000000000000000000000000000000"
     },
     {
-      "artifact_id": "100000a0000000000000000000000000.stderr",
+      "artifact_id": "10000090000000000000000000000000.stderr",
       "stream": "stderr",
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"

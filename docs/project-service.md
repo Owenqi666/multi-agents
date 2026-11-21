@@ -15,6 +15,17 @@ uv run python -m multi_agent.web --repository "$REPO" --data-dir "$DATA" \
 
 浏览器打开服务打印的地址即可进入工作台。`python -m multi_agent.web` 默认托管工作台源码下的 `frontend/dist`。可用 `--frontend-dist DIR` 指定其他构建目录。静态 GET 按真实路径限定在该目录内。`/assets/` 下的文件不存在时返回 404，其他前端路由回退到 `index.html`，入口页使用 `Cache-Control: no-cache`。构建目录缺失时，首页以 404 纯文本显示构建命令，`/api` 仍可用。直接构造 `WorkspaceServer` 时可省略页面目录，此时只提供 API。
 
+### 打开只读归档
+
+对已经封存的数据库，用原仓库和独立数据目录启动服务。若归档包含已提交的 WAL，将其与主库保存在同一目录。启动后在「归档」页按记录类型和已知 ID 打开。
+
+```sh
+uv run python -m multi_agent.web --repository "$REPO" --data-dir "$ARCHIVE_VIEW_DATA" \
+  --read-only-database "$ARCHIVE_DB" --port 0
+```
+
+归档服务直接读取指定库及其有内容的 WAL，源库不迁移。读者索引只在独立数据目录创建。该模式用于封存文件。源文件改变后，读回会提示重新打开。仓库归属照常核验。旧库按已有表结构支持历史记录，无法提供的资源返回 `archive_unsupported` 和所需版本。测试或会话外部文件若缺少可访问的证据，读回保留未核验状态。归档禁止启动新作业、补跑、取消和环境刷新，POST 返回 `archive_read_only`。
+
 ## 工作区、作业与资源
 
 | 请求 | 回执 |
@@ -56,7 +67,7 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | 读取上述六类资源的日志页 | HTTP 200，保留 `stream,text,offset,next_offset,byte_count,sha256,truncated`，`text`、`next_offset` 和未取得的值为 `null`，带 `lock_busy:true` |
 | 其他资源、冻结快照和已登记的作业日志 | 照常读取，按原端点规则检查资源归属和句柄 |
 
-服务让需要仓库执行锁的读取逐个执行，包括 `project.stage.integrate` 提交前检查。在途读取完成后才启动新 CLI 子进程。网页看到 `lock_busy` 可保留现有显示，等作业结束再取一次。`lock_busy` 只表示本服务的读取闸拒绝了本次读取。并行运行的外部终端 CLI 也可能占用仓库锁，本机实测冲突原文为 `repository already has an implementation executor`。
+服务让需要仓库执行锁的读取逐个执行，包括 `project.stage.integrate` 提交前检查。在途读取完成后才启动新 CLI 子进程。网页看到 `lock_busy` 可保留现有显示，等作业结束再取一次。`lock_busy` 表示本服务的读取闸拒绝了本次读取。CLI 写作业在相同的仓库执行锁上最多等一秒，应对外部终端的短暂核验读取。持续占用仍会拒绝，读回仍以实际核验为准。
 
 ### 日志坐标与返工差异
 
@@ -110,13 +121,17 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | HTTP | `error.code` | 含义 |
 | --- | --- | --- |
 | 400 | `invalid_request`、`unknown_action`、`invalid_provider` | 请求体、参数、动作或供应商无效 |
-| 403 | `invalid_host`、`invalid_origin` | Host 或 POST Origin 与服务地址不符 |
-| 404 | `not_found` | 资源、作业、快照文件或已登记的日志不可用 |
-| 409 | `busy`、`environment_busy`、`job_unavailable` | CLI 已有活动作业、同一供应商的环境检查在运行，或作业当前不可执行 |
+| 403 | `invalid_host`、`invalid_origin`、`archive_read_only` | Host 或 POST Origin 与服务地址不符，或用户向只读归档提交了动作 |
+| 404 | `not_found`、`archive_unsupported` | 资源、作业、快照文件或已登记的日志不可用，或归档版本缺少相应记录类型 |
+| 409 | `busy`、`environment_busy`、`job_unavailable`、`archive_changed` | 作业不可执行、活动作业占用资源，或已选归档文件发生变化 |
 | 500 | `workspace_unavailable` | 工作区文件或数据库操作失败 |
 | 501 | `invalid_request` | HTTP 方法不受支持 |
 
-已受理的 CLI 业务拒绝从作业读回。退出码 2 可能只给出 stderr，例如本卡 `integration.accept` 的资格拒绝，`result` 为 `null`。前端可在作业详情展示 `stderr_tail`。当前领域资源提供咨询、规划、测试和冻结输出；实施与代码审核席位的完整会话日志仍待后端提供入口。
+已受理的 CLI 拒绝或故障从作业的 `error.code` 和 `error.message` 读回。桥传入全局参数 `--structured-errors`，令 CLI 用 `{"kind":"cli_error","error":{"code":...,"message":...}}` 输出专用失败回执。CLI 仍提供原退出码和 stderr。终端直接调用时可按需启用该参数。集成接受的资格拒绝使用 `integration_accept_refused`。已有领域回执继续放在 `result`。旧作业若只留 stderr，作业详情会显示 `stderr_tail`。
+
+### 中断咨询
+
+新提交的咨询作业在服务失去控制时保留 `recovery_consultation_id`。作业详情可以打开已写入数据库的咨询。若咨询仍显示运行中，可显式提交 `project.consult.reconcile`。CLI 先核验原咨询控制者的所有权文件。控制者仍持锁时返回 `consultation_live`，缺少可信凭据时返回 `consultation_owner_unknown`。对账完成后记录 `interrupted_at`，保留已运行完的席位结果。尚未开始的席位继续显示待开始，晚到结果只附在历史里。对账确认的是控制权丢失。模型进程的实际停止仍需要运行时证据。
 
 ## 动作与 CLI 对照
 
@@ -126,6 +141,7 @@ Host 必须等于启动 URL 的权威地址。POST 带 Origin 时，Origin 必�
 | --- | --- | --- |
 | `environment.refresh` | `provider` | `RuntimeAdapter.check_environment()`。记录该供应商的版本、登录、目录和档位。 |
 | `project.consult` | `baseline,original_goal,advisors,project_id?` | `project consult`。`consultation_id`、同一 `source_snapshot_id`、席位报告、可编辑草案。 |
+| `project.consult.reconcile` | `consultation_id` | `project reconcile-consultation CONSULTATION_ID`。核对所属咨询的控制者，保存中断状态并返回咨询记录。 |
 | `project.confirm` | `baseline,original_goal,confirmed_goal,project_id?,consultation_id?,adoption?` | `project confirm`。`goal_id,project_id`，有 `consultation_id` 时可给 `adoption`，省略则根据文本推导；单独给 `adoption` 回 400。 |
 | `project.plan` | `goal_id,planner` | `project plan GOAL_ID`。新 `plan_id`、`document`、`markdown` 和运行证据。 |
 | `project.revise` | `plan_id,document` | `project revise PLAN_ID --document FILE`。新 `plan_id` 和 `source_plan_id`。 |

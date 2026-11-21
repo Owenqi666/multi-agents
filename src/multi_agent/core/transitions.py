@@ -239,9 +239,9 @@ type ProjectConsultationSeatStatus = AttemptStatus | Literal["pending"]
 
 
 def project_consultation_status(
-    seats: tuple[ProjectConsultationSeatStatus, ...],
+    seats: tuple[ProjectConsultationSeatStatus, ...], *, interrupted: bool = False
 ) -> AttemptStatus:
-    if AttemptStatus.FAILED in seats:
+    if interrupted or AttemptStatus.FAILED in seats:
         return AttemptStatus.FAILED
     if all(status == AttemptStatus.SUCCEEDED for status in seats):
         return AttemptStatus.SUCCEEDED
@@ -249,23 +249,39 @@ def project_consultation_status(
 
 
 def project_consultation_seat_status(
-    *, started: bool, finished: bool, advice: bool, error: bool
+    *,
+    started: bool,
+    finished: bool,
+    advice: bool,
+    error: bool,
+    interrupted: bool = False,
 ) -> ProjectConsultationSeatStatus:
     if not started:
         return "pending"
+    if interrupted and not finished:
+        return AttemptStatus.FAILED
     return project_plan_status(finished=finished, document=advice, error=error)
 
 
 def require_project_consultation_seat(
-    seats: tuple[ProjectConsultationSeatStatus, ...], number: int, *, settling: bool
-) -> None:
+    seats: tuple[ProjectConsultationSeatStatus, ...],
+    number: int,
+    *,
+    settling: bool,
+    interrupted: bool = False,
+) -> Disposition:
     if not 1 <= number <= len(seats):
         raise ValueError(f"unknown consultation seat {number}")
+    if interrupted:
+        if settling and seats[number - 1] != "pending":
+            return Disposition.HISTORY_ONLY
+        raise ValueError("consultation is interrupted")
     if any(status != AttemptStatus.SUCCEEDED for status in seats[: number - 1]):
         raise ValueError("a preceding consultation seat has not succeeded")
     expected = AttemptStatus.RUNNING if settling else "pending"
     if seats[number - 1] != expected:
         raise ValueError(f"consultation seat {number} is not {expected}")
+    return Disposition.APPLIED
 
 
 def apply(state: RoundState, envelope: Envelope) -> tuple[RoundState, Disposition]:

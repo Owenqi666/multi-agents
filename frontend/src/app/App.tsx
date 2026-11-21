@@ -1,10 +1,12 @@
 import { useEffect, type ReactNode } from 'react';
 import { jobs, useJobs } from '../api/jobs';
 import { useReadsInFlight } from '../api/reads';
+import { useArchiveMode, useWorkspaceWritesAllowed, WorkspaceProvider } from '../api/workspace';
 import { ThemeSwitch } from '../components/ThemeSwitch';
 import { EmptyState } from '../components/EmptyState';
 import { JobBar } from './JobBar';
-import { Link, match, useLocation } from './router';
+import { Link, match, navigate, useLocation } from './router';
+import { ArchivePage } from '../pages/ArchivePage';
 import { HomePage } from '../pages/HomePage';
 import { NewGoalPage, ConsultationPage } from '../pages/GoalPages';
 import { ProjectsPage, ProjectPage, GoalPage } from '../pages/ProjectPages';
@@ -21,11 +23,12 @@ type Route = [string, (p: Record<string, string>, q: URLSearchParams) => ReactNo
 
 const ROUTES: Route[] = [
   ['/', () => <HomePage />],
+  ['/archive', () => <ArchivePage />],
   ['/new', () => <NewGoalPage />],
   ['/projects', () => <ProjectsPage />],
   ['/projects/:id', (p) => <ProjectPage id={p.id!} />],
   ['/goals/:id', (p) => <GoalPage id={p.id!} />],
-  ['/consultations/:id', (p) => <ConsultationPage id={p.id!} />],
+  ['/consultations/:id', (p) => <ConsultationPage key={p.id!} id={p.id!} />],
   ['/plans/:id', (p) => <PlanPage id={p.id!} />],
   ['/stages/:id', (p) => <StagePage id={p.id!} />],
   ['/task-plans', () => <OpenTaskPlanPage />],
@@ -42,6 +45,11 @@ const ROUTES: Route[] = [
 
 function Outlet() {
   const { path, query } = useLocation();
+  const archive = useArchiveMode();
+  if (archive && path === '/') return <ArchivePage />;
+  if (archive && path === '/new') {
+    return <EmptyState title="工作区为只读" body="可以打开归档中的现有记录。" action={<Link className="btn" href="/archive">归档</Link>} />;
+  }
   for (const [pattern, render] of ROUTES) {
     const params = match(pattern, path);
     if (params) return <>{render(params, query)}</>;
@@ -49,22 +57,27 @@ function Outlet() {
   return <EmptyState title="没有这个页面" body="地址可能写错了，从上面的导航进入。" action={<Link className="btn" href="/">回到首页</Link>} />;
 }
 
-export function App() {
+function WorkspaceShell() {
   const { path } = useLocation();
+  const archive = useArchiveMode();
+  const writesAllowed = useWorkspaceWritesAllowed();
   const reading = useReadsInFlight();
   const { active, settling } = useJobs();
   useEffect(() => { void jobs.init(); }, []);
+  useEffect(() => {
+    if (archive && path === '/') navigate('/archive', true);
+  }, [archive, path]);
   // For scripts and screen readers: whether the page is still catching up.
   useEffect(() => {
     document.documentElement.dataset.reading = reading > 0 || settling ? '1' : '0';
     document.documentElement.dataset.job = active ? active.state : 'none';
   }, [reading, active, settling]);
-  const nav: [string, string][] = [['/', '舞台'], ['/projects', '项目'], ['/task-plans', '单卡'], ['/jobs', '作业']];
+  const nav: [string, string][] = archive ? [['/archive', '归档']] : [['/', '舞台'], ['/projects', '项目'], ['/task-plans', '单卡'], ['/jobs', '作业']];
   const current = (href: string) => (href === '/' ? path === '/' : path.startsWith(href));
   return (
     <div className="app">
       <header className="app-head">
-        <Link className="brand" href="/">
+        <Link className="brand" href={archive ? '/archive' : '/'}>
           <svg width="34" height="8" viewBox="0 0 34 8" aria-hidden="true">
             <line x1="1" y1="4" x2="33" y2="4" strokeWidth="1" style={{ stroke: 'var(--ink-3)' }} />
             <circle cx="5" cy="4" r="2.4" style={{ fill: 'var(--tone-astra)' }} />
@@ -77,7 +90,8 @@ export function App() {
           {nav.map(([href, label]) => <Link key={href} href={href} aria-current={current(href) ? 'page' : undefined}>{label}</Link>)}
         </nav>
         <div className="app-tools">
-          <Link className="btn small primary" href="/new">提出目标</Link>
+          {archive ? <span className="stamp archive-mode">只读</span> : null}
+          {writesAllowed ? <Link className="btn small primary" href="/new">提出目标</Link> : null}
           <ThemeSwitch />
         </div>
       </header>
@@ -85,4 +99,8 @@ export function App() {
       <main className="app-main"><Outlet /></main>
     </div>
   );
+}
+
+export function App() {
+  return <WorkspaceProvider><WorkspaceShell /></WorkspaceProvider>;
 }
