@@ -1,9 +1,11 @@
 """Shared local admission accounting, separate from workflow and review evidence."""
 
 import fcntl
+import math
 import os
 import sqlite3
 import stat
+import struct
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -52,6 +54,26 @@ class _Allowance:
 
 _SCHEMA_VERSION = 1
 _GUARD_OPEN = os.O_NOFOLLOW | os.O_NONBLOCK | os.O_RDWR
+_SETTLEMENT = struct.Struct("!4sd")
+_SETTLEMENT_TAG = b"PLS1"
+
+
+def _busy(error: BaseException) -> bool:
+    return isinstance(error, sqlite3.OperationalError) and (
+        getattr(error, "sqlite_errorcode", 0) & 0xFF
+    ) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}
+
+
+def _deferred_elapsed(fd: int) -> float | None:
+    record = os.pread(fd, _SETTLEMENT.size + 1, 0)
+    if len(record) != _SETTLEMENT.size:
+        return None
+    tag, elapsed = _SETTLEMENT.unpack(record)
+    return (
+        float(elapsed)
+        if tag == _SETTLEMENT_TAG and math.isfinite(elapsed) and elapsed >= 0
+        else None
+    )
 
 
 def _group_alive(process_group: int) -> bool:
@@ -126,11 +148,11 @@ class ProviderLedger:
             raise ValueError("invalid provider reservation id")
         return self._guards / reservation_id
 
-    def _guard_held(self, reservation_id: str) -> bool:
+    def _owner_state(self, reservation_id: str) -> tuple[bool, float | None]:
         try:
             fd = os.open(self._guard_path(reservation_id), _GUARD_OPEN)
         except FileNotFoundError:
-            return False
+            return False, None
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise ValueError(
@@ -139,34 +161,43 @@ class ProviderLedger:
             try:
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError:
-                return True
-            return False
+                return True, None
+            return False, _deferred_elapsed(fd)
         finally:
             os.close(fd)
 
-    def _sweep(self, connection: sqlite3.Connection, provider: str) -> None:
+    def _guard_held(self, reservation_id: str) -> bool:
+        return self._owner_state(reservation_id)[0]
+
+    def _sweep(self, connection: sqlite3.Connection, provider: str) -> list[Path]:
         rows = connection.execute(
             """SELECT reservation_id, process_group, started
                FROM provider_reservations WHERE provider = ? AND active = 1""",
             (provider,),
         ).fetchall()
+        guards = []
         for row in rows:
             identifier = row["reservation_id"]
-            if self._guard_held(identifier):
+            held, elapsed = self._owner_state(identifier)
+            if held:
                 continue
-            if row["started"] and _group_alive(row["process_group"]):
+            if (
+                elapsed is None
+                and row["started"]
+                and _group_alive(row["process_group"])
+            ):
                 continue
-            # A dead controller cannot start a pending reservation. An orphaned
-            # started turn has no measured end, so settle its reserved allowance.
+            # Only a stopped-turn receipt supplies measured elapsed time. Without
+            # one, an orphaned turn is charged its full allowance after exit.
             connection.execute(
                 """UPDATE provider_reservations SET active = 0,
-                        elapsed_seconds = CASE WHEN started = 1 THEN reserved_seconds ELSE 0 END
-                   WHERE reservation_id = ?""",
-                (identifier,),
+                        elapsed_seconds = CASE WHEN started = 1
+                          THEN COALESCE(MIN(reserved_seconds, ?), reserved_seconds) ELSE 0 END
+                   WHERE reservation_id = ? AND active = 1""",
+                (elapsed, identifier),
             )
-            # Only remove a guard with no holder. If the transaction rolls
-            # back, the next sweep will still see that the controller is gone.
-            self._guard_path(identifier).unlink(missing_ok=True)
+            guards.append(self._guard_path(identifier))
+        return guards
 
     def reserve(
         self,
@@ -184,7 +215,7 @@ class ProviderLedger:
         reservation: ProviderReservation | None = None
         try:
             with self._write(timeout=0.0) as connection:
-                self._sweep(connection, provider)
+                guards = self._sweep(connection, provider)
                 allowance = _allowance(connection, provider, day, limits, run_seconds)
                 if isinstance(allowance, _Allowance):
                     self._guards.mkdir(mode=0o700, exist_ok=True)
@@ -211,13 +242,14 @@ class ProviderLedger:
                             allowance.seconds,
                         ),
                     )
+            # Preserve recovery receipts if the transaction or its commit fails.
+            for guard in guards:
+                guard.unlink(missing_ok=True)
         except BaseException as error:
             if reservation is not None:
                 reservation.close()
                 self._guard_path(reservation.reservation_id).unlink(missing_ok=True)
-            if isinstance(error, sqlite3.OperationalError) and (
-                getattr(error, "sqlite_errorcode", 0) & 0xFF
-            ) in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
+            if _busy(error):
                 return ProviderWait("ledger_busy")
             raise
         if reservation is not None:
@@ -252,8 +284,36 @@ class ProviderLedger:
         """Settle a stopped turn once, leaving an unconfirmed stop reserved."""
         if not stopped:
             return
+        self._finish(reservation_id, elapsed, timeout=0.25)
+
+    def settle(
+        self, reservation: ProviderReservation, *, elapsed: float, stopped: bool
+    ) -> None:
+        """Record a stopped turn now or leave its receipt in the owned guard."""
+        fd = reservation._guard_fd
+        if not stopped or fd is None:
+            return
+        saved = _deferred_elapsed(fd)
+        try:
+            self._finish(
+                reservation.reservation_id,
+                elapsed if saved is None else saved,
+                timeout=0.0,
+            )
+        except sqlite3.OperationalError as error:
+            if not _busy(error):
+                raise
+            if saved is None:
+                record = _SETTLEMENT.pack(_SETTLEMENT_TAG, elapsed)
+                if os.pwrite(fd, record, 0) != len(record):
+                    raise OSError(
+                        "short write recording elapsed provider time"
+                    ) from error
+                os.fsync(fd)
+
+    def _finish(self, reservation_id: str, elapsed: float, *, timeout: float) -> None:
         guard = self._guard_path(reservation_id)
-        with self._write(timeout=0.25) as connection:
+        with self._write(timeout=timeout) as connection:
             updated = connection.execute(
                 """UPDATE provider_reservations SET active = 0,
                         elapsed_seconds = CASE WHEN started = 1 THEN MIN(reserved_seconds, ?) ELSE 0 END

@@ -163,7 +163,8 @@ export function TaskPlanPage({ id }: { id: string }) {
           const next = record.next_action;
           return <>
             <Section title="卡片" note={archive ? undefined : blocked ? '回答阻塞问题后新建一份规划。'
-              : next?.kind === 'plan_retry' ? next.detail : <NextNote next={next} />}>
+              : next?.kind === 'budget_exhausted' ? '冻结的规划预算已用完。'
+                : next?.kind === 'plan_retry' ? next.detail : <NextNote next={next} />}>
               <Facts rows={[
                 ['规划运行 ID', <code className="task-data">{record.planning_run_id}</code>],
                 ['目标', typeof record.card?.goal === 'string' ? record.card.goal : '—'],

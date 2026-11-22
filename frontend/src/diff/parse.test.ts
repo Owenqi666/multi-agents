@@ -41,5 +41,10 @@ describe('parseDiff', () => {
       { kind: 'add', old: null, new: 5, text: '++ replacement that looks like a file header' },
     ]);
     expect(added).toMatchObject({ status: 'added', oldPath: null, newPath: 'added.txt' });
+    expect(parseDiff(patch.replaceAll('\n', '\r\n'))).toEqual([changed, added]);
+  });
+
+  it('parses CRLF Git patches like LF, including binary, rename and hunk metadata', () => {
+    expect(parseDiff(reworkDiff.replaceAll('\n', '\r\n'))).toEqual(files);
   });
 });

@@ -120,6 +120,13 @@ class TaskReviewStore(TaskTestStore):
     """Reuse immutable round tables; source inspection remains a CLI boundary."""
 
     def planning_run_for_task(self, task_run_id: str) -> str:
+        planning_run_id = self.find_planning_run_for_task(task_run_id)
+        if planning_run_id is None:
+            raise KeyError(task_run_id)
+        return planning_run_id
+
+    def find_planning_run_for_task(self, task_run_id: str) -> str | None:
+        """Return a verified binding when this task has recorded planning provenance."""
         with self._connection:
             self._connection.execute("BEGIN")
             row = self._connection.execute(
@@ -127,7 +134,7 @@ class TaskReviewStore(TaskTestStore):
                 (task_run_id,),
             ).fetchone()
             if row is None:
-                raise KeyError(task_run_id)
+                return None
             planning_run_id = str(row["planning_run_id"])
             if self._read_planning(planning_run_id).bound_task_run_id != task_run_id:
                 raise ValueError("task and planning binding differ")

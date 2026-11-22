@@ -314,6 +314,11 @@ def _planning(command: _Command, action: str) -> None:
             command.workspace, "plan", identifier, {"implementation": ["1"]}
         )["data"]
         if not plan["retry_configurable"]:
+            if (
+                plan.get("standalone")
+                and plan["next_action"]["kind"] == "budget_exhausted"
+            ):
+                raise ActionConflict(plan["next_action"]["detail"])
             raise ActionConflict(
                 "the standalone plan cannot be retried in its current state"
             )

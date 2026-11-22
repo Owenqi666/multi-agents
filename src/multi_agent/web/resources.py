@@ -235,7 +235,12 @@ def _resource_data(
     with _ResourceStore.open_readonly(database) as store:
         _owned(store, common, kind, identifier, archive=workspace.archive is not None)
         if kind == "plan":
-            plan = _plan_view(store, identifier, history)
+            plan = _plan_view(
+                store,
+                identifier,
+                history,
+                report_retry_budget="implementation" in options,
+            )
             if "implementation" in options:
                 schema = store._connection.execute("PRAGMA user_version").fetchone()[0]
                 standalone = (

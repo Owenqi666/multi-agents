@@ -65,7 +65,14 @@ from .ownership import (
 )
 from .probe.process import Process, ProcessCleanupIncomplete, SpawnFailed
 from .probe.recording import Recorder, Redactor
-from .provider_limits import ProviderTurn, admit_turn, limit_failure
+from .provider_limits import (
+    ProviderBudget,
+    ProviderTurn,
+    admit_turn,
+    current_provider_budget,
+    limit_failure,
+)
+from .provider_watchdog import ProviderWatchdog
 from .runtime_decode import (
     CodexDecoder,
     RuntimeFailure,
@@ -365,6 +372,7 @@ class _Turn:
     ownership_operation: int | None = None
     log_acquisition: Acquisition | None = None
     provider_turn: ProviderTurn | None = None
+    provider_watchdog: ProviderWatchdog | None = None
 
 
 class RuntimeAdapter(Adapter):
@@ -534,6 +542,8 @@ class RuntimeAdapter(Adapter):
             state.observed_terminal = event
             if state.provider_turn is not None:
                 state.provider_turn.terminal_at = asyncio.get_running_loop().time()
+            if state.provider_watchdog is not None:
+                state.provider_watchdog.begin_cleanup()
             # Only model execution uses the turn deadline. Shutdown and final
             # decoding have the transport's own bounded grace period.
             if state.deadline is not None:
@@ -549,6 +559,7 @@ class RuntimeAdapter(Adapter):
         *,
         pipe: bool = False,
         isolation: CodexIsolation | None = None,
+        watchdog: ProviderWatchdog | None = None,
     ) -> Process:
         self._check_execution_deadline()
         if isolation is not None:
@@ -558,8 +569,19 @@ class RuntimeAdapter(Adapter):
                 acquisition.not_created()
                 raise SpawnFailed("executable unavailable")
             self._check_execution_deadline()
+            command = [str(Path(executable).resolve()), *argv[1:]]
+            if watchdog is not None:
+                try:
+                    return await isolation.spawn_guarded(
+                        watchdog.codex_command(command),
+                        control_fd=watchdog.launch_fd,
+                        pipe=pipe,
+                        grace=self.grace,
+                    )
+                finally:
+                    watchdog.close_launch_end()
             return await isolation.spawn(
-                [str(Path(executable).resolve()), *argv[1:]],
+                command,
                 pipe=pipe,
                 grace=self.grace,
             )
@@ -581,8 +603,11 @@ class RuntimeAdapter(Adapter):
                 env=environment,
                 start_new_session=True,
                 acquisition=acquisition,
+                pass_fds=(watchdog.launch_fd,) if watchdog is not None else (),
             )
         finally:
+            if watchdog is not None:
+                watchdog.close_launch_end()
             acquisition.finish()
 
     async def _run(self, handle: TurnHandle, state: _Turn) -> None:
@@ -591,6 +616,8 @@ class RuntimeAdapter(Adapter):
         try:
             await self._run_owned(handle, state)
         finally:
+            if state.provider_watchdog is not None:
+                state.provider_watchdog.close()
             if state.log_acquisition.outcome == "pending":
                 state.log_acquisition.not_created()
             state.log_acquisition.finish()
@@ -602,13 +629,19 @@ class RuntimeAdapter(Adapter):
                 )
 
     async def _admit_provider_turn(
-        self, state: _Turn, *, process_group: int | None = None
+        self,
+        state: _Turn,
+        budget: ProviderBudget | None,
+        *,
+        process_group: int | None = None,
     ) -> ProviderTurn | None:
         assert state.deadline is not None
         if state.cancelled:
             raise RuntimeFailure(
                 Error("cancelled before model execution", FailureCategory.CANCELLED)
             )
+        if budget is None:
+            return None
         deadline = state.deadline.when()
         assert deadline is not None
         try:
@@ -616,6 +649,7 @@ class RuntimeAdapter(Adapter):
                 self.provider,
                 deadline,
                 lambda: state.cancelled,
+                budget,
                 process_group=process_group,
             )
         except (OSError, sqlite3.Error) as exc:
@@ -623,7 +657,7 @@ class RuntimeAdapter(Adapter):
                 f"{self.provider}: local limit ledger unavailable: {exc}"
             ) from exc
         state.provider_turn = turn
-        if turn is not None and turn.limit_field is not None:
+        if turn.limit_field is not None:
             state.deadline.reschedule(turn.deadline)
         return turn
 
@@ -772,6 +806,16 @@ class RuntimeAdapter(Adapter):
                             else "cancelled before process launch",
                             FailureCategory.CANCELLED,
                         )
+                    elif (
+                        state.provider_turn is not None
+                        and state.provider_turn.terminal_at is not None
+                        and state.provider_turn.terminal_at
+                        >= state.provider_turn.deadline
+                    ):
+                        # The independent watchdog can close the transport
+                        # before this loop gets to run its timeout callback.
+                        state.timed_out = True
+                        failure = self._timeout_error(state)
                 terminal = (
                     failure
                     or state.observed_terminal
@@ -833,12 +877,16 @@ class RuntimeAdapter(Adapter):
         assert state.deadline is not None
         self._resume_execution_timer(state.deadline)
         self._validate_turn_workspace(state)
+        budget = current_provider_budget(self.provider)
+        if budget is not None:
+            state.provider_watchdog = ProviderWatchdog(self.grace)
         process = await self._spawn(
             [self.executable, "app-server", "--strict-config"],
             state.config.cwd,
             recorder,
             pipe=True,
             isolation=isolation,
+            watchdog=state.provider_watchdog,
         )
         state.process = process
         state.rpc = rpc = _Rpc(process)
@@ -917,8 +965,19 @@ class RuntimeAdapter(Adapter):
             params["outputSchema"] = schema
         self._validate_turn_workspace(state)
         self._check_execution_deadline()
-        turn = await self._admit_provider_turn(state, process_group=process.child.pid)
+        turn = await self._admit_provider_turn(
+            state, budget, process_group=process.child.pid
+        )
         if turn is not None:
+            assert state.provider_watchdog is not None
+            try:
+                await state.provider_watchdog.arm(turn.deadline)
+            except OSError as error:
+                raise limit_failure("Codex: local turn watchdog did not arm") from error
+            if state.cancelled:
+                raise RuntimeFailure(
+                    Error("cancelled before turn submission", FailureCategory.CANCELLED)
+                )
             turn.start(process.child.pid)
         response = await rpc.request("turn/start", params)
         state.turn_id = string_value(
@@ -990,10 +1049,17 @@ class RuntimeAdapter(Adapter):
             "environment",
             removed_variables=["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"],
         )
-        turn = await self._admit_provider_turn(state)
+        turn = await self._admit_provider_turn(
+            state, current_provider_budget(self.provider)
+        )
         if turn is not None:
-            argv = turn.claude_command(argv)
-        state.process = process = await self._spawn(argv, state.config.cwd, recorder)
+            state.provider_watchdog = ProviderWatchdog(self.grace, prearmed=True)
+            argv = turn.claude_command(
+                argv, grace=self.grace, control_fd=state.provider_watchdog.launch_fd
+            )
+        state.process = process = await self._spawn(
+            argv, state.config.cwd, recorder, watchdog=state.provider_watchdog
+        )
         if state.cancelled:
             await self._send_cancel(state)
         retry_after: str | None = None
@@ -1100,6 +1166,8 @@ class RuntimeAdapter(Adapter):
         # Decide before the first await: a subsequent runtime terminal must not
         # turn an already accepted request into a rejected late cancellation.
         state.cancelled = True
+        if state.process is not None and state.provider_watchdog is not None:
+            state.provider_watchdog.begin_cleanup()
         self._ensure_cancel_cleanup(state)
         if state.deadline is not None and state.deadline_active:
             state.deadline.reschedule(None)

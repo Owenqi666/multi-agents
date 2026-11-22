@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { createHash } from 'node:crypto';
 import type { ReviewRound, Workspace } from '../src/api/types';
 import { checkSessionLog, sessionArtifacts, sessionResource } from './session-logs';
 import { act, jobRequest, NetworkLog, OfflineEnv, pick, readback, refreshEnvironments } from './support';
@@ -235,6 +236,63 @@ test('粘贴补丁双审仅补失败席，双侧定位并从同一父轮交叉�
     });
   } catch (error) {
     await record(net, scenario, { result: 'failed', error: String(error) });
+    throw error;
+  } finally {
+    await env.stop();
+  }
+});
+
+test('CRLF 补丁保留冻结原文并定位旧侧和新侧意见', async ({ page }) => {
+  const env = await OfflineEnv.start('standalone-review');
+  const net = new NetworkLog(page);
+  const scenario = 'standalone-review-crlf';
+  const patch = PATCH.replaceAll('\n', '\r\n');
+  const patchSha256 = createHash('sha256').update(patch).digest('hex');
+  try {
+    await beginSnapshot(page, env.url, '粘贴补丁');
+    await page.getByLabel('补丁原文', { exact: true }).fill(patch);
+    const snapshot = await freeze(page, env.url, { diff: patch });
+    expect(snapshot.input.diff).toBe(patch);
+    await page.reload();
+    await expect(page).toHaveURL(`${env.url}/snapshots/${snapshot.snapshot_id}`);
+    const frozenDiff = await page.request.get(`${env.url}/api/diffs/snapshot/${snapshot.snapshot_id}`);
+    expect(frozenDiff.ok()).toBe(true);
+    expect(await frozenDiff.json()).toMatchObject({ snapshot_id: snapshot.snapshot_id, diff: patch });
+
+    const raw = page.locator('details').filter({ hasText: '补丁原文' });
+    await raw.getByText('补丁原文', { exact: true }).click();
+    expect(await raw.locator('pre').textContent()).toBe(patch);
+    const diff = page.locator('.diff-file');
+    await expect(diff).toHaveCount(1);
+    await expect(diff.locator('.diff-hunk')).toHaveText('@@ -3 +5 @@', { timeout: 3000 });
+    await expect(diff.locator('.dl-del .tx')).toHaveText('AMOUNT = 0');
+    await expect(diff.locator('.dl-add .tx')).toHaveText('AMOUNT = 1');
+
+    const parent = await startReview(page, env.url, snapshot, [CODEX, CLAUDE]);
+    await act(page, `补跑失败的席位（${parent.data.seats[1]!.key}）`);
+    const roundUrl = `${env.url}/reviews/${parent.data.round_id}`;
+    const coordinates = [
+      { side: 'baseline', line: '3', lineClass: 'dl-del', text: 'AMOUNT = 0' },
+      { side: 'candidate', line: '5', lineClass: 'dl-add', text: 'AMOUNT = 1' },
+    ];
+    for (const { side, line, lineClass, text } of coordinates) {
+      await page.getByRole('link', { name: `${AMOUNT}:${line}`, exact: true }).click();
+      const query = new URLSearchParams({ side, path: AMOUNT, line, end: line });
+      await expect(page).toHaveURL(`${roundUrl}?${query}`);
+      const selected = page.locator(`tr.${lineClass}[aria-current="location"]`);
+      await expect(selected.locator('.no').filter({ hasText: line })).toHaveText(line);
+      await expect(selected.locator('.tx')).toHaveText(text);
+      await expect(selected).toBeFocused();
+    }
+
+    await net.ready();
+    expect(net.lockViolations()).toEqual([]);
+    await record(net, scenario, {
+      result: 'passed', snapshot_id: snapshot.snapshot_id, round_id: parent.data.round_id,
+      patch_sha256: patchSha256, coordinates,
+    });
+  } catch (error) {
+    await record(net, scenario, { result: 'failed', patch_sha256: patchSha256, error: String(error) });
     throw error;
   } finally {
     await env.stop();

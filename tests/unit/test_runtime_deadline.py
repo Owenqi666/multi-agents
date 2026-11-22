@@ -4,6 +4,7 @@ import asyncio
 import json
 import math
 import os
+import sys
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -35,7 +36,20 @@ def only_synthetic_processes(tmp_path, monkeypatch):
     original = asyncio.create_subprocess_exec
 
     async def launch(program, *arguments, **options):
-        assert Path(program).name in {"codex-fake", "claude-fake"}
+        fake_program = program
+        if program == sys.executable:
+            assert arguments[:2] == ("-I", "-m")
+            match arguments[2]:
+                case "multi_agent.adapters.provider_watchdog":
+                    fake_program = arguments[5]
+                    assert options["pass_fds"] == (int(arguments[3]),)
+                case "multi_agent.adapters.provider_limits":
+                    fake_program = arguments[8]
+                    assert options["pass_fds"] == (int(arguments[7]),)
+                case _:
+                    pytest.fail("deadline test launched an unexpected Python module")
+            assert Path(fake_program).is_relative_to(tmp_path)
+        assert Path(fake_program).name in {"codex-fake", "claude-fake"}
         auth_home = Path(os.environ["CODEX_HOME"])
         assert auth_home.is_relative_to(tmp_path)
         assert (

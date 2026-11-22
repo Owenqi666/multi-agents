@@ -68,3 +68,25 @@ it('copies frozen inputs and available requests when a blocking question is answ
     },
   }));
 });
+
+it('explains an exhausted frozen planning budget without offering retry', async () => {
+  const workspace: Workspace = {
+    repository: '/repo', target_branch: 'main', head: 'a'.repeat(40), read_only: false,
+    environments: { claude: null, codex: null },
+    presets: { source: 'test', rules: {}, roles: [] },
+  };
+  const plan: PlanningView = {
+    planning_run_id: 'exhausted', task_run_id: null, phase: 'failed', verification: 'unverified',
+    card: null, attempts: { draft: [], review: [] }, standalone: true, retry_configurable: false,
+    next_action: { kind: 'budget_exhausted', detail: 'The original planning budget is exhausted.' },
+  };
+  setTransport(fakeTransport({
+    '/workspace': workspace, '/jobs': { items: [] },
+    '/resources/plan/exhausted': { kind: 'plan', id: 'exhausted', data: plan, artifacts: [] },
+  }));
+  window.history.replaceState(null, '', '/task-plans/exhausted');
+  render(<App />);
+
+  expect(await screen.findByText('冻结的规划预算已用完。')).toBeTruthy();
+  expect(screen.queryByRole('button', { name: '重试规划' })).toBeNull();
+});

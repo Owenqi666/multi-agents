@@ -69,6 +69,7 @@ class Process:
         start_new_session: bool = False,
         acquisition: Acquisition | None = None,
         on_created: Callable[[Process], None] | None = None,
+        pass_fds: tuple[int, ...] = (),
     ) -> Process:
         async def publish(child: asyncio.subprocess.Process) -> Process:
             process = cls(name, child, recorder, grace, start_new_session)
@@ -111,6 +112,7 @@ class Process:
                     stderr=asyncio.subprocess.PIPE,
                     env=env,
                     start_new_session=start_new_session,
+                    pass_fds=pass_fds,
                 )
             )
             try:

@@ -81,7 +81,8 @@ export function parseDiff(text: string): DiffFile[] {
   let newNo = 0;
   let oldEnd = 0;
   let newEnd = 0;
-  const lines = text.split('\n');
+  // Accept both line endings in the display parser. The frozen input keeps its original bytes.
+  const lines = text.split(/\r?\n/);
   if (lines[lines.length - 1] === '') lines.pop();
 
   for (const [index, line] of lines.entries()) {

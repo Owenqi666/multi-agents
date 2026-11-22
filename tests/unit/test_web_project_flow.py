@@ -448,3 +448,43 @@ def test_http_plan_retry_rejects_known_id_in_foreign_workspace(workflow):
         assert status == 404
         assert response["error"]["code"] == "not_found"
         assert _get(service, "jobs")["items"] == []
+
+
+@pytest.mark.parametrize(
+    ("provider", "stage"), [("claude", "draft"), ("codex", "review")]
+)
+def test_http_plan_retry_rejects_exhausted_frozen_stage_budget(
+    workflow, provider, stage
+):
+    programs = {name: str(path) for name, path in workflow.executables.items()}
+    helpers.configure(workflow.executables[provider], mode="model-error")
+    with _serve(workflow.repository, workflow.base / "data", programs) as service:
+        first = _job(
+            service,
+            "plan.create",
+            exit_code=1,
+            baseline=workflow.baseline,
+            requirements=helpers.REQUIREMENTS,
+        )["result"]
+        identifier = first["planning_run_id"]
+        suffix = f"resources/plan/{identifier}?implementation=1"
+        initial = _get(service, suffix)["data"]
+        assert initial["retry_configurable"] and len(initial["attempts"][stage]) == 1
+
+        _job(service, "plan.retry", exit_code=1, planning_run_id=identifier)
+        frozen = _get(service, suffix)["data"]
+        assert frozen["budget"][provider] == {"limit": 2, "used": 2, "remaining": 0}
+        assert len(frozen["attempts"][stage]) == 2
+        assert frozen["next_action"]["kind"] == "budget_exhausted"
+        assert not frozen["retry_configurable"]
+
+        jobs = _get(service, "jobs")
+        status, rejected = _request(
+            service,
+            "POST",
+            "/api/jobs",
+            {"action": "plan.retry", "args": {"planning_run_id": identifier}},
+        )
+        assert status == 409 and rejected["error"]["code"] == "job_unavailable"
+        assert _get(service, "jobs") == jobs
+        assert _get(service, suffix)["data"] == frozen

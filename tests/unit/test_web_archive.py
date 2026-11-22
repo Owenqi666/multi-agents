@@ -5,13 +5,20 @@ import shutil
 import sqlite3
 import threading
 from contextlib import closing, contextmanager
+from dataclasses import replace
 
 import pytest
+from test_planning_store import inputs as planning_inputs
+from test_task_store import create, inputs, started
 from test_web_project_flow import _get, _request
 from test_web_project_resources import _repository
 
 from multi_agent.cli.snapshot import freeze_repository
+from multi_agent.core.task_events import TaskEnvelope
+from multi_agent.store import database as store_database
 from multi_agent.store.database import _migration_scripts
+from multi_agent.store.project_store import ProjectStore
+from multi_agent.store.task_store import TaskStore
 from multi_agent.web.server import WorkspaceServer
 from multi_agent.web.workspace import Workspace
 
@@ -154,3 +161,70 @@ def test_web_archive_reads_project_from_before_consultation_schema(tmp_path):
         assert "consultation" not in goal
     assert list(archive.iterdir()) == [database]
     assert database.read_bytes() == original
+
+
+def test_web_archive_reads_v3_task_after_product_migration(tmp_path, monkeypatch):
+    repo, baseline, _ = _repository(tmp_path / "repository")
+    archive = tmp_path / "archive"
+    archive.mkdir()
+    database = archive / "reviews.sqlite3"
+    identifier = "archived-task"
+    value = inputs()
+    value = replace(
+        value,
+        card=replace(value.card, baseline_commit=baseline),
+        frozen_rules=replace(
+            value.frozen_rules,
+            repository=str(repo / ".git"),
+            baseline_commit=baseline,
+        ),
+    )
+    scripts = store_database._migration_scripts()
+    with monkeypatch.context() as migration:
+        migration.setattr(
+            store_database,
+            "_migration_scripts",
+            lambda: [script for script in scripts if script[0] <= 3],
+        )
+        with TaskStore(database) as store:
+            create(store, identifier, value)
+            store.apply_task(identifier, TaskEnvelope(1, started(value)))
+
+    def read(scratch):
+        before = {path.name: path.read_bytes() for path in archive.iterdir()}
+        with _serve_archive(repo, tmp_path / scratch, database) as service:
+            data = _get(service, f"resources/task/{identifier}")["data"]
+            assert data["task_run_id"] == identifier
+            assert data["planning_run_id"] is None
+            assert data["details"]["input"]["requirements"] == value.requirements
+            assert data["attempts"][0]["request"]["worktree"] == "/external/worktree"
+            assert data["attempts"][0]["runtime"]["reported_model"] is None
+            assert _get(service, "jobs")["items"] == []
+        assert {path.name: path.read_bytes() for path in archive.iterdir()} == before
+
+    read("before-migration")
+    with ProjectStore(database) as store:
+        assert (
+            store._connection.execute("PRAGMA user_version").fetchone()[0]
+            == scripts[-1][0]
+        )
+        assert store.load_task(identifier).current_attempt is not None
+    read("after-migration")
+
+    # A present provenance row still has to bind both ways.
+    with ProjectStore(database) as store:
+        planned, _ = planning_inputs()
+        store.create_planning(
+            "unbound-plan",
+            replace(planned, frozen_rules=value.frozen_rules),
+            value.created_at,
+        )
+        with store._connection:
+            store._connection.execute(
+                "INSERT INTO task_planning_provenance VALUES (?, ?, ?, ?)",
+                (identifier, "unbound-plan", "unverified-hash", "{}"),
+            )
+    with _serve_archive(repo, tmp_path / "invalid-binding", database) as service:
+        status, error = _request(service, "GET", f"/api/resources/task/{identifier}")
+        assert status == 400
+        assert error["error"]["message"] == "task and planning binding differ"

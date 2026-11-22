@@ -28,7 +28,10 @@ from multi_agent.core.planning import (
     PlanningState,
     UserDecision,
 )
-from multi_agent.core.planning_execution import prepared_attempts
+from multi_agent.core.planning_execution import (
+    PlanningExecutionPolicy,
+    prepared_attempts,
+)
 from multi_agent.core.task_events import TaskReworkStarted
 from multi_agent.core.task_execution import (
     TaskDispatchPolicy,
@@ -211,8 +214,34 @@ def _refusal(
     return value, 1
 
 
+def _planning_retry_stage(state: PlanningState) -> str | None:
+    if state.phase == PlanningPhase.AWAITING_REVIEW:
+        return "review"
+    if state.phase == PlanningPhase.REVISION_REQUIRED:
+        return "draft" if state.projection is None else None
+    if state.phase in (PlanningPhase.FAILED, PlanningPhase.CANCELLED):
+        draft = state.current("draft")
+        if state.projection is not None or (
+            state.stage == "review" and draft is not None and draft.usable
+        ):
+            return "review"
+        return "draft"
+    return None
+
+
+def _planning_budget_exhausted(
+    state: PlanningState, stage: str, policy: PlanningExecutionPolicy
+) -> bool:
+    provider = state.planning_input.request_for(stage).provider
+    return len(state.attempts(stage)) >= policy.for_provider(provider).max_attempts
+
+
 def _plan_view(
-    store: TaskReviewStore, identifier: str, history: bool
+    store: TaskReviewStore,
+    identifier: str,
+    history: bool,
+    *,
+    report_retry_budget: bool = False,
 ) -> dict[str, Any]:
     state = store.load_planning(identifier)
     records = prepared_attempts(state)
@@ -285,10 +314,22 @@ def _plan_view(
         PlanningPhase.FAILED,
         PlanningPhase.CANCELLED,
     ):
-        next_kind, detail = (
-            "plan_retry",
-            "An explicit retry rechecks stopping facts and the frozen budget.",
-        )
+        retry_stage = _planning_retry_stage(state)
+        if (
+            report_retry_budget
+            and retry_stage is not None
+            and records
+            and _planning_budget_exhausted(state, retry_stage, records[0].policy)
+        ):
+            next_kind, detail = (
+                "budget_exhausted",
+                "The original planning budget is exhausted.",
+            )
+        else:
+            next_kind, detail = (
+                "plan_retry",
+                "An explicit retry rechecks stopping facts and the frozen budget.",
+            )
     else:
         next_kind, detail = (
             "reconciliation_required",
@@ -335,7 +376,7 @@ def _task_view(
 ) -> dict[str, Any]:
     state = store.load_task(identifier)
     schema = store._connection.execute("PRAGMA user_version").fetchone()[0]
-    planning_id = store.planning_run_for_task(identifier) if schema >= 4 else None
+    planning_id = store.find_planning_run_for_task(identifier) if schema >= 4 else None
     current = state.current_attempt
     prepared = prepared_for_task(current) if current is not None else None
     rework_used = any(
@@ -618,31 +659,17 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             raise ValueError(
                 "first planning preparation is incomplete; create a new planning run"
             )
-        if state.phase == PlanningPhase.AWAITING_REVIEW:
-            stage = "review"
-        elif state.phase == PlanningPhase.REVISION_REQUIRED:
-            if state.projection is not None:
+        retry_stage = _planning_retry_stage(state)
+        if retry_stage is None:
+            if state.phase == PlanningPhase.REVISION_REQUIRED:
                 raise ValueError(
                     "the exact delegated card requires a revised stage plan"
                 )
-            stage = "draft"
-        elif state.phase in (PlanningPhase.FAILED, PlanningPhase.CANCELLED):
-            draft = state.current("draft")
-            stage = (
-                "review"
-                if state.projection is not None
-                or (state.stage == "review" and draft is not None and draft.usable)
-                else "draft"
-            )
-        else:
             raise ValueError(
                 "planning execution is incomplete; stopping facts must be reconciled"
             )
-        provider = state.planning_input.request_for(stage).provider
-        if (
-            len(state.attempts(stage))
-            >= records[0].policy.for_provider(provider).max_attempts
-        ):
+        stage = retry_stage
+        if _planning_budget_exhausted(state, stage, records[0].policy):
             result = view_task(database, planning_run_id=identifier)
             result.update(
                 operation="plan",
@@ -670,11 +697,7 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             and not stop.is_set()
         ):
             records = prepared_attempts(state)
-            provider = state.planning_input.review_request.provider
-            if (
-                len(state.review_attempts)
-                >= records[0].policy.for_provider(provider).max_attempts
-            ):
+            if _planning_budget_exhausted(state, "review", records[0].policy):
                 return state, True
             state = await execute_planning_attempt(
                 database, identifier, "review", stop=stop

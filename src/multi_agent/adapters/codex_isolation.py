@@ -475,6 +475,21 @@ class CodexIsolation:
         return process
 
     async def spawn(self, argv: list[str], *, pipe: bool, grace: float) -> Process:
+        return await self._spawn(argv, pipe=pipe, grace=grace)
+
+    async def spawn_guarded(
+        self, argv: list[str], *, control_fd: int, pipe: bool, grace: float
+    ) -> Process:
+        return await self._spawn(argv, pipe=pipe, grace=grace, pass_fds=(control_fd,))
+
+    async def _spawn(
+        self,
+        argv: list[str],
+        *,
+        pipe: bool,
+        grace: float,
+        pass_fds: tuple[int, ...] = (),
+    ) -> Process:
         """Own creation through cancellation; never release auth for a live child."""
         if self._removed:
             raise RuntimeError("Codex isolation resources have already been removed")
@@ -502,6 +517,7 @@ class CodexIsolation:
                 start_new_session=True,
                 acquisition=acquisition,
                 on_created=on_created,
+                pass_fds=pass_fds,
             )
         )
         owned = asyncio.create_task(

@@ -4,6 +4,7 @@ import multiprocessing
 import os
 import sqlite3
 import time
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -151,6 +152,54 @@ def test_sqlite_contention_preserves_a_valid_reservation(tmp_path):
         assert reserve(ledger, limits) == ProviderExhausted("max_calls_per_day")
     finally:
         release(ledger, result)
+
+
+def test_provider_limits_deferred_elapsed_survives_rolled_back_sweep(
+    tmp_path, monkeypatch
+):
+    ledger = ProviderLedger(tmp_path)
+    limits = ProviderLimits(max_seconds_per_day=8)
+    first = reserve(ledger, limits)
+    assert isinstance(first, ProviderReservation)
+    guard = tmp_path / "provider-limit-owners" / first.reservation_id
+    try:
+        assert ledger.start(first.reservation_id, 11)
+        with closing(sqlite3.connect(ledger.path, isolation_level=None)) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            ledger.settle(first, elapsed=2.5, stopped=True)
+            ledger.settle(first, elapsed=4, stopped=True)
+            assert writer.execute(
+                "SELECT active FROM provider_reservations"
+            ).fetchall() == [(1,)]
+    finally:
+        first.close()
+
+    # The read transaction allows BEGIN IMMEDIATE but blocks its commit.
+    # Recovery must retain the measured receipt for a subsequent transaction.
+    with closing(sqlite3.connect(ledger.path, isolation_level=None)) as reader:
+        reader.execute("BEGIN")
+        assert reader.execute(
+            "SELECT active FROM provider_reservations"
+        ).fetchall() == [(1,)]
+        assert reserve(ProviderLedger(tmp_path), limits) == ProviderWait("ledger_busy")
+        assert guard.is_file()
+
+    # A receipt confirms the original stop even if its recorded group ID has
+    # since been reused. The first measurement preserves the unspent allowance.
+    monkeypatch.setattr(provider_limits, "_group_alive", lambda group: group == 11)
+    second = reserve(ProviderLedger(tmp_path), limits)
+    assert isinstance(second, ProviderReservation)
+    try:
+        assert second.run_seconds == 5.5
+        assert not guard.exists()
+        ledger.finish(first.reservation_id, 8, stopped=True)
+        with closing(sqlite3.connect(ledger.path)) as connection:
+            assert connection.execute(
+                "SELECT active, elapsed_seconds FROM provider_reservations WHERE reservation_id = ?",
+                (first.reservation_id,),
+            ).fetchone() == (0, 2.5)
+    finally:
+        release(ledger, second)
 
 
 def _compete(directory, channel):

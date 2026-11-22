@@ -20,6 +20,7 @@ from multi_agent.store.provider_limits import (
     ProviderWait,
 )
 
+from .provider_watchdog import start_watchdog, system_deadline
 from .runtime_decode import RuntimeFailure
 
 type ProviderBudget = tuple[ProviderLedger, ProviderLimits]
@@ -81,7 +82,9 @@ class ProviderTurn:
                 f"{self.provider}: local turn reservation is unavailable"
             )
 
-    def claude_command(self, argv: list[str]) -> list[str]:
+    def claude_command(
+        self, argv: list[str], *, grace: float, control_fd: int
+    ) -> list[str]:
         # A controller can exit between spawning a child and receiving its PID.
         # Register the new group inside that child before it can launch Claude.
         return [
@@ -91,15 +94,17 @@ class ProviderTurn:
             __name__,
             str(self.ledger.path.parent),
             self.reservation.reservation_id,
-            str(self.deadline),
+            str(system_deadline(self.deadline)),
+            str(grace),
+            str(control_fd),
             *argv,
         ]
 
     def finish(self, now: float, *, stopped: bool) -> None:
         stopped_at = self.terminal_at if self.terminal_at is not None else now
         try:
-            self.ledger.finish(
-                self.reservation.reservation_id,
+            self.ledger.settle(
+                self.reservation,
                 elapsed=max(0.0, stopped_at - self.admitted_at),
                 stopped=stopped,
             )
@@ -107,22 +112,24 @@ class ProviderTurn:
             self.reservation.close()
 
 
-async def admit_turn(
-    provider: str,
-    deadline: float,
-    cancelled: Callable[[], bool],
-    *,
-    process_group: int | None = None,
-) -> ProviderTurn | None:
+def current_provider_budget(provider: str) -> ProviderBudget | None:
     lookup = budget_for_provider.get()
     if lookup is None:
         return None
     try:
-        budget = lookup(provider)
+        return lookup(provider)
     except (OSError, TypeError, ValueError) as exc:
         raise limit_failure(str(exc)) from exc
-    if budget is None:
-        return None
+
+
+async def admit_turn(
+    provider: str,
+    deadline: float,
+    cancelled: Callable[[], bool],
+    budget: ProviderBudget,
+    *,
+    process_group: int | None = None,
+) -> ProviderTurn:
     ledger, limits = budget
     clock = asyncio.get_running_loop().time
     while True:
@@ -162,6 +169,8 @@ def _launch_cli(argv: list[str]) -> int:
     parser.add_argument("data_dir", type=Path)
     parser.add_argument("reservation_id")
     parser.add_argument("deadline", type=float)
+    parser.add_argument("grace", type=float)
+    parser.add_argument("control_fd", type=int)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args(argv)
     if not args.command:
@@ -177,6 +186,20 @@ def _launch_cli(argv: list[str]) -> int:
     if not started:
         print("Claude: local turn reservation is unavailable", file=sys.stderr)
         return 125
+    try:
+        try:
+            start_watchdog(
+                args.grace, control_fd=args.control_fd, deadline=args.deadline
+            )
+        finally:
+            os.close(args.control_fd)
+    except OSError:
+        ledger.withdraw_unlaunched(args.reservation_id)
+        raise
+    if time.monotonic() >= args.deadline:
+        ledger.withdraw_unlaunched(args.reservation_id)
+        print("Claude: local model deadline expired before launch", file=sys.stderr)
+        return 124
     os.execvp(args.command[0], args.command)
 
 

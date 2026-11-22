@@ -2,11 +2,13 @@
 
 import json
 import signal
+import sqlite3
 import subprocess
 import sys
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
+import pytest
 import test_project_cli as project_fixture
 import test_runtime as runtime_fixture
 import test_task_workflow_cli as workflow_fixture
@@ -23,7 +25,7 @@ synthetic_codex_auth_and_fake_environment = (
 _FABLE = "claude-fable-5-2"
 
 
-def _fake(tmp_path, name, provider, *, mode="success", report=None):
+def _fake(tmp_path, name, provider, *, mode="success", report=None, gate=None):
     root = tmp_path / name
     root.mkdir()
     program = Path(runtime_fixture.fake(root, provider))
@@ -38,9 +40,17 @@ def _fake(tmp_path, name, provider, *, mode="success", report=None):
     shebang, body = program.read_text().split("\n", 1)
     # The real Codex adapter strips inherited environment variables. Only the
     # disposable fake program restores its own settings.
-    program.write_text(
-        f"{shebang}\nimport os\nos.environ.update({environment!r})\n{body}"
-    )
+    setup = f"import os\nos.environ.update({environment!r})\n"
+    if gate is not None:
+        ready, proceed = gate
+        setup += (
+            "import sys\nimport time\nfrom pathlib import Path\n"
+            "if sys.argv[1:2] == ['-p']:\n"
+            f"    Path({str(ready)!r}).touch()\n"
+            f"    while not Path({str(proceed)!r}).exists():\n"
+            "        time.sleep(0.01)\n"
+        )
+    program.write_text(f"{shebang}\n{setup}{body}")
     return str(program), capture
 
 
@@ -283,3 +293,66 @@ def test_invalid_provider_limit_stops_before_model_launch(
         assert refused["error"]["raw_type"] == "adapter.provider_limits"
         assert f"claude.{field}" in refused["error"]["detail"]
         assert len(_turns(capture)) == 1
+
+
+def test_provider_limits_recover_stopped_turn_after_writer_contention(
+    tmp_path, project
+):
+    _, _, data, (requirements, _), _ = project
+    snapshot = _snapshot(data, requirements)
+    _limits(
+        data,
+        claude={
+            "max_concurrent": 1,
+            "max_calls_per_day": 2,
+            "max_seconds_per_day": 8,
+        },
+    )
+    ready, proceed = tmp_path / "turn-ready", tmp_path / "turn-proceed"
+    program, capture = _fake(tmp_path, "settle", "claude", gate=(ready, proceed))
+    arguments = (
+        "run",
+        snapshot,
+        "--seat",
+        "claude",
+        _FABLE,
+        "high",
+        "--claude-bin",
+        program,
+        "--timeout",
+        "20",
+        "--grace",
+        "0.5",
+    )
+    database = data / "provider-limits.sqlite3"
+    with _process(data, *arguments) as first:
+        _wait_for(ready.exists)
+        with closing(sqlite3.connect(database, isolation_level=None)) as writer:
+            writer.execute("BEGIN IMMEDIATE")
+            try:
+                proceed.touch()
+                review = _result(first, 0)
+                attempt = review["seats"][0]["attempts"][-1]
+                assert (attempt["status"], attempt["exit_code"]) == ("succeeded", 0)
+                assert writer.execute(
+                    "SELECT started, active FROM provider_reservations"
+                ).fetchall() == [(1, 1)]
+            finally:
+                writer.rollback()
+
+    # A fresh controller recovers the stopped turn before enforcing the daily
+    # limit. A full-allowance charge would prevent the following successful turn.
+    second = _cli(data, *arguments)
+    assert second["seats"][0]["attempts"][-1]["status"] == "succeeded"
+    assert len(_turns(capture)) == 2
+    with closing(sqlite3.connect(database)) as connection:
+        rows = connection.execute(
+            "SELECT started, active, elapsed_seconds, reserved_seconds, utc_day "
+            "FROM provider_reservations ORDER BY rowid"
+        ).fetchall()
+    assert [row[:2] for row in rows] == [(1, 0), (1, 0)]
+    elapsed, reserved, first_day = rows[0][2:]
+    second_day = rows[1][4]
+    assert 0 < elapsed < reserved == 8
+    assert rows[1][3] == pytest.approx(8 - (elapsed if first_day == second_day else 0))
+    assert list((data / "provider-limit-owners").iterdir()) == []
