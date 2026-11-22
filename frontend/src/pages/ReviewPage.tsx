@@ -18,6 +18,7 @@ import { currentIntegrationReview, currentTaskReview, openIntegrationRevision, R
 import { ArtifactLinks, Page, Section, useResource } from './common';
 import { UserTests } from './StandaloneReviewPages';
 import { ReviewSessionLogs } from './SessionLogs';
+import { tx } from '../i18n';
 
 type SnapshotSource =
   | { kind: 'executed_integration_review'; integration_id: string }
@@ -39,8 +40,8 @@ function ConfirmationActions({ round }: { round: ReviewRound }) {
     parent?.confirmation_round_id === round.round_id && parent.snapshot_id === round.snapshot_id;
   return (
     <div className="form-actions">
-      {integrationId ? <Link href={to('integrations', integrationId)}>返回集成</Link> : null}
-      {taskId ? <Link href={to('tasks', taskId)}>返回实施和审核</Link> : null}
+      {integrationId ? <Link href={to('integrations', integrationId)}>{tx('返回集成')}</Link> : null}
+      {taskId ? <Link href={to('tasks', taskId)}>{tx('返回实施和审核')}</Link> : null}
       <ReviewRetry round={retry ? round : null} integrationId={integrationId} onDone={integrationId ? openIntegrationRevision : undefined} />
     </div>
   );
@@ -55,12 +56,12 @@ function IndependentActions({ round, stale }: { round: ReviewRound; stale: boole
   const parent = round.metadata.parent_round_id;
   return (
     <div className="form-actions">
-      <Link href={to('snapshots', round.snapshot_id)}>查看冻结输入</Link>
-      {parent ? <Link href={to('reviews', parent)}>返回原审核轮</Link> : null}
+      <Link href={to('snapshots', round.snapshot_id)}>{tx('查看冻结输入')}</Link>
+      {parent ? <Link href={to('reviews', parent)}>{tx('返回原审核轮')}</Link> : null}
       {writesAllowed && !stale ? <>
         <ReviewRetry round={round} independent />
         {round.can_confirm && !round.confirmation_round_id ? (
-          <ActionButton action="review.confirm" label="发起交叉确认" args={() => ({ round_id: round.round_id })}
+          <ActionButton action="review.confirm" label={tx('发起交叉确认')} args={() => ({ round_id: round.round_id })}
             onDone={(job) => {
               if (window.location.pathname !== to('reviews', round.round_id)) return;
               const confirmation = job.resources?.find((record) => record.kind === 'review' && record.id !== round.round_id);
@@ -101,16 +102,16 @@ export function ReviewPage({ id, patchLocation }: { id: string; patchLocation?: 
     ? `${to('reviews', id)}?${new URLSearchParams({ side: finding.side, path: finding.path, line: String(finding.line_start), end: String(finding.line_end) })}`
     : fileLink(snapshotId, finding);
   return (
-    <Page kicker={`审核轮 · ${shortId(id)}`} title={round?.metadata.kind === 'confirmation' ? '交叉确认' : '代码审核'}>
-      <ReadFrame read={{ ...read, data: round }} what="审核轮">
+    <Page kicker={tx('审核轮 · {0}', shortId(id))} title={round?.metadata.kind === 'confirmation' ? tx('交叉确认') : tx('代码审核')}>
+      <ReadFrame read={{ ...read, data: round }} what={tx('审核轮')}>
         {(r) => (
           <>
-            <Section title="席位">
+            <Section title={tx('席位')}>
               <RoundSummary round={r} />
               {r.independent_review ? <IndependentActions round={r} stale={read.stale} />
                 : r.metadata.kind === 'confirmation' ? <ConfirmationActions key={r.round_id} round={r} /> : null}
             </Section>
-            <Section title="意见" note={pasted ? '点击意见的文件名和行号，跳到补丁中的对应位置。' : '点击意见的文件名和行号，打开冻结文件。'}>
+            <Section title={tx('意见')} note={pasted ? tx('点击意见的文件名和行号，跳到补丁中的对应位置。') : tx('点击意见的文件名和行号，打开冻结文件。')}>
               {r.assessment ? <p className="row"><Badge tone={ROUND_TONE[r.assessment.status] ?? 'muted'}>{ASSESSMENT_LABEL[r.assessment.status] ?? r.assessment.status}</Badge>{r.assessment.reasons.map((x) => <code key={x} className="stamp">{x}</code>)}</p> : null}
               {groups.length ? (
                 <ul className="finding-list">
@@ -124,20 +125,20 @@ export function ReviewPage({ id, patchLocation }: { id: string; patchLocation?: 
                     </li>
                   ))}
                 </ul>
-              ) : <p className="muted">没有意见。</p>}
-              {r.confirmation_round_id ? <p><Link href={to('reviews', r.confirmation_round_id)}>查看交叉确认</Link></p> : null}
+              ) : <p className="muted">{tx('没有意见。')}</p>}
+              {r.confirmation_round_id ? <p><Link href={to('reviews', r.confirmation_round_id)}>{tx('查看交叉确认')}</Link></p> : null}
             </Section>
             <ReviewSessionLogs round={r} artifacts={read.data?.artifacts ?? []} />
             {standalone ? <UserTests input={standalone} /> : null}
-            <Section title="冻结的审核输入" note={r.seats.length > 1 ? '两位审核者看到的是同一份。' : undefined}>
+            <Section title={tx('冻结的审核输入')} note={r.seats.length > 1 ? tx('两位审核者看到的是同一份。') : undefined}>
               <ArtifactLinks artifacts={read.data?.artifacts.filter((artifact) => !artifact.key?.startsWith('session-')) ?? []}
-                label={(a) => `冻结日志 · 命令 ${a.coordinates?.frozen_index ?? ''} · ${a.stream ?? a.key ?? '日志'}`} />
-              <ReadFrame read={diff} what="冻结快照的 diff">
+                label={(a) => tx('冻结日志 · 命令 {0} · {1}', a.coordinates?.frozen_index ?? '', a.stream ?? a.key ?? tx('日志'))} />
+              <ReadFrame read={diff} what={tx('冻结快照的 diff')}>
                 {(d) => <>
                   <DiffView diff={d.diff} annotations={annotations} location={pasted ? location : undefined}
                     onOpenFinding={pasted || (r.independent_review && !standalone) ? undefined : (a) => navigate(fileLink(r.snapshot_id, a.finding))}
-                    emptyNote={<EmptyState compact title="没有可看的 diff" body={d.unavailable_reason ?? '这份快照没有 diff。'} />} />
-                  {pasted && d.diff !== null ? <details className="raw"><summary>补丁原文</summary><pre>{d.diff}</pre></details> : null}
+                    emptyNote={<EmptyState compact title={tx('没有可看的 diff')} body={d.unavailable_reason ?? tx('这份快照没有 diff。')} />} />
+                  {pasted && d.diff !== null ? <details className="raw"><summary>{tx('补丁原文')}</summary><pre>{d.diff}</pre></details> : null}
                 </>}
               </ReadFrame>
             </Section>

@@ -1,6 +1,6 @@
 # Multi-agents
 
-Multi-agents is a local macOS workbench that coordinates Codex and Claude Code through their existing CLI logins. You can plan a project with both models, assign implementation to separate Git worktrees, and inspect each candidate commit alongside its tests and independent code reviews. One service instance manages one repository for one user. The web interface is in Chinese.
+Multi-agents is a local macOS workbench that coordinates Codex and Claude Code through their existing CLI logins. You can plan a project with both models, assign implementation to separate Git worktrees, and inspect each candidate commit alongside its tests and independent code reviews. One service instance manages one repository for one user. The web interface is available in Chinese and English, with a language switch in the top corner.
 
 [Explore the offline demo](#explore-the-recorded-demo) · [Trace a browser action through the code](#how-a-browser-action-reaches-a-model) · [Run the test suite](#verification)
 

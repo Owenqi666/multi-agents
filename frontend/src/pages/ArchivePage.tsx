@@ -4,6 +4,7 @@ import { Link, navigate, to } from '../app/router';
 import { EmptyState } from '../components/EmptyState';
 import { ReadFrame } from '../components/ReadNote';
 import { Page, Section } from './common';
+import { tx } from '../i18n';
 
 const RECORDS = [
   { route: 'reviews', label: '审核轮' },
@@ -23,27 +24,27 @@ export function ArchivePage() {
   const [route, setRoute] = useState('reviews');
   const [id, setId] = useState('');
   return (
-    <Page title="归档">
-      <ReadFrame read={workspace} what="归档工作区">
+    <Page title={tx('归档')}>
+      <ReadFrame read={workspace} what={tx('归档工作区')}>
         {(ws) => ws.read_only ? (
-          <Section title="打开记录" note="按记录类型和 ID 查看归档中的历史证据。">
-            <p className="row archive-repository"><span className="stamp">仓库</span><code className="task-data">{ws.repository}</code></p>
+          <Section title={tx('打开记录')} note={tx('按记录类型和 ID 查看归档中的历史证据。')}>
+            <p className="row archive-repository"><span className="stamp">{tx('仓库')}</span><code className="task-data">{ws.repository}</code></p>
             <form className="form-actions archive-open" onSubmit={(event) => {
               event.preventDefault();
               if (id.trim()) navigate(to(...route.split('/'), id.trim()));
             }}>
-              <label>记录类型
+              <label>{tx('记录类型')}
                 <select className="field" value={route} onChange={(event) => setRoute(event.target.value)}>
-                  {RECORDS.map((record) => <option key={record.route} value={record.route}>{record.label}</option>)}
+                  {RECORDS.map((record) => <option key={record.route} value={record.route}>{tx(record.label)}</option>)}
                 </select>
               </label>
-              <label>记录 ID
+              <label>{tx('记录 ID')}
                 <input className="field mono" value={id} onChange={(event) => setId(event.target.value)} required />
               </label>
-              <button className="btn primary" type="submit" disabled={!id.trim()}>打开记录</button>
+              <button className="btn primary" type="submit" disabled={!id.trim()}>{tx('打开记录')}</button>
             </form>
           </Section>
-        ) : <EmptyState title="当前工作区未打开归档" action={<Link className="btn" href="/">返回舞台</Link>} />}
+        ) : <EmptyState title={tx('当前工作区未打开归档')} action={<Link className="btn" href="/">{tx('返回舞台')}</Link>} />}
       </ReadFrame>
     </Page>
   );

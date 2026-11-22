@@ -2,6 +2,7 @@ import type { ImplementationAttempt, RoleRequest } from '../api/types';
 import { timeText } from '../app/labels';
 import { Unconfirmed } from '../components/Badge';
 import { Evidence, Facts } from './common';
+import { tx } from '../i18n';
 
 const DECISION_REASON: Record<string, string> = {
   explicit_request: '采用指定模型',
@@ -34,13 +35,13 @@ const USAGE_LABEL = new Map(Object.entries({
 function counterLabel(key: string): string {
   if (key.startsWith('total.')) {
     const name = key.slice(6);
-    return `累计 · ${USAGE_LABEL.get(name) ?? name}`;
+    return tx('累计 · {0}', USAGE_LABEL.has(name) ? tx(USAGE_LABEL.get(name)!) : name);
   }
   if (key.startsWith('last.')) {
     const name = key.slice(5);
-    return `最近一次 · ${USAGE_LABEL.get(name) ?? name}`;
+    return tx('最近一次 · {0}', USAGE_LABEL.has(name) ? tx(USAGE_LABEL.get(name)!) : name);
   }
-  return USAGE_LABEL.get(key) ?? key;
+  return USAGE_LABEL.has(key) ? tx(USAGE_LABEL.get(key)!) : key;
 }
 
 function Choice({ value }: { value: RoleRequest }) {
@@ -48,32 +49,32 @@ function Choice({ value }: { value: RoleRequest }) {
 }
 
 function Usage({ evidence }: { evidence: ImplementationAttempt['usage_evidence'] }) {
-  if (!evidence) return <Unconfirmed what="用量" />;
+  if (!evidence) return <Unconfirmed what={tx('用量')} />;
   const counters = Object.entries(evidence.counts);
   return (
     <div className="task-usage">
-      <span className="stamp">来源 <code className="task-data">{evidence.source}</code></span>
+      <span className="stamp">{tx('来源')} <code className="task-data">{evidence.source}</code></span>
       {counters.length ? (
         <dl className="task-counters">
           {counters.map(([key, value]) => (
             <div key={key}><dt title={key}>{counterLabel(key)}</dt><dd><code>{value}</code></dd></div>
           ))}
         </dl>
-      ) : <Unconfirmed what="用量" />}
+      ) : <Unconfirmed what={tx('用量')} />}
     </div>
   );
 }
 
 function RuntimeReroutes({ reroutes }: { reroutes: ImplementationAttempt['runtime_reroutes'] }) {
-  if (!reroutes) return <Unconfirmed what="运行时改派" />;
-  if (!reroutes.length) return <span className="stamp">未记录改派</span>;
+  if (!reroutes) return <Unconfirmed what={tx('运行时改派')} />;
+  if (!reroutes.length) return <span className="stamp">{tx('未记录改派')}</span>;
   return (
     <ul className="task-reroutes">
       {reroutes.map((reroute, index) => (
         <li key={index}>
           <span className="task-data"><code>{reroute.from_model}</code> → <code>{reroute.to_model}</code></span>
-          <span className="stamp task-data">原因 <code>{reroute.reason}</code></span>
-          <span className="stamp task-data">来源 <code>{reroute.source}</code></span>
+          <span className="stamp task-data">{tx('原因')} <code>{reroute.reason}</code></span>
+          <span className="stamp task-data">{tx('来源')} <code>{reroute.source}</code></span>
         </li>
       ))}
     </ul>
@@ -84,33 +85,33 @@ export function TaskAttemptEvidence({ attempt, number }: { attempt: Implementati
   const { request, runtime } = attempt;
   const { decision } = request;
   const fallbacks = attempt.events?.find((event) => event.kind === 'task_execution_prepared')?.dispatch_policy?.fallbacks;
-  const requested = decision.requested === null ? '按冻结规则默认派发'
-    : decision.requested ? <Choice value={decision.requested} /> : <Unconfirmed what="实施请求" />;
+  const requested = decision.requested === null ? tx('按冻结规则默认派发')
+    : decision.requested ? <Choice value={decision.requested} /> : <Unconfirmed what={tx('实施请求')} />;
   return (
     <li className="task-attempt-evidence">
       <header className="row">
-        <h3>{request.kind === 'task_rework_started' ? '返工' : `第 ${number} 次实施`}</h3>
+        <h3>{request.kind === 'task_rework_started' ? tx('返工') : tx('第 {0} 次实施', number)}</h3>
         <span className="stamp">{timeText(request.started_at)}</span>
         {runtime?.status ? <span className="stamp">{runtime.status}</span> : null}
       </header>
       <Facts rows={[
-        ['工作树', request.worktree ? <code className="task-data">{request.worktree}</code> : <Unconfirmed what="工作树" />],
-        ['请求', requested],
-        ['工作台选择', <span className="row">
+        [tx('工作树'), request.worktree ? <code className="task-data">{request.worktree}</code> : <Unconfirmed what={tx('工作树')} />],
+        [tx('请求'), requested],
+        [tx('工作台选择'), <span className="row">
           <Choice value={decision.choice} />
-          {decision.reason ? <span className="stamp" title={decision.reason}>{DECISION_REASON[decision.reason] ?? decision.reason}</span> : null}
+          {decision.reason ? <span className="stamp" title={decision.reason}>{DECISION_REASON[decision.reason] ? tx(DECISION_REASON[decision.reason]!) : decision.reason}</span> : null}
         </span>],
-        ['运行时报告', <span className="task-data"><Evidence reportedModel={runtime?.reported_model} reportedEffort={runtime?.reported_effort} /></span>],
-        ['冻结备选链', fallbacks ? (
-          fallbacks.length ? <ol className="task-choice-list">{fallbacks.map((choice, index) => <li key={index}><Choice value={choice} /></li>)}</ol> : '无备选'
-        ) : <Unconfirmed what="冻结备选链" />],
-        ['选择记录', decision.selection_history?.length ? (
+        [tx('运行时报告'), <span className="task-data"><Evidence reportedModel={runtime?.reported_model} reportedEffort={runtime?.reported_effort} /></span>],
+        [tx('冻结备选链'), fallbacks ? (
+          fallbacks.length ? <ol className="task-choice-list">{fallbacks.map((choice, index) => <li key={index}><Choice value={choice} /></li>)}</ol> : tx('无备选')
+        ) : <Unconfirmed what={tx('冻结备选链')} />],
+        [tx('选择记录'), decision.selection_history?.length ? (
           <ol className="task-choice-list">{decision.selection_history.map((entry, index) => (
-            <li key={index}><Choice value={entry.choice} /> <span className="stamp" title={entry.outcome}>{SELECTION_OUTCOME[entry.outcome] ?? entry.outcome}</span></li>
+            <li key={index}><Choice value={entry.choice} /> <span className="stamp" title={entry.outcome}>{SELECTION_OUTCOME[entry.outcome] ? tx(SELECTION_OUTCOME[entry.outcome]!) : entry.outcome}</span></li>
           ))}</ol>
-        ) : <Unconfirmed what="选择记录" />],
-        ['用量', <Usage evidence={attempt.usage_evidence} />],
-        ['运行时改派', <RuntimeReroutes reroutes={attempt.runtime_reroutes} />],
+        ) : <Unconfirmed what={tx('选择记录')} />],
+        [tx('用量'), <Usage evidence={attempt.usage_evidence} />],
+        [tx('运行时改派'), <RuntimeReroutes reroutes={attempt.runtime_reroutes} />],
       ]} />
     </li>
   );

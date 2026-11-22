@@ -9,5 +9,6 @@ export default defineConfig({
   retries: 0,
   reporter: [['list'], ['json', { outputFile: 'e2e/records/report.json' }]],
   expect: { timeout: 30_000 },
-  use: { trace: 'off', viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', actionTimeout: 60_000 },
+  // The scenarios read the Chinese interface; a zh-CN browser opens it in Chinese on the first visit.
+  use: { trace: 'off', locale: 'zh-CN', viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', actionTimeout: 60_000 },
 });

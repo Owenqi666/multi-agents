@@ -6,6 +6,7 @@ import { errorText } from '../api/transport';
 import type { Job } from '../api/types';
 import { actionLabel } from '../app/labels';
 import { Link } from '../app/router';
+import { tx } from '../i18n';
 
 /** A button that submits one action. From the click until its job ends it cannot be pressed
  *  again, and no other action can be submitted while a CLI job is unfinished. When it is
@@ -44,7 +45,7 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
     try {
       const r = await jobs.submit(action, a);
       if ('busy' in r) {
-        setProblem(<>已有作业在运行。{r.busy ? <Link href={`/jobs/${encodeURIComponent(r.busy)}`}>查看那个作业</Link> : null}</>);
+        setProblem(<>{tx('已有作业在运行。')}{r.busy ? <Link href={`/jobs/${encodeURIComponent(r.busy)}`}>{tx('查看那个作业')}</Link> : null}</>);
         return;
       }
       setMine(r.job.job_id);
@@ -61,12 +62,12 @@ export function ActionButton({ action, args, label, primary = false, disabled = 
   return (
     <span className="action">
       <button type="button" className={`btn${primary ? ' primary' : ''}${running || submitting === action ? ' busy' : ''}`} disabled={blocked} onClick={() => void click()}>
-        {running || submitting === action ? '已提交，等作业结束' : label ?? actionLabel(action)}
+        {running || submitting === action ? tx('已提交，等作业结束') : label ?? actionLabel(action)}
       </button>
       {disabled && reason ? <span className="action-why">{reason}</span> : null}
       {!disabled && busyElsewhere && active ? (
         <span className="action-why">
-          作业「{actionLabel(active.action)}」还没结束。<Link href={`/jobs/${encodeURIComponent(active.job_id)}`}>查看</Link>
+          {tx('作业「{0}」还没结束。', actionLabel(active.action))}<Link href={`/jobs/${encodeURIComponent(active.job_id)}`}>{tx('查看')}</Link>
         </span>
       ) : null}
       {problem ? <span className="action-why problem">{problem}</span> : null}

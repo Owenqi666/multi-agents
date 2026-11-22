@@ -14,6 +14,7 @@ import { ReadFrame } from '../components/ReadNote';
 import { EnvironmentHint } from './GoalPages';
 import { useSeats } from './bits';
 import { Facts, Page, Section, useResource } from './common';
+import { tx } from '../i18n';
 
 const REVIEW_SCOPE = 'independent_review';
 const ROUTES = { snapshot: 'snapshots', review: 'reviews' } as const;
@@ -24,7 +25,7 @@ function openResult(job: Job, kind: keyof typeof ROUTES) {
 }
 
 function History({ kind, snapshot }: { kind: keyof typeof ROUTES; snapshot?: string }) {
-  const title = kind === 'snapshot' ? '快照历史' : '审核历史';
+  const title = kind === 'snapshot' ? tx('快照历史') : tx('审核历史');
   const read = useRead<{ items: RunItem[] }>(`runs/${kind}`, () => api.runs(kind), { locking: false, pollWhileJob: true });
   return (
     <Section title={title}>
@@ -40,7 +41,7 @@ function History({ kind, snapshot }: { kind: keyof typeof ROUTES; snapshot?: str
                 </li>
               ))}
             </ul>
-          ) : <p className="muted">{kind === 'snapshot' ? '还没有登记的独立审核快照。' : '还没有登记的审核轮。'}</p>;
+          ) : <p className="muted">{kind === 'snapshot' ? tx('还没有登记的独立审核快照。') : tx('还没有登记的审核轮。')}</p>;
         }}
       </ReadFrame>
     </Section>
@@ -52,17 +53,17 @@ export function ReviewHomePage() {
   const [id, setId] = useState('');
   const [kind, setKind] = useState<keyof typeof ROUTES>('snapshot');
   return (
-    <Page title="独立审核" aside={writesAllowed ? <Link className="btn primary" href="/reviews/new">新建独立审核</Link> : null}>
-      <Section title="打开已有记录">
+    <Page title={tx('独立审核')} aside={writesAllowed ? <Link className="btn primary" href="/reviews/new">{tx('新建独立审核')}</Link> : null}>
+      <Section title={tx('打开已有记录')}>
         <form className="form-row" onSubmit={(event) => { event.preventDefault(); if (id.trim()) navigate(to(ROUTES[kind], id.trim())); }}>
-          <label>记录类型
+          <label>{tx('记录类型')}
             <select className="field" value={kind} onChange={(event) => setKind(event.target.value === 'review' ? 'review' : 'snapshot')}>
-              <option value="snapshot">冻结快照</option>
-              <option value="review">审核轮</option>
+              <option value="snapshot">{tx('冻结快照')}</option>
+              <option value="review">{tx('审核轮')}</option>
             </select>
           </label>
-          <label>记录 ID<input className="field mono" value={id} onChange={(event) => setId(event.target.value)} required /></label>
-          <button className="btn" type="submit" disabled={!id.trim()}>打开记录</button>
+          <label>{tx('记录 ID')}<input className="field mono" value={id} onChange={(event) => setId(event.target.value)} required /></label>
+          <button className="btn" type="submit" disabled={!id.trim()}>{tx('打开记录')}</button>
         </form>
       </Section>
       <History kind="snapshot" />
@@ -94,51 +95,51 @@ export function NewReviewPage() {
   const [testsText, setTests] = useState('');
   const acceptance = acceptanceText.split('\n').map((line) => line.trim()).filter(Boolean);
   const tests = mode === 'commits' && testsText.trim() ? parseTests(testsText) : null;
-  const reason = mode === 'patch' && !patch.trim() ? '请粘贴补丁原文。'
-    : mode === 'commits' && (!baseline.trim() || !candidate.trim()) ? '请填写基线和候选提交。'
-    : !requirements.trim() || !acceptance.length ? '请填写审核需求及至少一条验收标准。'
-    : mode === 'commits' && testsText.trim() && !tests ? '测试证据需要包含 required_commands 和 results 数组。' : null;
+  const reason = mode === 'patch' && !patch.trim() ? tx('请粘贴补丁原文。')
+    : mode === 'commits' && (!baseline.trim() || !candidate.trim()) ? tx('请填写基线和候选提交。')
+    : !requirements.trim() || !acceptance.length ? tx('请填写审核需求及至少一条验收标准。')
+    : mode === 'commits' && testsText.trim() && !tests ? tx('测试证据需要包含 required_commands 和 results 数组。') : null;
   return (
-    <Page title="新建独立审核" aside={<Link className="btn small" href="/reviews">审核历史</Link>}>
-      {!writesAllowed ? <EmptyState title={ws?.read_only ? '工作区为只读' : '正在读取工作区'} action={ws?.read_only ? <Link className="btn" href="/archive">归档</Link> : null} /> : (
-        <fieldset className="plan-fields" aria-label="独立审核输入" disabled={active !== null || settling || submitting !== null}>
-          <Section title="改动" note={ws?.repository ? <code className="task-data">{ws.repository}</code> : undefined}>
-            <div className="seg small" role="radiogroup" aria-label="审核输入类型">
-              <button type="button" role="radio" aria-checked={mode === 'commits'} className={mode === 'commits' ? 'on' : ''} onClick={() => setMode('commits')}>提交对</button>
-              <button type="button" role="radio" aria-checked={mode === 'patch'} className={mode === 'patch' ? 'on' : ''} onClick={() => setMode('patch')}>粘贴补丁</button>
+    <Page title={tx('新建独立审核')} aside={<Link className="btn small" href="/reviews">{tx('审核历史')}</Link>}>
+      {!writesAllowed ? <EmptyState title={ws?.read_only ? tx('工作区为只读') : tx('正在读取工作区')} action={ws?.read_only ? <Link className="btn" href="/archive">{tx('归档')}</Link> : null} /> : (
+        <fieldset className="plan-fields" aria-label={tx('独立审核输入')} disabled={active !== null || settling || submitting !== null}>
+          <Section title={tx('改动')} note={ws?.repository ? <code className="task-data">{ws.repository}</code> : undefined}>
+            <div className="seg small" role="radiogroup" aria-label={tx('审核输入类型')}>
+              <button type="button" role="radio" aria-checked={mode === 'commits'} className={mode === 'commits' ? 'on' : ''} onClick={() => setMode('commits')}>{tx('提交对')}</button>
+              <button type="button" role="radio" aria-checked={mode === 'patch'} className={mode === 'patch' ? 'on' : ''} onClick={() => setMode('patch')}>{tx('粘贴补丁')}</button>
             </div>
             {mode === 'commits' ? (
               <div className="form-row">
-                <label>基线提交<input className="field mono" value={baseline} onChange={(event) => setBaseline(event.target.value)} /></label>
-                <label>候选提交<input className="field mono" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder={ws?.head ?? undefined} /></label>
+                <label>{tx('基线提交')}<input className="field mono" value={baseline} onChange={(event) => setBaseline(event.target.value)} /></label>
+                <label>{tx('候选提交')}<input className="field mono" value={candidate} onChange={(event) => setCandidate(event.target.value)} placeholder={ws?.head ?? undefined} /></label>
               </div>
             ) : (
-              <label className="plan-label">补丁原文
+              <label className="plan-label">{tx('补丁原文')}
                 <textarea className="field big mono" rows={8} value={patch} onChange={(event) => setPatch(event.target.value)} />
               </label>
             )}
           </Section>
-          <Section title="审核目标">
-            <label className="plan-label">审核需求
+          <Section title={tx('审核目标')}>
+            <label className="plan-label">{tx('审核需求')}
               <textarea className="field big" rows={4} value={requirements} onChange={(event) => setRequirements(event.target.value)} />
             </label>
-            <label className="plan-label">验收标准
-              <textarea className="field big" rows={3} value={acceptanceText} onChange={(event) => setAcceptance(event.target.value)} placeholder="每行一条" />
+            <label className="plan-label">{tx('验收标准')}
+              <textarea className="field big" rows={3} value={acceptanceText} onChange={(event) => setAcceptance(event.target.value)} placeholder={tx('每行一条')} />
             </label>
           </Section>
           {mode === 'commits' ? (
-            <Section title="测试证据">
+            <Section title={tx('测试证据')}>
               <details className="raw">
-                <summary>添加测试证据（可选）</summary>
-                <label className="plan-label review-test-input">用户提供的测试证据（JSON）
+                <summary>{tx('添加测试证据（可选）')}</summary>
+                <label className="plan-label review-test-input">{tx('用户提供的测试证据（JSON）')}
                   <textarea className="field big mono" rows={5} value={testsText} onChange={(event) => setTests(event.target.value)}
                     placeholder={'{\n  "required_commands": [["uv", "run", "pytest"]],\n  "results": []\n}'} />
                 </label>
               </details>
             </Section>
           ) : null}
-          <Section title="冻结">
-            <ActionButton action="review.freeze" primary label="冻结审核输入" disabled={reason !== null} reason={reason}
+          <Section title={tx('冻结')}>
+            <ActionButton action="review.freeze" primary label={tx('冻结审核输入')} disabled={reason !== null} reason={reason}
               args={() => ({
                 requirements, acceptance,
                 ...(mode === 'commits' ? { baseline: baseline.trim(), candidate: candidate.trim(), ...(tests ? { tests } : {}) } : { diff: patch }),
@@ -154,10 +155,10 @@ export function NewReviewPage() {
 export function UserTests({ input }: { input: StandaloneSnapshotInput }) {
   if (!input.required_tests?.length && !input.tests?.length) return null;
   return (
-    <Section title="测试证据" note="用户提供">
+    <Section title={tx('测试证据')} note={tx('用户提供')}>
       {input.required_tests?.length ? (
         <>
-          <h3 className="sub-head">要求运行的命令</h3>
+          <h3 className="sub-head">{tx('要求运行的命令')}</h3>
           <ul className="plain-list">
             {input.required_tests.map((argv, index) => <li key={index}><code className="task-data">{JSON.stringify(argv)}</code></li>)}
           </ul>
@@ -165,9 +166,9 @@ export function UserTests({ input }: { input: StandaloneSnapshotInput }) {
       ) : null}
       {input.tests?.length ? <ul className="plain-list">
         {input.tests.map((test, index) => <li key={index}>
-          <p className="row"><code className="task-data">{JSON.stringify(test.command)}</code><Badge tone="muted">用户提供</Badge></p>
-          <p className="row"><code className="task-data">{test.commit}</code><span className="stamp">退出 {test.exit_code}</span></p>
-          <details className="raw"><summary>查看测试输出</summary><pre>{test.log}</pre></details>
+          <p className="row"><code className="task-data">{JSON.stringify(test.command)}</code><Badge tone="muted">{tx('用户提供')}</Badge></p>
+          <p className="row"><code className="task-data">{test.commit}</code><span className="stamp">{tx('退出')} {test.exit_code}</span></p>
+          <details className="raw"><summary>{tx('查看测试输出')}</summary><pre>{test.log}</pre></details>
         </li>)}
       </ul> : null}
     </Section>
@@ -178,10 +179,10 @@ function RunForm({ id }: { id: string }) {
   const { data: ws } = useWorkspace();
   const seats = useSeats(ws, { independent: true });
   return (
-    <Section title="开始审核" note="双席读取同一份冻结输入，独立给出意见。">
+    <Section title={tx('开始审核')} note={tx('双席读取同一份冻结输入，独立给出意见。')}>
       <EnvironmentHint ws={ws} />
       <div className="review-snapshot-seats">{seats.form}</div>
-      <ActionButton action="review.run" primary label="开始审核" disabled={!seats.valid} reason="请选好每席的模型和档位。双席的模型须不同。"
+      <ActionButton action="review.run" primary label={tx('开始审核')} disabled={!seats.valid} reason={tx('请选好每席的模型和档位。双席的模型须不同。')}
         args={() => ({ snapshot_id: id, seats: seats.seats })}
         onDone={(job) => { if (window.location.pathname === to('snapshots', id)) openResult(job, 'review'); }} />
     </Section>
@@ -192,31 +193,31 @@ export function ReviewSnapshotPage({ id }: { id: string }) {
   const read = useResource<ReviewSnapshot>('snapshot', id);
   const writesAllowed = useWorkspaceWritesAllowed();
   return (
-    <Page title="冻结审核输入" aside={<Link className="btn small" href="/reviews">审核历史</Link>}>
-      <ReadFrame read={read} what="冻结输入">
+    <Page title={tx('冻结审核输入')} aside={<Link className="btn small" href="/reviews">{tx('审核历史')}</Link>}>
+      <ReadFrame read={read} what={tx('冻结输入')}>
         {({ data }) => {
           if (!data) return null;
           const { input } = data;
-          if (!('requirements' in input)) return <EmptyState title="这份快照随任务或集成生成" action={<Link className="btn" href={to('diffs', 'snapshot', id)}>查看冻结的改动</Link>} />;
+          if (!('requirements' in input)) return <EmptyState title={tx('这份快照随任务或集成生成')} action={<Link className="btn" href={to('diffs', 'snapshot', id)}>{tx('查看冻结的改动')}</Link>} />;
           return <>
-            <Section title="审核目标">
+            <Section title={tx('审核目标')}>
               <Facts rows={[
-                ['快照 ID', <code className="task-data">{id}</code>],
-                ['来源', input.baseline && input.candidate ? '提交对' : '粘贴补丁'],
+                [tx('快照 ID'), <code className="task-data">{id}</code>],
+                [tx('来源'), input.baseline && input.candidate ? tx('提交对') : tx('粘贴补丁')],
                 ...(input.baseline && input.candidate ? [
-                  ['基线提交', <code className="task-data">{input.baseline}</code>],
-                  ['候选提交', <code className="task-data">{input.candidate}</code>],
+                  [tx('基线提交'), <code className="task-data">{input.baseline}</code>],
+                  [tx('候选提交'), <code className="task-data">{input.candidate}</code>],
                 ] as [string, React.ReactNode][] : []),
               ]} />
-              <h3 className="sub-head">审核需求</h3>
+              <h3 className="sub-head">{tx('审核需求')}</h3>
               <pre className="goal-text">{input.requirements}</pre>
-              <h3 className="sub-head">验收标准</h3>
-              <ul className="plain-list" aria-label="验收标准">{input.acceptance.map((item, index) => <li key={index}>{item}</li>)}</ul>
+              <h3 className="sub-head">{tx('验收标准')}</h3>
+              <ul className="plain-list" aria-label={tx('验收标准')}>{input.acceptance.map((item, index) => <li key={index}>{item}</li>)}</ul>
             </Section>
             <UserTests input={input} />
-            <Section title="冻结的改动">
+            <Section title={tx('冻结的改动')}>
               <DiffView diff={input.diff} />
-              {input.files.length === 0 ? <details className="raw"><summary>补丁原文</summary><pre>{input.diff}</pre></details> : null}
+              {input.files.length === 0 ? <details className="raw"><summary>{tx('补丁原文')}</summary><pre>{input.diff}</pre></details> : null}
             </Section>
             {writesAllowed && !read.stale ? <RunForm id={id} /> : null}
             <History kind="review" snapshot={id} />

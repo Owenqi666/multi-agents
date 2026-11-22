@@ -1,6 +1,6 @@
 # Web interface
 
-The React and TypeScript frontend shows the handoff between models, task worktrees, test results and review findings. The interface is in Chinese. The same build works with the local Python service and with the offline integration environment. [Project guide](../docs/workbench.md)
+The React and TypeScript frontend shows the handoff between models, task worktrees, test results and review findings. The interface is available in Chinese and English; the switch in the top corner keeps the choice in the browser, and the first visit follows the browser language. The same build works with the local Python service and with the offline integration environment. [Project guide](../docs/workbench.md)
 
 ## Run the recorded demo
 
@@ -23,6 +23,10 @@ BRIDGE_URL=http://127.0.0.1:8765 corepack pnpm dev
 ```
 
 The example port should match the one printed by your backend. Vite proxies `/api` to that origin. To explore the animated handoff stage by itself, run `corepack pnpm specimen`.
+
+## Interface text
+
+The Chinese text in the code is the key: write it inside `tx()`, for example `tx('{0} 条阻塞意见', count)`, and add the English to `src/i18n/en.ts`. Word tables defined at module level go through `translated()`, so they follow the current language when read. Use `joinList()` and `pair()` for lists and labels, so English gets commas and colons instead of 、 and ：. The component tests fail when a Chinese string has no English entry, or when an English page still shows Chinese text.
 
 ## Check the interface
 

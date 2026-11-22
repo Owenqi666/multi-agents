@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, type ReactNode } from 'react';
 import type { Finding } from '../api/types';
 import { parseDiff, type DiffFile, type DiffLine } from '../diff/parse';
 import { Badge } from './Badge';
+import { tx } from '../i18n';
 
 const STATUS: Record<DiffFile['status'], string> = {
   modified: '改动', added: '新增', deleted: '删除', renamed: '重命名', copied: '复制',
@@ -35,15 +36,15 @@ function FindingRow({ a, onOpen }: { a: Annotation; onOpen?: (a: Annotation) => 
   return (
     <div className={blocking ? 'finding blocking' : 'finding'} role="note">
       <div className="finding-head">
-        <Badge tone={blocking ? 'fail' : 'warn'}>{blocking ? `阻塞 ${f.severity}` : f.severity}</Badge>
+        <Badge tone={blocking ? 'fail' : 'warn'}>{blocking ? tx('阻塞 {0}', f.severity) : f.severity}</Badge>
         <span className="finding-title">{f.title}</span>
         <span className="finding-meta">{a.seat}</span>
       </div>
       <p className="finding-body">{f.impact}</p>
       <div className="finding-foot">
         <span className="finding-loc">{f.path}:{f.line_start}{f.line_end !== f.line_start ? `–${f.line_end}` : ''}</span>
-        {f.reference_status === 'unverified' ? <span className="finding-ref">引用没有对上冻结文件</span> : null}
-        {onOpen ? <button type="button" className="link" onClick={() => onOpen(a)}>在冻结文件里查看</button> : null}
+        {f.reference_status === 'unverified' ? <span className="finding-ref">{tx('引用没有对上冻结文件')}</span> : null}
+        {onOpen ? <button type="button" className="link" onClick={() => onOpen(a)}>{tx('在冻结文件里查看')}</button> : null}
       </div>
     </div>
   );
@@ -82,17 +83,17 @@ export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote, loc
       {files.map((f, fi) => (
         <section className="diff-file" key={fi}>
           <header className="diff-file-head">
-            <span className="diff-status" data-status={f.status}>{STATUS[f.status]}</span>
+            <span className="diff-status" data-status={f.status}>{tx(STATUS[f.status])}</span>
             <span className="diff-path">
               {f.status === 'renamed' || f.status === 'copied'
                 ? <>{f.oldPath}<span className="arrow"> → </span>{f.newPath}</>
                 : (f.newPath ?? f.oldPath)}
             </span>
-            {f.similarity !== null ? <span className="diff-meta">相似度 {f.similarity}%</span> : null}
-            {f.modeChange ? <span className="diff-meta">权限 {f.modeChange}</span> : null}
+            {f.similarity !== null ? <span className="diff-meta">{tx('相似度')} {f.similarity}%</span> : null}
+            {f.modeChange ? <span className="diff-meta">{tx('权限')} {f.modeChange}</span> : null}
           </header>
-          {f.binary ? <p className="diff-binary">二进制文件，不显示内容。</p> : null}
-          {!f.binary && !f.hunks.length ? <p className="diff-binary">只有文件名或权限变化。</p> : null}
+          {f.binary ? <p className="diff-binary">{tx('二进制文件，不显示内容。')}</p> : null}
+          {!f.binary && !f.hunks.length ? <p className="diff-binary">{tx('只有文件名或权限变化。')}</p> : null}
           {f.hunks.length ? (
             <div className="diff-body">
               <table className="diff-table">
@@ -133,7 +134,7 @@ export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote, loc
           ) : null}
         </section>
       ))}
-      {location && !targetFound ? <p className="muted">补丁中没有 {location.path}:{location.start} 对应的行。</p> : null}
+      {location && !targetFound ? <p className="muted">{tx('补丁中没有 {0}:{1} 对应的行。', location.path, location.start)}</p> : null}
     </div>
   );
 }

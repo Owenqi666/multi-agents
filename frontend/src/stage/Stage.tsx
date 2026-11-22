@@ -6,6 +6,7 @@ import { Playback, RelayRenderer, type PlaybackState } from './relay';
 import { WeaveRenderer } from './weave';
 import type { Beat, Holder, Story } from './story';
 import './stage.css';
+import { tx, joinList } from '../i18n';
 
 /** The plain mark of a holder, for captions and legends. */
 export function Glyph({ holder, size = 14 }: { holder: Pick<Holder, 'tone'>; size?: number }) {
@@ -18,7 +19,7 @@ export function Glyph({ holder, size = 14 }: { holder: Pick<Holder, 'tone'>; siz
 
 export function RequestTag({ model, effort }: { model: string | null; effort: string | null }) {
   if (!model) return null;
-  return <span className="tag-request"><b>请求</b>{model}{effort ? ` · ${effort}` : ''}</span>;
+  return <span className="tag-request"><b>{tx('请求')}</b>{model}{effort ? ` · ${effort}` : ''}</span>;
 }
 
 /** Who holds the work, with model evidence: reported values only, the request apart. */
@@ -28,7 +29,7 @@ export function HolderLine({ holder }: { holder: Holder }) {
       <span className="actor">
         <Glyph holder={holder} />
         <span className="a-name">{holder.name}</span>
-        <span className="a-role">{holder.key === 'you' ? '确认、领取与接受' : '测试、合并与快照，不用模型'}</span>
+        <span className="a-role">{holder.key === 'you' ? tx('确认、领取与接受') : tx('测试、合并与快照，不用模型')}</span>
       </span>
     );
   }
@@ -40,7 +41,7 @@ export function HolderLine({ holder }: { holder: Holder }) {
       <span className={unconfirmed ? 'a-name unconfirmed' : 'a-name'}>{reportedFull(holder.reportedModel)}</span>
       <span className="a-role">
         <span>{holder.role}</span>
-        <span>档位 {holder.reportedEffort ?? '未确认'}</span>
+        <span>{tx('档位')} {holder.reportedEffort ?? tx('未确认')}</span>
         {showRequest ? <RequestTag model={holder.requestedModel} effort={holder.requestedEffort} /> : null}
       </span>
     </span>
@@ -51,7 +52,7 @@ function Caption({ story, index }: { story: Story; index: number }) {
   const beat = story.beats[index];
   const prev = index > 0 ? story.beats[index - 1] : null;
   if (!beat) return null;
-  const names = (b: Beat) => [...new Set(b.holders.map((h) => (!h.plain && h.reportedModel === null ? `${h.role}（未确认）` : h.name)))].join('、');
+  const names = (b: Beat) => joinList([...new Set(b.holders.map((h) => (!h.plain && h.reportedModel === null ? tx('{0}（未确认）', h.role) : h.name)))]);
   return (
     <section className="caption" aria-live="polite">
       <div className="lead">
@@ -68,11 +69,11 @@ function Caption({ story, index }: { story: Story; index: number }) {
         <p className="note">{beat.note}</p>
         <dl className="facts">
           <div>
-            <dt>正在工作</dt>
+            <dt>{tx('正在工作')}</dt>
             <dd className="who">{beat.holders.map((h) => <HolderLine key={h.key} holder={h} />)}</dd>
           </div>
           <div style={{ visibility: prev ? 'visible' : 'hidden' }}>
-            <dt>交接</dt>
+            <dt>{tx('交接')}</dt>
             <dd className="hand">
               {prev ? <>
                 <span>{names(prev)}</span><span className="arrow" aria-hidden="true">→</span><span>{names(beat)}</span>
@@ -202,17 +203,17 @@ export function Stage({ story, kind = 'relay', handle, keys = true, foot, autopl
   return (
     <div className={`stage-frame stage-${kind}`} ref={refs.frame as React.RefObject<HTMLDivElement>} data-layout="h">
       <Caption story={story} index={index} />
-      <nav className="ctrl" aria-label="演示控制">
+      <nav className="ctrl" aria-label={tx('演示控制')}>
         <div className="btns">
-          <button type="button" className="btn" disabled={index <= 0} onClick={() => go(index - 1)}>上一步</button>
+          <button type="button" className="btn" disabled={index <= 0} onClick={() => go(index - 1)}>{tx('上一步')}</button>
           <button type="button" className="btn primary" onClick={() => (playing ? pb.current?.pause() : pb.current?.play())}>
-            {playing ? '暂停' : index >= last ? '重播' : '播放'}
+            {playing ? tx('暂停') : index >= last ? tx('重播') : tx('播放')}
           </button>
-          <button type="button" className="btn" disabled={index >= last} onClick={() => go(index + 1)}>下一步</button>
+          <button type="button" className="btn" disabled={index >= last} onClick={() => go(index + 1)}>{tx('下一步')}</button>
         </div>
-        <div className="ticks" role="group" aria-label="步骤进度">
+        <div className="ticks" role="group" aria-label={tx('步骤进度')}>
           {story.beats.map((b, j) => (
-            <button key={b.id} type="button" className="tick" data-s={tickState(j)} aria-label={`第 ${j + 1} 步：${b.title}`}
+            <button key={b.id} type="button" className="tick" data-s={tickState(j)} aria-label={tx('第 {0} 步：{1}', j + 1, b.title)}
               aria-current={j === index ? 'step' : undefined} title={b.title}
               style={j === index && current ? { ['--c' as string]: toneVar(current.holders[0]!.tone) } : undefined}
               onClick={() => go(j)}><i /></button>
@@ -221,7 +222,7 @@ export function Stage({ story, kind = 'relay', handle, keys = true, foot, autopl
       </nav>
       <div className="plate" ref={refs.box}>
         <svg className="track" ref={refs.svg} role="img"
-          aria-label={`接力线：共 ${story.beats.length} 步，当前第 ${index + 1} 步，${current?.title ?? ''}`}
+          aria-label={tx('接力线：共 {0} 步，当前第 {1} 步，{2}', story.beats.length, index + 1, current?.title ?? '')}
           onClick={(ev) => { const i = (ev.target as Element).closest?.('.st') as SVGGElement | null; if (i) go(Number(i.dataset.i)); }} />
       </div>
       {foot ? <p className="foot">{foot}</p> : null}

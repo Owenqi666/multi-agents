@@ -13,6 +13,7 @@ import { ModelPicker, requestFrom, type PickerChoice } from '../components/Model
 import { ReadFrame } from '../components/ReadNote';
 import { EnvironmentHint } from './GoalPages';
 import { Facts, Page, Section, useResource } from './common';
+import { tx } from '../i18n';
 
 export function ProjectsPage() {
   const writesAllowed = useWorkspaceWritesAllowed();
@@ -20,11 +21,11 @@ export function ProjectsPage() {
   // Filter here as well: older bridges ignored the kind query.
   const runs = { ...all, data: all.data ? { items: all.data.items.filter((i) => i.kind === 'project') } : null };
   return (
-    <Page kicker="项目" title="项目" aside={writesAllowed ? <Link className="btn small primary" href="/new">提出目标</Link> : undefined}>
-      <ReadFrame read={runs} what="项目列表">
+    <Page kicker={tx('项目')} title={tx('项目')} aside={writesAllowed ? <Link className="btn small primary" href="/new">{tx('提出目标')}</Link> : undefined}>
+      <ReadFrame read={runs} what={tx('项目列表')}>
         {(r) => !r.items.length ? (
-          <EmptyState title="还没有项目" body={writesAllowed ? '确认第一个目标时会新建项目。在终端里用 CLI 建的项目不会出现在这里，可以用它的 ID 直接打开。' : '可以按类型和 ID 打开已有项目。'}
-            action={writesAllowed ? <Link className="btn primary" href="/new">提出目标</Link> : <Link className="btn" href="/archive">归档</Link>} />
+          <EmptyState title={tx('还没有项目')} body={writesAllowed ? tx('确认第一个目标时会新建项目。在终端里用 CLI 建的项目不会出现在这里，可以用它的 ID 直接打开。') : tx('可以按类型和 ID 打开已有项目。')}
+            action={writesAllowed ? <Link className="btn primary" href="/new">{tx('提出目标')}</Link> : <Link className="btn" href="/archive">{tx('归档')}</Link>} />
         ) : (
           <ul className="plain-list">
             {r.items.map((p) => <li key={p.id}><Link href={to('projects', p.id)}>{p.label}</Link> <span className="stamp">{timeText(p.updated_at)}</span></li>)}
@@ -40,12 +41,13 @@ const PLAN_STATUS: Record<string, [Parameters<typeof Badge>[0]['tone'], string]>
 };
 
 function PlanRow({ plan }: { plan: Project['plans'][number] }) {
-  const [tone, word] = PLAN_STATUS[plan.status] ?? ['muted', plan.status];
+  const [tone, key] = PLAN_STATUS[plan.status] ?? ['muted', plan.status];
+  const word = tx(key);
   return (
     <li className="plan-row">
-      <Badge tone={plan.finished_at === null ? 'live' : tone}>{plan.finished_at === null ? '进行中' : word}</Badge>
-      <Link href={to('plans', plan.plan_id)}>计划 <code>{shortId(plan.plan_id)}</code></Link>
-      {plan.origin === 'pm' ? <span className="stamp">你手改的版本，源自 <code>{shortId(plan.source_plan_id)}</code></span> : null}
+      <Badge tone={plan.finished_at === null ? 'live' : tone}>{plan.finished_at === null ? tx('进行中') : word}</Badge>
+      <Link href={to('plans', plan.plan_id)}>{tx('计划')} <code>{shortId(plan.plan_id)}</code></Link>
+      {plan.origin === 'pm' ? <span className="stamp">{tx('你手改的版本，源自')} <code>{shortId(plan.source_plan_id)}</code></span> : null}
       <span className="stamp">{timeText(plan.finished_at ?? plan.started_at)}</span>
     </li>
   );
@@ -61,21 +63,21 @@ function GoalBlock({ goal, plans }: { goal: Goal; plans: Project['plans'] }) {
   const { active } = useJobs();
   const planning = active && (active.action === 'project.plan') && (active.args as { goal_id?: string } | null)?.goal_id === goal.goal_id;
   return (
-    <Section title="目标" note={goal.consultation ? (goal.consultation.adoption === 'accepted' ? '原样采纳了顾问的草稿' : '改过顾问的草稿后确认') : '直接确认'}>
+    <Section title={tx('目标')} note={goal.consultation ? (goal.consultation.adoption === 'accepted' ? tx('原样采纳了顾问的草稿') : tx('改过顾问的草稿后确认')) : tx('直接确认')}>
       <pre className="goal-text">{goal.confirmed_goal}</pre>
       <Facts rows={[
-        ['确认时间', timeText(goal.confirmed_at)],
-        ['基线', <code>{shortId(goal.baseline_commit, 10)}</code>],
-        ['需求咨询', goal.consultation ? <Link href={to('consultations', goal.consultation.consultation_id)}>查看</Link> : '没有'],
+        [tx('确认时间'), timeText(goal.confirmed_at)],
+        [tx('基线'), <code>{shortId(goal.baseline_commit, 10)}</code>],
+        [tx('需求咨询'), goal.consultation ? <Link href={to('consultations', goal.consultation.consultation_id)}>{tx('查看')}</Link> : tx('没有')],
       ]} />
-      <h3 className="sub-head">计划</h3>
-      {mine.length ? <ul className="plain-list">{mine.map((p) => <PlanRow key={p.plan_id} plan={p} />)}</ul> : <p className="muted">还没有计划。</p>}
-      {planning ? <p className="stale-note">计划生成中，最多 300 秒；上面的列表会出现进行中的计划。</p> : null}
+      <h3 className="sub-head">{tx('计划')}</h3>
+      {mine.length ? <ul className="plain-list">{mine.map((p) => <PlanRow key={p.plan_id} plan={p} />)}</ul> : <p className="muted">{tx('还没有计划。')}</p>}
+      {planning ? <p className="stale-note">{tx('计划生成中，最多 300 秒；上面的列表会出现进行中的计划。')}</p> : null}
       <EnvironmentHint ws={ws.data} />
       {archive ? null : <div className="form-actions">
-        <ModelPicker ws={ws.data} role="planner" value={planner} onChange={onPlanner} label="规划者" />
-        <ActionButton action="project.plan" primary label={mine.length ? '再生成一版计划' : '生成计划'} disabled={!req} reason="先选好规划者。"
-          confirm={mine.length ? '每次提交都会新建一份计划，确定再生成一版？' : undefined}
+        <ModelPicker ws={ws.data} role="planner" value={planner} onChange={onPlanner} label={tx('规划者')} />
+        <ActionButton action="project.plan" primary label={mine.length ? tx('再生成一版计划') : tx('生成计划')} disabled={!req} reason={tx('先选好规划者。')}
+          confirm={mine.length ? tx('每次提交都会新建一份计划，确定再生成一版？') : undefined}
           args={() => ({ goal_id: goal.goal_id, planner: req })}
           onDone={(job) => { const id = job.resources?.find((r) => r.kind === 'project-plan')?.id; if (id) navigate(to('plans', id)); }} />
       </div>}
@@ -87,11 +89,11 @@ export function ProjectPage({ id }: { id: string }) {
   const writesAllowed = useWorkspaceWritesAllowed();
   const read = useResource<Project>('project', id);
   return (
-    <Page kicker={`项目 · ${shortId(id)}`} title="项目">
-      <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what="项目">
+    <Page kicker={tx('项目 · {0}', shortId(id))} title={tx('项目')}>
+      <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what={tx('项目')}>
         {(p) => p.goals.length ? (
           <>{p.goals.slice().reverse().map((g) => <GoalBlock key={g.goal_id} goal={g} plans={p.plans} />)}</>
-        ) : <EmptyState title="这个项目还没有目标" action={writesAllowed ? <Link className="btn primary" href="/new">提出目标</Link> : undefined} />}
+        ) : <EmptyState title={tx('这个项目还没有目标')} action={writesAllowed ? <Link className="btn primary" href="/new">{tx('提出目标')}</Link> : undefined} />}
       </ReadFrame>
     </Page>
   );
@@ -100,12 +102,12 @@ export function ProjectPage({ id }: { id: string }) {
 export function GoalPage({ id }: { id: string }) {
   const read = useResource<Goal>('goal', id);
   return (
-    <Page kicker={`目标 · ${shortId(id)}`} title="目标">
-      <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what="目标">
+    <Page kicker={tx('目标 · {0}', shortId(id))} title={tx('目标')}>
+      <ReadFrame read={{ ...read, data: read.data?.data ?? null }} what={tx('目标')}>
         {(g) => (
-          <Section title="确认的目标">
+          <Section title={tx('确认的目标')}>
             <pre className="goal-text">{g.confirmed_goal}</pre>
-            <p><Link className="btn" href={to('projects', g.project_id)}>打开项目</Link></p>
+            <p><Link className="btn" href={to('projects', g.project_id)}>{tx('打开项目')}</Link></p>
           </Section>
         )}
       </ReadFrame>

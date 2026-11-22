@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { tx } from '../i18n';
 
 export type ThemeChoice = 'auto' | 'light' | 'dark';
 const KEY = 'multi-agent.theme';
@@ -30,9 +31,9 @@ export function ThemeSwitch({ onChange }: { onChange?: (t: ThemeChoice) => void 
     }
     onChange?.(theme);
   }, [theme, onChange]);
-  const options: [ThemeChoice, string][] = [['light', '亮'], ['dark', '暗'], ['auto', '自动']];
+  const options: [ThemeChoice, string][] = [['light', tx('亮')], ['dark', tx('暗')], ['auto', tx('自动')]];
   return (
-    <div className="seg" role="radiogroup" aria-label="主题">
+    <div className="seg" role="radiogroup" aria-label={tx('主题')}>
       {options.map(([value, label]) => (
         <button key={value} type="button" role="radio" aria-checked={theme === value} className={theme === value ? 'on' : ''}
           onClick={() => setTheme(value)}>{label}</button>

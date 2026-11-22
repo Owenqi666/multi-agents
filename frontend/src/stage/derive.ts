@@ -22,6 +22,7 @@ import {
 import { integrationPredecessor, type TimelineIntegration } from './integrationLineage';
 import { familyOfTone, reportedShort, parseModel, toneFor, UNCONFIRMED } from './models';
 import type { Beat, Fork, Holder, Span, Story } from './story';
+import { tx, txc } from '../i18n';
 
 export interface StoryInput {
   consultation?: Consultation | null;
@@ -35,8 +36,8 @@ export interface StoryInput {
 const shortId = (id: string | null | undefined, n = 7): string => (id ? id.slice(0, n) : '');
 const last = <T>(xs: readonly T[] | null | undefined): T | null => (xs && xs.length ? (xs[xs.length - 1] ?? null) : null);
 
-const YOU: Holder = plainHolder('you', '你', 'you', 'human');
-const BENCH: Holder = plainHolder('bench', '工作台', 'bench', 'system');
+const YOU = (): Holder => plainHolder('you', tx('你'), 'you', 'human');
+const BENCH = (): Holder => plainHolder('bench', tx('工作台'), 'bench', 'system');
 
 function plainHolder(key: string, name: string, tone: 'you' | 'bench', family: 'human' | 'system'): Holder {
   return {
@@ -57,8 +58,8 @@ function modelHolder(
   const requestedModel = request?.model ?? null;
   const tone = toneFor(reportedModel, requestedModel, request?.provider ?? null);
   let sub: string;
-  if (reportedModel === null) sub = requestedModel ? `请求 ${parseModel(requestedModel)?.short ?? requestedModel}` : '';
-  else sub = reportedEffort ?? `档位${UNCONFIRMED}`;
+  if (reportedModel === null) sub = requestedModel ? tx('请求 {0}', parseModel(requestedModel)?.short ?? requestedModel) : '';
+  else sub = reportedEffort ?? tx('档位{0}', tx(UNCONFIRMED));
   return {
     key, role, tone, family: familyOfTone(tone), plain: false,
     name: reportedShort(reportedModel), sub,
@@ -87,17 +88,17 @@ function reviewBeat(id: string, title: string, round: ReviewRound, firstRound: b
   const blocking = blockingCount(round);
   const verdict = round.assessment?.status;
   const opening = holders.length > 1
-    ? '同一份冻结快照同时交给两位审核者，互相看不到对方的意见。'
-    : '冻结快照交给一位审核者。';
-  const outcome = verdict === 'ready' ? '结论：通过。'
-    : verdict === 'needs_rework' ? `结论：需要返工，${blocking} 条阻塞意见。`
-    : verdict === 'user_decision' ? '结论：需要你判断。'
-    : '审核进行中。';
+    ? tx('同一份冻结快照同时交给两位审核者，互相看不到对方的意见。')
+    : tx('冻结快照交给一位审核者。');
+  const outcome = verdict === 'ready' ? tx('结论：通过。')
+    : verdict === 'needs_rework' ? tx('结论：需要返工，{0} 条阻塞意见。', blocking)
+    : verdict === 'user_decision' ? tx('结论：需要你判断。')
+    : tx('审核进行中。');
   return {
-    id, step: 10, title, phase: '测试与审核', holders, fork,
-    carry: `快照 ${shortId(round.snapshot_id)}`,
-    note: (firstRound ? '' : '在新的测试回执上重新冻结候选。') + opening
-      + (candidate ? `候选 ${shortId(candidate)}。` : '') + outcome,
+    id, step: 10, title, phase: tx('测试与审核'), holders, fork,
+    carry: tx('快照 {0}', shortId(round.snapshot_id)),
+    note: (firstRound ? '' : tx('在新的测试回执上重新冻结候选。')) + opening
+      + (candidate ? tx('候选 {0}。', shortId(candidate)) : '') + outcome,
   };
 }
 
@@ -107,11 +108,11 @@ function blockingCount(round: ReviewRound | null): number {
 }
 
 function testBeat(id: string, title: string, test: { candidate: string | null; passed: boolean; commands: number | null }, retest: boolean): Beat {
-  const count = test.commands === null ? '登记的测试命令' : `登记的 ${test.commands} 条测试命令`;
+  const count = test.commands === null ? tx('登记的测试命令') : tx('登记的 {0} 条测试命令', test.commands);
   return {
-    id, step: 9, title, phase: '测试与审核', holders: [BENCH], fork: null,
-    carry: `${retest ? '修订候选' : '候选'} ${shortId(test.candidate)}`,
-    note: `工作台运行${count}，不用模型。${test.passed ? '全部通过。' : '有命令没有通过。'}`,
+    id, step: 9, title, phase: tx('测试与审核'), holders: [BENCH()], fork: null,
+    carry: `${retest ? tx('修订候选') : tx('候选')} ${shortId(test.candidate)}`,
+    note: tx('工作台运行{0}，不用模型。{1}', count, test.passed ? tx('全部通过。') : tx('有命令没有通过。')),
   };
 }
 
@@ -127,13 +128,13 @@ export function deriveStory(input: StoryInput): Story {
     if (seat.status === 'pending') continue;
     const evidence = seat.evidence ? { model: nz(seat.evidence.reported_model), effort: nz(seat.evidence.reported_effort) } : null;
     beats.push({
-      id: `advisor-${seat.number}`, step: 1, title: '需求顾问', phase: '目标',
-      holders: [modelHolder(`advisor-${seat.number}`, `顾问 ${seat.number}`, seat.request, evidence)],
+      id: `advisor-${seat.number}`, step: 1, title: txc('step', '需求顾问'), phase: tx('目标'),
+      holders: [modelHolder(`advisor-${seat.number}`, tx('顾问 {0}', seat.number), seat.request, evidence)],
       fork: null,
-      carry: seat.number === 1 ? '原始目标' : '第一位意见',
+      carry: seat.number === 1 ? tx('原始目标') : tx('第一位意见'),
       note: seat.number === 1
-        ? '第一位顾问读原始目标，写出建议和目标草稿。'
-        : '第二位顾问读到第一位的意见，再给出自己的建议。依次进行，不是盲审。',
+        ? tx('第一位顾问读原始目标，写出建议和目标草稿。')
+        : tx('第二位顾问读到第一位的意见，再给出自己的建议。依次进行，不是盲审。'),
     });
   }
 
@@ -141,11 +142,11 @@ export function deriveStory(input: StoryInput): Story {
   if (goal) {
     const adoption = goal.consultation?.adoption;
     beats.push({
-      id: 'confirm', step: 2, title: '确认目标', phase: '目标', holders: [YOU], fork: null,
-      carry: consultation ? '目标草稿' : '原始目标',
-      note: adoption === 'accepted' ? '你原样采纳了顾问的草稿，确认为项目目标。'
-        : adoption === 'edited' ? '你改过顾问的草稿，再确认为项目目标。'
-        : '你直接确认了项目目标。',
+      id: 'confirm', step: 2, title: txc('step', '确认目标'), phase: tx('目标'), holders: [YOU()], fork: null,
+      carry: consultation ? tx('目标草稿') : tx('原始目标'),
+      note: adoption === 'accepted' ? tx('你原样采纳了顾问的草稿，确认为项目目标。')
+        : adoption === 'edited' ? tx('你改过顾问的草稿，再确认为项目目标。')
+        : tx('你直接确认了项目目标。'),
     });
   }
 
@@ -154,22 +155,22 @@ export function deriveStory(input: StoryInput): Story {
     const byYou = plan.origin === 'pm';
     const stages = plan.document?.stages.length ?? 0;
     beats.push({
-      id: 'plan', step: 3, title: '项目计划', phase: '计划',
-      holders: [byYou ? YOU : modelHolder('planner', '规划', plan.planner_request, plan.evidence ? { model: nz(plan.evidence.reported_model), effort: nz(plan.evidence.reported_effort) } : null)],
-      fork: null, carry: '确认的目标',
-      note: byYou ? '你手改了计划，保存为新的版本。' : `规划者把目标拆成 ${stages} 个阶段，写明依赖和验收条件。`,
+      id: 'plan', step: 3, title: txc('step', '项目计划'), phase: tx('计划'),
+      holders: [byYou ? YOU() : modelHolder('planner', tx('规划'), plan.planner_request, plan.evidence ? { model: nz(plan.evidence.reported_model), effort: nz(plan.evidence.reported_effort) } : null)],
+      fork: null, carry: tx('确认的目标'),
+      note: byYou ? tx('你手改了计划，保存为新的版本。') : tx('规划者把目标拆成 {0} 个阶段，写明依赖和验收条件。', stages),
     });
   }
 
   if (stage) {
     const stageTitle = plan?.document?.stages.find((s) => s.stage_id === stage.stage_id)?.title;
-    const stageName = stageTitle ? `「${stageTitle}」` : stage.stage_id;
+    const stageName = stageTitle ? tx('「{0}」', stageTitle) : stage.stage_id;
     // 4 领取阶段
     beats.push({
-      id: 'claim', step: 4, title: '领取阶段', phase: '阶段', holders: [YOU], fork: null,
-      carry: plan ? '项目计划' : `阶段 ${stage.stage_id}`,
-      note: `你领取了阶段${stageName}，工作台确认前置阶段都已审核通过。`
-        + (stage.mode === 'direct' ? '直接模式：Sol 拟一张卡，自己实施。' : '分派模式：Sol 拆成子卡，交给 Terra 和 Sonnet。'),
+      id: 'claim', step: 4, title: txc('step', '领取阶段'), phase: tx('阶段'), holders: [YOU()], fork: null,
+      carry: plan ? tx('项目计划') : tx('阶段 {0}', stage.stage_id),
+      note: tx('你领取了阶段{0}，工作台确认前置阶段都已审核通过。', stageName)
+        + (stage.mode === 'direct' ? tx('直接模式：Sol 拟一张卡，自己实施。') : tx('分派模式：Sol 拆成子卡，交给 Terra 和 Sonnet。')),
     });
     if (stage.mode === 'direct') directStage(stage, beats, loops);
     else delegateStage(stage, beats, loops, input.integrationHistory ?? []);
@@ -184,18 +185,18 @@ function draftBeat(stage: Stage): Beat | null {
   const split = stage.planning.planning_kind === 'stage_split';
   const leaves = stage.mode === 'delegate' ? stage.leaves.length : 0;
   return {
-    id: 'draft', step: 5, title: split ? '拆分' : '拟卡', phase: '阶段',
-    holders: [modelHolder('sol', '阶段负责人', draft.request.request, fromRuntime(draft))],
-    fork: null, carry: `阶段 ${stage.stage_id}`,
-    note: split ? `阶段负责人把阶段拆成 ${leaves} 张子卡，写明依赖和写入范围。` : '阶段负责人把阶段写成一张任务卡：目标、写入范围和验收条件。',
+    id: 'draft', step: 5, title: split ? txc('step', '拆分') : txc('step', '拟卡'), phase: tx('阶段'),
+    holders: [modelHolder('sol', tx('阶段负责人'), draft.request.request, fromRuntime(draft))],
+    fork: null, carry: tx('阶段 {0}', stage.stage_id),
+    note: split ? tx('阶段负责人把阶段拆成 {0} 张子卡，写明依赖和写入范围。', leaves) : tx('阶段负责人把阶段写成一张任务卡：目标、写入范围和验收条件。'),
   };
 }
 
 function cardReviewNote(attempt: PlanningAttempt | null): string {
   const result = attempt?.runtime?.result as { decision?: string } | undefined;
-  if (result?.decision === 'ready') return '复核者对照阶段目标检查卡片，结论：可以实施。';
-  if (result?.decision === 'needs_revision') return '复核者要求修改卡片。';
-  return '复核者对照阶段目标检查卡片。';
+  if (result?.decision === 'ready') return tx('复核者对照阶段目标检查卡片，结论：可以实施。');
+  if (result?.decision === 'needs_revision') return tx('复核者要求修改卡片。');
+  return tx('复核者对照阶段目标检查卡片。');
 }
 
 function directStage(stage: DirectStage, beats: Beat[], loops: Span[]): void {
@@ -207,9 +208,9 @@ function directStage(stage: DirectStage, beats: Beat[], loops: Span[]): void {
   const review = last(stage.planning.attempts.review);
   if (!review) return;
   beats.push({
-    id: 'card-review', step: 6, title: '卡片复核', phase: '阶段',
-    holders: [modelHolder('card-review', '卡片复核', review.request.request, fromRuntime(review))],
-    fork: null, carry: '任务卡草案', note: cardReviewNote(review),
+    id: 'card-review', step: 6, title: txc('step', '卡片复核'), phase: tx('阶段'),
+    holders: [modelHolder('card-review', tx('卡片复核'), review.request.request, fromRuntime(review))],
+    fork: null, carry: tx('任务卡草案'), note: cardReviewNote(review),
   });
 
   // 7 实施, then 9 测试, 10 代码审核, and at most one 11 返工 that sends the line back to 9.
@@ -217,9 +218,9 @@ function directStage(stage: DirectStage, beats: Beat[], loops: Span[]): void {
   const first = task?.attempts.find((a) => a.request.kind === 'task_attempt_started');
   if (!task || !first) return;
   beats.push({
-    id: 'implement', step: 7, title: '实施', phase: '阶段',
-    holders: [implementationHolder('impl', '实施', first)], fork: null, carry: '复核后的卡',
-    note: '在独立的 worktree 里按卡实施，产出候选提交。',
+    id: 'implement', step: 7, title: txc('step', '实施'), phase: tx('阶段'),
+    holders: [implementationHolder('impl', tx('实施'), first)], fork: null, carry: tx('复核后的卡'),
+    note: tx('在独立的 worktree 里按卡实施，产出候选提交。'),
   });
 
   const rounds = task.reviews.filter((r) => r.metadata.kind === 'review');
@@ -233,23 +234,23 @@ function directStage(stage: DirectStage, beats: Beat[], loops: Span[]): void {
       if (!rework) return;
       const testIndex = beats.findIndex((b) => b.id === 'test-1');
       beats.push({
-        id: 'rework', step: 11, title: '返工', phase: '测试与审核',
-        holders: [implementationHolder('impl', '原实施者', rework)], fork: null,
-        carry: `${blockingCount(source)} 条阻塞意见`,
-        note: '原实施者按阻塞意见修改，返工最多一次。改完回到测试。',
+        id: 'rework', step: 11, title: txc('step', '返工'), phase: tx('测试与审核'),
+        holders: [implementationHolder('impl', tx('原实施者'), rework)], fork: null,
+        carry: tx('{0} 条阻塞意见', blockingCount(source)),
+        note: tx('原实施者按阻塞意见修改，返工最多一次。改完回到测试。'),
       });
-      if (testIndex >= 0) loops.push({ from: testIndex, to: beats.length - 1, label: '返工后回到测试' });
+      if (testIndex >= 0) loops.push({ from: testIndex, to: beats.length - 1, label: tx('返工后回到测试') });
     }
     const test = task.tests.find((t) => t.implementation_attempt === n);
     if (!test) return;
-    beats.push(testBeat(`test-${pass + 1}`, pass ? '复测' : '测试', { candidate: test.candidate, passed: testPassed(test), commands: test.commands.length }, pass === 1));
+    beats.push(testBeat(`test-${pass + 1}`, pass ? tx('复测') : tx('测试'), { candidate: test.candidate, passed: testPassed(test), commands: test.commands.length }, pass === 1));
     const round = last(rounds.filter((r) => r.implementation_attempt === n));
-    if (round) beats.push(reviewBeat(`review-${pass + 1}`, pass ? '复审' : '代码审核', round, pass === 0));
+    if (round) beats.push(reviewBeat(`review-${pass + 1}`, pass ? tx('复审') : tx('代码审核'), round, pass === 0));
   });
 }
 
 function leafLabel(index: number): string {
-  return `子卡 ${String.fromCharCode(65 + index)}`;
+  return tx('子卡 {0}', String.fromCharCode(65 + index));
 }
 
 function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], history: TimelineIntegration[]): void {
@@ -262,13 +263,13 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
   const reviewed = claimed.filter(({ leaf }) => last(leaf.planning?.attempts.review) !== null);
   if (reviewed.length) {
     beats.push({
-      id: 'card-review', step: 6, title: '卡片复核', phase: '阶段',
+      id: 'card-review', step: 6, title: txc('step', '卡片复核'), phase: tx('阶段'),
       holders: reviewed.map(({ leaf, i }) => {
         const attempt = last(leaf.planning?.attempts.review)!;
         return modelHolder(leaf.card_id, leafLabel(i), attempt.request.request, fromRuntime(attempt));
       }),
-      fork: reviewed.length > 1 ? 'parallel' : null, carry: '子卡草案',
-      note: `每张子卡各自复核，复核者沿用阶段的设置。${reviewed.every(({ leaf }) => leaf.review_ready) ? '都可以实施。' : ''}`,
+      fork: reviewed.length > 1 ? 'parallel' : null, carry: tx('子卡草案'),
+      note: tx('每张子卡各自复核，复核者沿用阶段的设置。{0}', reviewed.every(({ leaf }) => leaf.review_ready) ? tx('都可以实施。') : ''),
     });
   }
 
@@ -276,19 +277,19 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
   const implemented = claimed.filter(({ leaf }) => (nz(leaf.implementation)?.attempts.length ?? 0) > 0);
   if (!implemented.length) return;
   beats.push({
-    id: 'implement', step: 7, title: '实施', phase: '阶段',
+    id: 'implement', step: 7, title: txc('step', '实施'), phase: tx('阶段'),
     holders: implemented.map(({ leaf, i }) => leafImplementer(leaf, i)),
-    fork: implemented.length > 1 ? 'parallel' : null, carry: '复核后的子卡',
-    note: '子卡互不依赖时并行实施，各自在独立的 worktree 里产出候选。',
+    fork: implemented.length > 1 ? 'parallel' : null, carry: tx('复核后的子卡'),
+    note: tx('子卡互不依赖时并行实施，各自在独立的 worktree 里产出候选。'),
   });
 
   // 8 合并
   const integration = stage.integration;
   if (!integration) return;
   beats.push({
-    id: 'merge', step: 8, title: '合并', phase: '阶段', holders: [BENCH], fork: null,
-    carry: `${implemented.length} 个候选`,
-    note: `工作台把 ${implemented.length} 张子卡的候选合并成一个集成候选。`,
+    id: 'merge', step: 8, title: txc('step', '合并'), phase: tx('阶段'), holders: [BENCH()], fork: null,
+    carry: tx('{0} 个候选', implemented.length),
+    note: tx('工作台把 {0} 张子卡的候选合并成一个集成候选。', implemented.length),
   });
 
   // 9 测试, 10 代码审核 and 11 返工 per integration. A successful rework makes a child
@@ -302,7 +303,7 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
     const testId = `test-${item.integration_id}`;
     const candidate = commitOf(test?.candidate) ?? item.candidate;
     if (test) {
-      beats.push(testBeat(testId, revised ? '复测' : '测试', { candidate, passed: test.status === 'succeeded', commands: null }, revised));
+      beats.push(testBeat(testId, revised ? tx('复测') : tx('测试'), { candidate, passed: test.status === 'succeeded', commands: null }, revised));
     }
     const rework = evidence.rework?.source_id === item.integration_id ? evidence.rework : null;
     const pinnedRound = rework?.request?.review_round_id ?? evidence.acceptance?.review_round_id;
@@ -310,19 +311,19 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
     const round = pinnedRound
       ? reviews.find((r) => r.round_id === pinnedRound) ?? null
       : last(reviews.filter((r) => test && (r.test_attempt == null || r.test_attempt === test.attempt)));
-    if (round) beats.push(reviewBeat(`review-${item.integration_id}`, revised ? '复审' : '代码审核', round, !revised, candidate));
+    if (round) beats.push(reviewBeat(`review-${item.integration_id}`, revised ? tx('复审') : tx('代码审核'), round, !revised, candidate));
     if (rework) {
       const testIndex = beats.findIndex((b) => b.id === testId);
       const choice = rework.request?.requested_actor?.decision?.choice ?? null;
       const reported = rework.result?.evidence;
       const findings = rework.request?.findings?.length ?? (round ? blockingCount(round) : null);
       beats.push({
-        id: `rework-${item.integration_id}`, step: 11, title: '返工', phase: '测试与审核',
-        holders: [modelHolder('impl', '原实施者', choice, reported ? { model: nz(reported.reported_model), effort: nz(reported.reported_effort) } : null)], fork: null,
-        carry: findings === null ? '阻塞意见' : `${findings} 条阻塞意见`,
-        note: '原实施者按阻塞意见修改，成功后生成一个子集成，回到测试。',
+        id: `rework-${item.integration_id}`, step: 11, title: txc('step', '返工'), phase: tx('测试与审核'),
+        holders: [modelHolder('impl', tx('原实施者'), choice, reported ? { model: nz(reported.reported_model), effort: nz(reported.reported_effort) } : null)], fork: null,
+        carry: findings === null ? tx('阻塞意见') : tx('{0} 条阻塞意见', findings),
+        note: tx('原实施者按阻塞意见修改，成功后生成一个子集成，回到测试。'),
       });
-      if (testIndex >= 0) loops.push({ from: testIndex, to: beats.length - 1, label: '返工后回到测试' });
+      if (testIndex >= 0) loops.push({ from: testIndex, to: beats.length - 1, label: tx('返工后回到测试') });
     }
   });
 
@@ -331,9 +332,9 @@ function delegateStage(stage: DelegateStage, beats: Beat[], loops: Span[], histo
   if (acceptance) {
     const acceptedCandidate = commitOf(acceptance.candidate) ?? integration.candidate;
     beats.push({
-      id: 'accept', step: 12, title: '接受', phase: '接受', holders: [YOU], fork: null,
-      carry: acceptedCandidate ? `候选 ${shortId(acceptedCandidate)}` : '审核通过的集成',
-      note: '你接受了审核通过的集成，阶段交付完成。',
+      id: 'accept', step: 12, title: txc('step', '接受'), phase: tx('接受'), holders: [YOU()], fork: null,
+      carry: acceptedCandidate ? tx('候选 {0}', shortId(acceptedCandidate)) : tx('审核通过的集成'),
+      note: tx('你接受了审核通过的集成，阶段交付完成。'),
     });
   }
 }
@@ -370,36 +371,36 @@ export function runningBeat(job: JobLike): Beat | null {
   const a = job.args ?? {};
   const seat = (key: string, role: string, req: unknown): Holder => modelHolder(key, role, asRequest(req), null);
   const beat = (step: number, title: string, holders: Holder[], fork: Fork = null): Beat => ({
-    id: `running-${job.action}`, step, title, phase: '进行中', holders, fork, carry: null,
-    note: `作业「${title}」正在进行。结束后读回记录，再补画中间各步。`,
+    id: `running-${job.action}`, step, title, phase: tx('进行中'), holders, fork, carry: null,
+    note: tx('作业「{0}」正在进行。结束后读回记录，再补画中间各步。', title),
   });
   switch (job.action) {
     case 'project.consult': {
       const advisors = (a.advisors as unknown[] | undefined) ?? [];
-      return beat(1, '需求顾问', [seat('advisor-1', '顾问 1', advisors[0])]);
+      return beat(1, txc('step', '需求顾问'), [seat('advisor-1', tx('顾问 1'), advisors[0])]);
     }
-    case 'project.confirm': return beat(2, '确认目标', [YOU]);
-    case 'project.plan': return beat(3, '项目计划', [seat('planner', '规划', a.planner)]);
-    case 'project.revise': return beat(3, '修订计划', [YOU]);
-    case 'project.stage.start': return beat(5, '拟卡、复核和实施', [seat('sol', '阶段负责人', a.sol ? { provider: 'codex', ...(a.sol as object) } : null)]);
-    case 'project.stage.resume': return beat(5, '恢复阶段', [seat('sol', '阶段负责人', null)]);
-    case 'project.stage.leaf': return beat(6, '子卡复核', [seat('card-review', '卡片复核', null)]);
+    case 'project.confirm': return beat(2, txc('step', '确认目标'), [YOU()]);
+    case 'project.plan': return beat(3, txc('step', '项目计划'), [seat('planner', tx('规划'), a.planner)]);
+    case 'project.revise': return beat(3, txc('step', '修订计划'), [YOU()]);
+    case 'project.stage.start': return beat(5, txc('step', '拟卡、复核和实施'), [seat('sol', tx('阶段负责人'), a.sol ? { provider: 'codex', ...(a.sol as object) } : null)]);
+    case 'project.stage.resume': return beat(5, txc('step', '恢复阶段'), [seat('sol', tx('阶段负责人'), null)]);
+    case 'project.stage.leaf': return beat(6, txc('step', '子卡复核'), [seat('card-review', tx('卡片复核'), null)]);
     case 'task.run': case 'task.retry': case 'task.run_batch':
-      return beat(7, '实施', [seat('impl', '实施', a.implementation)]);
+      return beat(7, txc('step', '实施'), [seat('impl', tx('实施'), a.implementation)]);
     case 'project.stage.integrate': case 'integration.create': case 'integration.rebase':
-      return beat(8, '合并', [BENCH]);
-    case 'task.test': case 'integration.test': return beat(9, '测试', [BENCH]);
+      return beat(8, txc('step', '合并'), [BENCH()]);
+    case 'task.test': case 'integration.test': return beat(9, txc('step', '测试'), [BENCH()]);
     case 'task.review': case 'integration.review': {
-      const seats = ((a.seats as unknown[] | undefined) ?? []).map((r, i) => seat(`seat-${i + 1}`, `审核席位 ${i + 1}`, r));
-      return beat(10, '代码审核', seats.length ? seats : [seat('seat-1', '审核席位', null)], seats.length > 1 ? 'blind' : null);
+      const seats = ((a.seats as unknown[] | undefined) ?? []).map((r, i) => seat(`seat-${i + 1}`, tx('审核席位 {0}', i + 1), r));
+      return beat(10, txc('step', '代码审核'), seats.length ? seats : [seat('seat-1', tx('审核席位'), null)], seats.length > 1 ? 'blind' : null);
     }
     case 'task.retry_review': case 'integration.retry_review': {
       const keys = (a.seat_keys as string[] | undefined) ?? ['seat'];
-      return beat(10, '补跑审核', keys.map((k) => seat(k, k, null)), keys.length > 1 ? 'blind' : null);
+      return beat(10, txc('step', '补跑审核'), keys.map((k) => seat(k, k, null)), keys.length > 1 ? 'blind' : null);
     }
-    case 'task.confirm': case 'integration.confirm': return beat(10, '交叉确认', [seat('confirm', '审核席位', null)]);
-    case 'task.rework': case 'integration.rework': return beat(11, '返工', [seat('impl', '原实施者', null)]);
-    case 'integration.accept': return beat(12, '接受', [YOU]);
+    case 'task.confirm': case 'integration.confirm': return beat(10, txc('step', '交叉确认'), [seat('confirm', tx('审核席位'), null)]);
+    case 'task.rework': case 'integration.rework': return beat(11, txc('step', '返工'), [seat('impl', tx('原实施者'), null)]);
+    case 'integration.accept': return beat(12, txc('step', '接受'), [YOU()]);
     default: return null;
   }
 }

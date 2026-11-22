@@ -11,6 +11,7 @@
 import { ease, esc, fmt, glyph, Meter, type StageElements, type StageRenderer } from './draw';
 import { toneVar, type Tone } from './models';
 import type { Holder, Story } from './story';
+import { tx } from '../i18n';
 
 export interface TierDef {
   label: string;
@@ -26,8 +27,7 @@ export const TIERS: TierDef[] = [
 ];
 const RAILS: [Tone, string][] = [['you', '你'], ['bench', '工作台']];
 
-const GUTTER = 172;
-const PINS_WIDTH = GUTTER + 8;
+const MIN_GUTTER = 172;
 const RIGHT = 22;
 const MIN_COL = 62;
 const LANE = 30;
@@ -59,6 +59,10 @@ export class WeaveRenderer implements StageRenderer {
   private lanes = new Map<Tone, Lane>();
   private x: number[] = [];
   private colW = 0;
+  /** Left margin with the tier axis and lane names; measured, since English labels run longer. */
+  private gutter = MIN_GUTTER;
+  private glyphX = 112;
+  private nameX = 124;
   private W = 0;
   private H = 0;
   private carryY = 0;
@@ -126,9 +130,19 @@ export class WeaveRenderer implements StageRenderer {
     box.dataset.layout = 'w';
     const cs = getComputedStyle(box);
     const inner = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
-    this.W = Math.max(Math.floor(inner), GUTTER + RIGHT + N * MIN_COL);
-    this.colW = (this.W - GUTTER - RIGHT) / N;
-    this.x = beats.map((_, i) => GUTTER + this.colW * (i + 0.5));
+    const tierW = Math.max(...TIERS.map((tier) => this.meter.width(tx(tier.label), 'sub')));
+    const names = [...TIERS.flatMap((tier) => tier.lanes.map(([, label]) => tx(label))), ...RAILS.map(([, label]) => tx(label)), tx('未认出')];
+    const nameW = Math.max(...names.map((name) => this.meter.width(name, 'sub') * 1.18));
+    this.glyphX = Math.ceil(30 + tierW + 16);
+    this.nameX = this.glyphX + 12;
+    this.gutter = Math.max(MIN_GUTTER, Math.ceil(this.nameX + nameW + 14));
+    // Each column is at least as wide as its step title; a long weave then scrolls sideways.
+    // Titles are 12.5px sans, measured with the 11px mono meter: CJK runs wider, Latin narrower.
+    const titleW = Math.max(...beats.map((b) => this.meter.width(b.title, 'sub') * (/[\u4e00-\u9fff]/.test(b.title) ? 1.15 : 0.95)));
+    const colMin = Math.max(MIN_COL, Math.ceil(titleW + 10));
+    this.W = Math.max(Math.floor(inner), this.gutter + RIGHT + N * colMin);
+    this.colW = (this.W - this.gutter - RIGHT) / N;
+    this.x = beats.map((_, i) => this.gutter + this.colW * (i + 0.5));
 
     const rulerY = 22;
     const titleY = 52;
@@ -147,7 +161,7 @@ export class WeaveRenderer implements StageRenderer {
     });
     const axisBottom = y - LANE / 2;
     const usesUnknown = beats.some((b) => b.holders.some((h) => !this.lanes.has(h.tone) && h.tone !== 'you' && h.tone !== 'bench'));
-    if (usesUnknown) { this.lanes.set('unknown', { key: 'unknown', label: '未认出', y }); y += LANE; }
+    if (usesUnknown) { this.lanes.set('unknown', { key: 'unknown', label: tx('未认出'), y }); y += LANE; }
     y += RAIL_GAP - LANE / 2;
     const railsTop = y;
     y += LANE / 2;
@@ -167,23 +181,23 @@ export class WeaveRenderer implements StageRenderer {
     tierSpans.forEach((s, t) => {
       if (t % 2 === 0) {
         base += `<rect class="tier-band" x="8" y="${fmt(s.y1 - LANE / 2)}" width="${fmt(this.W - 16)}" height="${fmt(s.y2 - s.y1 + LANE)}" rx="6"/>`;
-        gutter += `<rect class="tier-band" x="8" y="${fmt(s.y1 - LANE / 2)}" width="${GUTTER}" height="${fmt(s.y2 - s.y1 + LANE)}" rx="6"/>`;
+        gutter += `<rect class="tier-band" x="8" y="${fmt(s.y1 - LANE / 2)}" width="${this.gutter}" height="${fmt(s.y2 - s.y1 + LANE)}" rx="6"/>`;
       }
       const cy = (s.y1 + s.y2) / 2;
       const label = `<line class="tier-tick" x1="16" y1="${fmt(cy)}" x2="22" y2="${fmt(cy)}"/>`
-        + `<text class="tier" x="30" y="${fmt(cy + 4)}">${esc(s.label)}</text>`;
+        + `<text class="tier" x="30" y="${fmt(cy + 4)}">${esc(tx(s.label))}</text>`;
       base += label;
       gutter += label;
     });
     const axis = `<line class="tier-axis" x1="16" y1="${fmt(top - 10)}" x2="16" y2="${fmt(axisBottom)}"/>`
       + `<path class="tier-axis" d="M12.5 ${fmt(top - 5)} L16 ${fmt(top - 11)} L19.5 ${fmt(top - 5)}"/>`
-      + `<text class="tier" x="16" y="${fmt(top - 18)}" text-anchor="middle">等级</text>`;
+      + tx('<text class="tier" x="16" y="{0}" text-anchor="middle">等级</text>', fmt(top - 18));
     base += axis + `<line class="rail-rule" x1="8" y1="${fmt(railsTop - 6)}" x2="${fmt(this.W - 8)}" y2="${fmt(railsTop - 6)}"/>`;
-    gutter += axis + `<line class="rail-rule" x1="8" y1="${fmt(railsTop - 6)}" x2="${GUTTER}" y2="${fmt(railsTop - 6)}"/>`;
+    gutter += axis + `<line class="rail-rule" x1="8" y1="${fmt(railsTop - 6)}" x2="${this.gutter}" y2="${fmt(railsTop - 6)}"/>`;
     for (const lane of this.lanes.values()) {
-      const label = `<g class="lane-label" style="--c:${toneVar(lane.key)}" transform="translate(112 ${fmt(lane.y)})"><g class="in">${glyph({ tone: lane.key }, 3.6)}</g></g>`
-        + `<text class="lane-name" x="124" y="${fmt(lane.y + 4.5)}">${esc(lane.label)}</text>`;
-      base += label + `<g class="trk groove"><path d="M${GUTTER - 6} ${fmt(lane.y)} L${fmt(this.W - RIGHT + 6)} ${fmt(lane.y)}"/></g>`;
+      const label = `<g class="lane-label" style="--c:${toneVar(lane.key)}" transform="translate(${fmt(this.glyphX)} ${fmt(lane.y)})"><g class="in">${glyph({ tone: lane.key }, 3.6)}</g></g>`
+        + `<text class="lane-name" x="${fmt(this.nameX)}" y="${fmt(lane.y + 4.5)}">${esc(tx(lane.label))}</text>`;
+      base += label + `<g class="trk groove"><path d="M${this.gutter - 6} ${fmt(lane.y)} L${fmt(this.W - RIGHT + 6)} ${fmt(lane.y)}"/></g>`;
       gutter += label;
     }
 
@@ -194,7 +208,7 @@ export class WeaveRenderer implements StageRenderer {
     const first = this.spots(0);
     for (const s of first) {
       const x2 = this.x[0]! - BAR_W / 2 + s.dx;
-      this.threads.push({ i: 0, d: `M${GUTTER - 6} ${fmt(s.lane.y + s.dy)} L${fmt(x2)} ${fmt(s.lane.y + s.dy)}` });
+      this.threads.push({ i: 0, d: `M${this.gutter - 6} ${fmt(s.lane.y + s.dy)} L${fmt(x2)} ${fmt(s.lane.y + s.dy)}` });
     }
     for (let i = 1; i < N; i++) {
       const A = this.spots(i - 1), B = this.spots(i);
@@ -233,7 +247,7 @@ export class WeaveRenderer implements StageRenderer {
       let inner = `<rect class="hit" x="${fmt(x - this.colW / 2)}" y="0" width="${fmt(this.colW)}" height="${this.H}"/>`
         + `<text class="ttl" x="${fmt(x)}" y="${titleY}" text-anchor="middle">${esc(b.title)}</text>`;
       const spots = this.spots(i);
-      if (b.fork) inner += `<text class="wl${b.fork === 'parallel' ? ' par' : ''}" x="${fmt(x + 1)}" y="${titleY + 15}" text-anchor="middle">${b.fork === 'blind' ? '互不可见' : '并行'}</text>`;
+      if (b.fork) inner += `<text class="wl${b.fork === 'parallel' ? ' par' : ''}" x="${fmt(x + 1)}" y="${titleY + 15}" text-anchor="middle">${b.fork === 'blind' ? tx('互不可见') : tx('并行')}</text>`;
       if (b.fork === 'blind' && spots.length > 1) {
         const ys = spots.map((s) => s.lane.y).sort((p, q) => p - q);
         const ya = ys[0]!, yb = ys[ys.length - 1]!;
@@ -290,8 +304,8 @@ export class WeaveRenderer implements StageRenderer {
       + `<g class="trk core thread-core">${lit}</g><g class="trk core-hi">${hi}</g>`
       + `<g class="bars" >${bars}</g></g>`
       + bracket
-      + `<line class="carry-rule" x1="${GUTTER - 6}" y1="${fmt(this.carryY)}" x2="${fmt(this.W - RIGHT + 6)}" y2="${fmt(this.carryY)}"/>`
-      + `<text class="tier" x="30" y="${fmt(this.carryY + 4)}">交接物</text>`
+      + `<line class="carry-rule" x1="${this.gutter - 6}" y1="${fmt(this.carryY)}" x2="${fmt(this.W - RIGHT + 6)}" y2="${fmt(this.carryY)}"/>`
+      + tx('<text class="tier" x="30" y="{0}">交接物</text>', fmt(this.carryY + 4))
       + '<g class="baton" style="display:none"><rect class="cap" y="-12.5" height="25" rx="12.5"/>'
       + '<rect class="cap-hi" y="-11.5" height="23" rx="11.5"/><circle class="led-b" r="5.5"/><circle class="led" r="2.4"/>'
       + '<text class="baton-t" y="3.8"></text></g>'
@@ -315,7 +329,7 @@ export class WeaveRenderer implements StageRenderer {
       text: g.querySelector<SVGTextElement>('.baton-t')!,
     };
     this.beads = [...svg.querySelectorAll<SVGGElement>('.bead')];
-    this.buildGutter(gutter + `<text class="tier" x="30" y="${fmt(this.carryY + 4)}">交接物</text>`);
+    this.buildGutter(gutter + tx('<text class="tier" x="30" y="{0}">交接物</text>', fmt(this.carryY + 4)));
   }
 
   /** When the plate is narrower than the weave it scrolls sideways; a copy of the lane
@@ -330,11 +344,11 @@ export class WeaveRenderer implements StageRenderer {
       box.appendChild(g);
       box.addEventListener('scroll', () => box.classList.toggle('scrolled', box.scrollLeft > 4), { passive: true });
     }
-    g.setAttribute('viewBox', `0 0 ${PINS_WIDTH} ${this.H}`);
-    g.setAttribute('width', String(PINS_WIDTH));
+    g.setAttribute('viewBox', `0 0 ${(this.gutter + 8)} ${this.H}`);
+    g.setAttribute('width', String((this.gutter + 8)));
     g.setAttribute('height', String(this.H));
     g.innerHTML = `<defs><linearGradient id="${this.uid}-fade" x1="0" y1="0" x2="1" y2="0"><stop offset="0.88" style="stop-color:var(--plate);stop-opacity:1"/><stop offset="1" style="stop-color:var(--plate);stop-opacity:0"/></linearGradient></defs>`
-      + `<rect x="0" y="0" width="${PINS_WIDTH}" height="${this.H}" fill="url(#${this.uid}-fade)"/>${content}`;
+      + `<rect x="0" y="0" width="${(this.gutter + 8)}" height="${this.H}" fill="url(#${this.uid}-fade)"/>${content}`;
     box.classList.toggle('scrolled', box.scrollLeft > 4);
   }
 
@@ -345,7 +359,7 @@ export class WeaveRenderer implements StageRenderer {
   }
 
   private placeCapsule(x: number, w: number, label: string, tone: string, textAlpha: number): number {
-    const cx = Math.max(GUTTER + w / 2, Math.min(this.W - RIGHT - w / 2, x));
+    const cx = Math.max(this.gutter + w / 2, Math.min(this.W - RIGHT - w / 2, x));
     const c = this.cap;
     if (!c) return cx;
     c.g.setAttribute('transform', `translate(${fmt(cx)} ${fmt(this.carryY)})`);
@@ -368,17 +382,17 @@ export class WeaveRenderer implements StageRenderer {
   private keepInView(x: number, width: number): void {
     const box = this.el.box;
     if (box.scrollWidth <= box.clientWidth + 1) return;
-    const left = box.scrollLeft + (box.scrollLeft > 4 ? PINS_WIDTH : 0);
+    const left = box.scrollLeft + (box.scrollLeft > 4 ? (this.gutter + 8) : 0);
     const right = box.scrollLeft + box.clientWidth;
     const margin = width / 2 + 6;
     if (x - margin < left || x + margin > right) {
-      box.scrollLeft = Math.max(0, x - (box.clientWidth + PINS_WIDTH) / 2);
+      box.scrollLeft = Math.max(0, x - (box.clientWidth + (this.gutter + 8)) / 2);
     }
   }
 
   settle(i: number): void {
     if (!this.x.length) return;
-    this.setReveal(i < 0 ? GUTTER - 8 : this.x[i]! + BAR_W / 2 + 6);
+    this.setReveal(i < 0 ? this.gutter - 8 : this.x[i]! + BAR_W / 2 + 6);
     this.beads.forEach((b) => { b.style.display = 'none'; });
     if (i < 0) { if (this.cap) this.cap.g.style.display = 'none'; return; }
     const beat = this.story.beats[i]!;
@@ -414,7 +428,7 @@ export class WeaveRenderer implements StageRenderer {
     const label = beat.carry ?? '';
     const prev = i > 0 ? beats[i - 1]! : null;
     const w0 = prev ? this.capsuleWidth(prev.carry) : 26, w1 = this.capsuleWidth(beat.carry);
-    const x0 = i > 0 ? this.x[i - 1]! : GUTTER, x1 = this.x[i]!;
+    const x0 = i > 0 ? this.x[i - 1]! : this.gutter, x1 = this.x[i]!;
     const keep = (prev?.carry ?? '') === label;
     const tone = toneVar(beat.holders[0]!.tone);
     const dur = i === 0 ? FIRST_GLIDE : GLIDE;

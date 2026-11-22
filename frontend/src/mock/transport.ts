@@ -5,6 +5,7 @@
 
 import { ApiError, type Query, type Transport } from '../api/transport';
 import type { Job } from '../api/types';
+import { tx, joinList } from '../i18n';
 
 interface Entry {
   seq: number;
@@ -57,7 +58,7 @@ export class MockTransport implements Transport {
     if (this.entries) return this.entries;
     this.loading ??= (async () => {
       const p = load<Entry[]>(indexes, this.scenario, 'index.json');
-      if (!p) throw new ApiError(404, 'not_found', `样例 ${this.scenario} 不存在。可选：${scenarios().join('、') || '（未找到离线样例）'}`);
+      if (!p) throw new ApiError(404, 'not_found', tx('样例 {0} 不存在。可选：{1}', this.scenario, joinList(scenarios()) || tx('（未找到离线样例）')));
       this.entries = (await p).filter((e) => e.seq <= this.at);
       return this.entries;
     })();
@@ -66,7 +67,7 @@ export class MockTransport implements Transport {
 
   private async body<T>(e: Entry): Promise<T> {
     const p = load<T>(files, this.scenario, e.response_file);
-    if (!p) throw new ApiError(500, 'workspace_unavailable', `样例缺少 ${e.response_file}`);
+    if (!p) throw new ApiError(500, 'workspace_unavailable', tx('样例缺少 {0}', e.response_file));
     const v = await p;
     if (e.status >= 400) {
       const err = (v as { error?: { code?: string; message?: string; details?: Record<string, unknown> } }).error;
@@ -86,7 +87,7 @@ export class MockTransport implements Transport {
     const hits = entries.filter((e) => e.method === 'GET' && canonical(e.path, e.query) === want);
     const pathHits = hits.length ? hits : entries.filter((e) => e.method === 'GET' && e.path === `/api${path}`);
     const hit = pathHits[pathHits.length - 1];
-    if (!hit) throw new ApiError(404, 'not_found', '模拟样例里没有这次读取。');
+    if (!hit) throw new ApiError(404, 'not_found', tx('模拟样例里没有这次读取。'));
     return this.body<T>(hit);
   }
 
@@ -95,14 +96,14 @@ export class MockTransport implements Transport {
     const cancel = /^\/jobs\/([^/]+)\/cancel$/.exec(path);
     if (cancel) {
       const t = this.timelines.get(decodeURIComponent(cancel[1]!));
-      if (!t || this.state(t) !== 'running') throw new ApiError(409, 'job_unavailable', '只有运行中的作业可以取消。');
+      if (!t || this.state(t) !== 'running') throw new ApiError(409, 'job_unavailable', tx('只有运行中的作业可以取消。'));
       t.cancelled = true;
       return { job_id: t.job.job_id, state: 'cancelling' } as T;
     }
     const action = (body as { action?: string }).action;
     const posts = entries.filter((e) => e.method === 'POST' && e.path === '/api/jobs' && e.request_body?.action === action);
     const hit = posts.find((e) => e.seq > this.lastPost) ?? posts[posts.length - 1];
-    if (!hit) throw new ApiError(400, 'unknown_action', `模拟样例里没有提交过 ${action}。`);
+    if (!hit) throw new ApiError(400, 'unknown_action', tx('模拟样例里没有提交过 {0}。', action));
     this.lastPost = hit.seq;
     const receipt = await this.body<{ job_id: string; state: string }>(hit);
     const polls = entries.filter((e) => e.method === 'GET' && e.path === `/api/jobs/${receipt.job_id}`);

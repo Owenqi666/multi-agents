@@ -8,6 +8,7 @@
 import { ease, esc, fmt, glyph, type StageElements, type StageRenderer } from './draw';
 import { toneVar } from './models';
 import type { Beat, Story } from './story';
+import { tx } from '../i18n';
 
 const BLIND = '互不可见';
 const PARALLEL = '并行';
@@ -258,7 +259,7 @@ export class RelayRenderer implements StageRenderer {
         const pin = `<g class="pin" transform="translate(${fmt(x)} ${fmt(y)})" ${style}><circle class="ring" r="7"/><g class="in">${glyph(h, 3.1)}</g></g>`;
         pinsUnlit += pin;
         pinsLit += pin;
-        const cls = h.name === '未确认' ? 'nm unconfirmed' : 'nm';
+        const cls = !h.plain && h.reportedModel === null ? 'nm unconfirmed' : 'nm';
         if (this.horiz) {
           const up = n > 1 && ls[k]! < 0;
           inner += `<text class="${cls}" x="${fmt(x)}" y="${fmt(up ? y - 38 : y + 35)}" text-anchor="middle">${esc(h.name)}</text>`;
@@ -280,16 +281,16 @@ export class RelayRenderer implements StageRenderer {
       if (n > 1) {
         const [x, y] = this.P(t[i]!, 0);
         if (b.fork === 'parallel') {
-          walls += `<g class="wall par" data-i="${i}"><text class="wl" x="${fmt(this.horiz ? x : x)}" y="${fmt(this.horiz ? y + 3.5 : y - 26)}" text-anchor="middle">${PARALLEL}</text></g>`;
+          walls += `<g class="wall par" data-i="${i}"><text class="wl" x="${fmt(this.horiz ? x : x)}" y="${fmt(this.horiz ? y + 3.5 : y - 26)}" text-anchor="middle">${tx(PARALLEL)}</text></g>`;
         } else if (this.horiz) {
           const L = forkHalf + 14;
           walls += `<g class="wall" data-i="${i}"><line x1="${fmt(x - L)}" y1="${y}" x2="${fmt(x - 34)}" y2="${y}"/><line x1="${fmt(x + 34)}" y1="${y}" x2="${fmt(x + L)}" y2="${y}"/>`
             + `<line x1="${fmt(x - L)}" y1="${y - 5}" x2="${fmt(x - L)}" y2="${y + 5}"/><line x1="${fmt(x + L)}" y1="${y - 5}" x2="${fmt(x + L)}" y2="${y + 5}"/>`
-            + `<text class="wl" x="${fmt(x + 1.2)}" y="${y + 3.5}" text-anchor="middle">${BLIND}</text></g>`;
+            + `<text class="wl" x="${fmt(x + 1.2)}" y="${y + 3.5}" text-anchor="middle">${tx(BLIND)}</text></g>`;
         } else {
           walls += `<g class="wall" data-i="${i}"><line x1="${x}" y1="${fmt(y - 56)}" x2="${x}" y2="${fmt(y - 42)}"/><line x1="${x}" y1="${fmt(y - 16)}" x2="${x}" y2="${fmt(y + 26)}"/>`
             + `<line x1="${x - 5}" y1="${fmt(y - 56)}" x2="${x + 5}" y2="${fmt(y - 56)}"/><line x1="${x - 5}" y1="${fmt(y + 26)}" x2="${x + 5}" y2="${fmt(y + 26)}"/>`
-            + `<text class="wl" x="${fmt(x + 1.2)}" y="${fmt(y - 25)}" text-anchor="middle">${BLIND}</text></g>`;
+            + `<text class="wl" x="${fmt(x + 1.2)}" y="${fmt(y - 25)}" text-anchor="middle">${tx(BLIND)}</text></g>`;
         }
       }
     });

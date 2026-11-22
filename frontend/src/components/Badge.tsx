@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { Job } from '../api/types';
+import { tx } from '../i18n';
 
 export type BadgeTone = 'ok' | 'fail' | 'warn' | 'live' | 'muted' | 'plain';
 
@@ -15,12 +16,12 @@ export function Badge({ tone, children, title }: { tone: BadgeTone; children: Re
 
 /** Marks a value the runtime did not report. Never filled in from the request. */
 export function Unconfirmed({ what }: { what?: string }) {
-  return <span className="unconfirmed-mark" title={what ? `${what}没有运行时报告值` : '没有运行时报告值'}>未确认</span>;
+  return <span className="unconfirmed-mark" title={what ? tx('{0}没有运行时报告值', what) : tx('没有运行时报告值')}>{tx('未确认')}</span>;
 }
 
 /** The requested value, labelled so it is never read as evidence. */
 export function Requested({ children }: { children: ReactNode }) {
-  return <span className="tag-request"><b>请求</b>{children}</span>;
+  return <span className="tag-request"><b>{tx('请求')}</b>{children}</span>;
 }
 
 export interface JobBadgeInfo {
@@ -41,19 +42,19 @@ export function cancelledInResult(result: Record<string, unknown> | null): boole
 export function jobBadge(job: Pick<Job, 'state' | 'exit_code' | 'result' | 'error'>): JobBadgeInfo {
   switch (job.state) {
     case 'queued':
-      return { tone: 'muted', label: '排队中' };
+      return { tone: 'muted', label: tx('排队中') };
     case 'running':
-      return { tone: 'live', label: '运行中' };
+      return { tone: 'live', label: tx('运行中') };
     case 'cancelling':
-      return { tone: 'warn', label: '已请求取消' };
+      return { tone: 'warn', label: tx('已请求取消') };
     case 'interrupted':
-      return { tone: 'warn', label: '已中断' };
+      return { tone: 'warn', label: tx('已中断') };
     case 'finished':
-      if (job.exit_code === 130 || job.error?.code === 'cli_cancelled' || cancelledInResult(job.result)) return { tone: 'muted', label: '已取消' };
-      if (job.exit_code === 2 && job.result === null) return { tone: 'fail', label: '被拒绝' };
-      if (job.exit_code === 0 || (job.exit_code === null && job.error === null)) return { tone: 'ok', label: '已结束' };
-      if (job.exit_code === 1 && job.result !== null) return { tone: 'warn', label: '结果不满足' };
-      return { tone: 'fail', label: '失败' };
+      if (job.exit_code === 130 || job.error?.code === 'cli_cancelled' || cancelledInResult(job.result)) return { tone: 'muted', label: tx('已取消') };
+      if (job.exit_code === 2 && job.result === null) return { tone: 'fail', label: tx('被拒绝') };
+      if (job.exit_code === 0 || (job.exit_code === null && job.error === null)) return { tone: 'ok', label: tx('已结束') };
+      if (job.exit_code === 1 && job.result !== null) return { tone: 'warn', label: tx('结果不满足') };
+      return { tone: 'fail', label: tx('失败') };
   }
 }
 

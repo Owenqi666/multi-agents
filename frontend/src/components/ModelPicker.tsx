@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import type { Candidate, RoleRequest, Workspace } from '../api/types';
+import { tx } from '../i18n';
 
 /** Families the web offers at all; Luna and Haiku never appear even if a catalog lists them. */
 export const ALLOWED_FAMILIES = new Set(['Astra', 'Sol', 'Terra', 'Fable', 'Opus', 'Sonnet']);
@@ -61,18 +62,18 @@ export function ModelPicker({ ws, role, value, onChange, only, exclude, label }:
   }, [list, current, efforts, value, onChange]);
 
   if (!list.length) {
-    return <div className="picker empty-picker"><span className="picker-label">{label}</span><span className="action-why">没有可选的模型。Codex 的候选要先检查一次环境才会出现。</span></div>;
+    return <div className="picker empty-picker"><span className="picker-label">{label}</span><span className="action-why">{tx('没有可选的模型。Codex 的候选要先检查一次环境才会出现。')}</span></div>;
   }
   return (
     <div className="picker">
       <label className="picker-label">{label}</label>
-      <select aria-label={`${label}：模型`} value={value?.model ?? ''} onChange={(e) => {
+      <select aria-label={tx('{0}：模型', label)} value={value?.model ?? ''} onChange={(e) => {
         const c = list.find((x) => x.model === e.target.value);
         if (c) { const ef = effortsFor(c); onChange({ model: c.model, effort: value && ef.includes(value.effort) ? value.effort : ef.includes('high') ? 'high' : ef[0] ?? 'high' }); }
       }}>
         {list.map((c) => <option key={c.model} value={c.model}>{c.family} · {c.model}</option>)}
       </select>
-      <select aria-label={`${label}：档位`} value={value?.effort ?? ''} onChange={(e) => value && onChange({ model: value.model, effort: e.target.value })}>
+      <select aria-label={tx('{0}：档位', label)} value={value?.effort ?? ''} onChange={(e) => value && onChange({ model: value.model, effort: e.target.value })}>
         {efforts.map((e) => <option key={e} value={e}>{e}</option>)}
       </select>
     </div>

@@ -1,6 +1,7 @@
 // Model names as the stage shows them. The text on screen only ever comes from a value
 // the runtime reported; requested values are shown separately and marked 请求.
 
+import { tx } from '../i18n';
 export type Family = 'claude' | 'gpt' | 'human' | 'system';
 export type Tone = 'fable' | 'opus' | 'sonnet' | 'astra' | 'sol' | 'terra' | 'you' | 'bench' | 'unknown';
 
@@ -39,12 +40,12 @@ export const UNCONFIRMED = '未确认';
 /** Station text for a reported model: its short name, the raw string when it does not
  *  parse (a fake runtime reports placeholders), or 未确认 when nothing was reported. */
 export function reportedShort(reported: string | null): string {
-  if (reported === null) return UNCONFIRMED;
+  if (reported === null) return tx(UNCONFIRMED);
   return parseModel(reported)?.short ?? reported;
 }
 
 export function reportedFull(reported: string | null): string {
-  if (reported === null) return UNCONFIRMED;
+  if (reported === null) return tx(UNCONFIRMED);
   return parseModel(reported)?.full ?? reported;
 }
 

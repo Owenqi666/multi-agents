@@ -7,6 +7,7 @@ import { KIND_LABEL, nextText, shortId } from '../app/labels';
 import { Link, to } from '../app/router';
 import { Requested, Unconfirmed } from '../components/Badge';
 import { reportedFull } from '../stage/models';
+import { tx } from '../i18n';
 
 export function Page({ kicker, title, aside, children }: { kicker?: ReactNode; title: ReactNode; aside?: ReactNode; children: ReactNode }) {
   return (
@@ -68,13 +69,13 @@ export function ArtifactLinks({ artifacts, label, linkText, locking = false }: {
   return (
     <ul className="plain-list">
       {artifacts.map((artifact) => {
-        const title = label?.(artifact) ?? artifact.key ?? artifact.stream ?? '日志';
+        const title = label?.(artifact) ?? artifact.key ?? artifact.stream ?? tx('日志');
         const query = new URLSearchParams({ title });
         if (locking) query.set('locking', '1');
         return (
           <li key={artifact.artifact_id}>
             <Link href={`${to('logs', artifact.artifact_id)}?${query}`} aria-label={linkText ? title : undefined}>{linkText?.(artifact) ?? title}</Link>
-            {artifact.byte_count !== undefined ? <span className="stamp"> {artifact.byte_count.toLocaleString('en-US')} 字节</span> : null}
+            {artifact.byte_count !== undefined ? <span className="stamp"> {artifact.byte_count.toLocaleString('en-US')} {tx('字节')}</span> : null}
           </li>
         );
       })}
@@ -92,8 +93,8 @@ export function Evidence({ reportedModel, reportedEffort, request }: {
   const re = reportedEffort ?? null;
   return (
     <span className="evidence-line">
-      {rm === null ? <Unconfirmed what="模型" /> : <span className="ev-model">{reportedFull(rm)}</span>}
-      <span className="ev-effort">档位 {re === null ? <Unconfirmed what="档位" /> : re}</span>
+      {rm === null ? <Unconfirmed what={tx('模型')} /> : <span className="ev-model">{reportedFull(rm)}</span>}
+      <span className="ev-effort">{tx('档位')} {re === null ? <Unconfirmed what={tx('档位')} /> : re}</span>
       {request?.model ? <Requested>{request.model}{request.effort ? ` · ${request.effort}` : ''}</Requested> : null}
     </span>
   );
@@ -110,7 +111,7 @@ export function useResource<T>(kind: string, id: string | null | undefined, quer
 }
 
 /** Plain-text block for structured values the page does not lay out field by field. */
-export function Raw({ value, label = '原始内容' }: { value: unknown; label?: string }) {
+export function Raw({ value, label = tx('原始内容') }: { value: unknown; label?: string }) {
   return (
     <details className="raw">
       <summary>{label}</summary>
@@ -119,7 +120,7 @@ export function Raw({ value, label = '原始内容' }: { value: unknown; label?:
   );
 }
 
-export const pluralSeat = (n: number): string => (n > 1 ? '双席' : '单席');
+export const pluralSeat = (n: number): string => (n > 1 ? tx('双席') : tx('单席'));
 
 /** The next step the readback offers, in words, with the backend's sentence kept small. */
 export function NextNote({ next, fallback }: { next: NextAction | null | undefined; fallback?: string }) {

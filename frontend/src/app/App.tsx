@@ -3,6 +3,8 @@ import { jobs, useJobs } from '../api/jobs';
 import { useReadsInFlight } from '../api/reads';
 import { useArchiveMode, useWorkspaceWritesAllowed, WorkspaceProvider } from '../api/workspace';
 import { ThemeSwitch } from '../components/ThemeSwitch';
+import { LanguageSwitch } from '../components/LanguageSwitch';
+import { useLang } from '../i18n';
 import { EmptyState } from '../components/EmptyState';
 import { JobBar } from './JobBar';
 import { Link, match, navigate, useLocation } from './router';
@@ -20,6 +22,7 @@ import { ReviewPage } from '../pages/ReviewPage';
 import { NewReviewPage, ReviewHomePage, ReviewSnapshotPage } from '../pages/StandaloneReviewPages';
 import { DiffPage, FrozenFilePage, LogPage } from '../pages/ViewerPages';
 import { JobsPage, JobPage } from '../pages/JobPages';
+import { tx } from '../i18n';
 
 type Route = [string, (p: Record<string, string>, q: URLSearchParams) => ReactNode];
 
@@ -44,7 +47,7 @@ const ROUTES: Route[] = [
   ['/snapshots/:id', (p) => <ReviewSnapshotPage key={p.id!} id={p.id!} />],
   ['/snapshots/:id/file', (p, q) => <FrozenFilePage id={p.id!} side={(q.get('side') as 'baseline' | 'candidate') ?? 'candidate'} path={q.get('path') ?? ''} line={Number(q.get('line') ?? 0)} end={Number(q.get('end') ?? q.get('line') ?? 0)} />],
   ['/diffs/:kind/:id', (p, q) => <DiffPage kind={p.kind as 'task' | 'integration' | 'snapshot'} id={p.id!} against={q.get('against') === 'parent' ? 'parent' : undefined} />],
-  ['/logs/:id', (p, q) => <LogPage key={p.id!} id={p.id!} title={q.get('title') ?? '日志'} locking={q.get('locking') === '1'} />],
+  ['/logs/:id', (p, q) => <LogPage key={p.id!} id={p.id!} title={q.get('title') ?? tx('日志')} locking={q.get('locking') === '1'} />],
   ['/jobs', () => <JobsPage />],
   ['/jobs/:id', (p) => <JobPage id={p.id!} />],
 ];
@@ -54,13 +57,13 @@ function Outlet() {
   const archive = useArchiveMode();
   if (archive && path === '/') return <ArchivePage />;
   if (archive && path === '/new') {
-    return <EmptyState title="工作区为只读" body="可以打开归档中的现有记录。" action={<Link className="btn" href="/archive">归档</Link>} />;
+    return <EmptyState title={tx('工作区为只读')} body={tx('可以打开归档中的现有记录。')} action={<Link className="btn" href="/archive">{tx('归档')}</Link>} />;
   }
   for (const [pattern, render] of ROUTES) {
     const params = match(pattern, path);
     if (params) return <>{render(params, query)}</>;
   }
-  return <EmptyState title="没有这个页面" body="地址可能写错了，从上面的导航进入。" action={<Link className="btn" href="/">回到首页</Link>} />;
+  return <EmptyState title={tx('没有这个页面')} body={tx('地址可能写错了，从上面的导航进入。')} action={<Link className="btn" href="/">{tx('回到首页')}</Link>} />;
 }
 
 function WorkspaceShell() {
@@ -78,7 +81,7 @@ function WorkspaceShell() {
     document.documentElement.dataset.reading = reading > 0 || settling ? '1' : '0';
     document.documentElement.dataset.job = active ? active.state : 'none';
   }, [reading, active, settling]);
-  const nav: [string, string][] = archive ? [['/archive', '归档']] : [['/', '舞台'], ['/projects', '项目'], ['/task-plans', '单卡'], ['/reviews', '审核'], ['/jobs', '作业']];
+  const nav: [string, string][] = archive ? [['/archive', tx('归档')]] : [['/', tx('舞台')], ['/projects', tx('项目')], ['/task-plans', tx('单卡')], ['/reviews', tx('审核')], ['/jobs', tx('作业')]];
   const current = (href: string) => href === '/' ? path === '/' : path.startsWith(href) || (href === '/reviews' && path.startsWith('/snapshots/'));
   return (
     <div className="app">
@@ -90,15 +93,16 @@ function WorkspaceShell() {
             <circle cx="17" cy="4" r="2.4" style={{ fill: 'var(--tone-opus)' }} />
             <circle cx="29" cy="4" r="2.4" style={{ fill: 'var(--tone-terra)' }} />
           </svg>
-          Multi-agent 工作台
+          {tx('Multi-agent 工作台')}
         </Link>
-        <nav className="app-nav" aria-label="主导航">
+        <nav className="app-nav" aria-label={tx('主导航')}>
           {nav.map(([href, label]) => <Link key={href} href={href} aria-current={current(href) ? 'page' : undefined}>{label}</Link>)}
         </nav>
         <div className="app-tools">
-          {archive ? <span className="stamp archive-mode">只读</span> : null}
-          {writesAllowed ? <Link className="btn small primary" href="/new">提出目标</Link> : null}
+          {archive ? <span className="stamp archive-mode">{tx('只读')}</span> : null}
+          {writesAllowed ? <Link className="btn small primary" href="/new">{tx('提出目标')}</Link> : null}
           <ThemeSwitch />
+          <LanguageSwitch />
         </div>
       </header>
       <JobBar />
@@ -108,5 +112,7 @@ function WorkspaceShell() {
 }
 
 export function App() {
-  return <WorkspaceProvider><WorkspaceShell /></WorkspaceProvider>;
+  // Switching the language redraws every page, including drawings measured with the fonts.
+  const lang = useLang();
+  return <WorkspaceProvider><WorkspaceShell key={lang} /></WorkspaceProvider>;
 }

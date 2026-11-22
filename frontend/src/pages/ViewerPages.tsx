@@ -12,6 +12,7 @@ import { EmptyState } from '../components/EmptyState';
 import { LogBlock } from '../components/LogBlock';
 import { ReadFrame } from '../components/ReadNote';
 import { Page, Raw, Section, useResource } from './common';
+import { tx } from '../i18n';
 
 const UNAVAILABLE: Record<string, string> = {
   lock_busy: '作业运行中，结束后可读。',
@@ -24,24 +25,24 @@ export function DiffPage({ kind, id, against }: { kind: 'task' | 'integration' |
   const archive = useArchiveMode();
   const read = useRead<Diff>(`diff/${kind}/${id}/${against ?? ''}`, () => api.diff(kind, id, against), { locking: kind !== 'snapshot' });
   const snapshot = useResource<{ input: unknown }>('snapshot', archive && kind === 'snapshot' ? id : null);
-  const title = against ? '返工增量' : kind === 'snapshot' ? '冻结的审核输入' : '累计改动';
+  const title = against ? tx('返工增量') : kind === 'snapshot' ? tx('冻结的审核输入') : tx('累计改动');
   return (
     <Page kicker={`diff · ${kind} ${shortId(id)}`} title={title} aside={kind !== 'snapshot' ? (
-      <div className="seg small" role="radiogroup" aria-label="diff 范围">
-        <Link role="radio" aria-checked={!against} className={!against ? 'on' : ''} href={to('diffs', kind, id)}>累计</Link>
-        <Link role="radio" aria-checked={against === 'parent'} className={against === 'parent' ? 'on' : ''} href={`${to('diffs', kind, id)}?against=parent`}>返工增量</Link>
+      <div className="seg small" role="radiogroup" aria-label={tx('diff 范围')}>
+        <Link role="radio" aria-checked={!against} className={!against ? 'on' : ''} href={to('diffs', kind, id)}>{tx('累计')}</Link>
+        <Link role="radio" aria-checked={against === 'parent'} className={against === 'parent' ? 'on' : ''} href={`${to('diffs', kind, id)}?against=parent`}>{tx('返工增量')}</Link>
       </div>
     ) : null}>
       <ReadFrame read={read} what="diff">
         {(d) => (
           <>
-            <p className="stamp">{d.baseline ? `基线 ${shortId(d.baseline, 7)}` : ''}{d.parent_candidate ? ` · 父候选 ${shortId(d.parent_candidate, 7)}` : ''}{d.candidate ? ` → 候选 ${shortId(d.candidate, 7)}` : ''}</p>
-            <DiffView diff={d.diff} emptyNote={<EmptyState compact title="没有可看的 diff" body={(d.unavailable_code && UNAVAILABLE[d.unavailable_code]) ?? d.unavailable_reason ?? '这次读取没有返回 diff。'} />} />
+            <p className="stamp">{d.baseline ? tx('基线 {0}', shortId(d.baseline, 7)) : ''}{d.parent_candidate ? tx(' · 父候选 {0}', shortId(d.parent_candidate, 7)) : ''}{d.candidate ? tx(' → 候选 {0}', shortId(d.candidate, 7)) : ''}</p>
+            <DiffView diff={d.diff} emptyNote={<EmptyState compact title={tx('没有可看的 diff')} body={(d.unavailable_code && UNAVAILABLE[d.unavailable_code] ? tx(UNAVAILABLE[d.unavailable_code]!) : undefined) ?? d.unavailable_reason ?? tx('这次读取没有返回 diff。')} />} />
           </>
         )}
       </ReadFrame>
       {snapshot.data?.id === id && snapshot.data.data ? (
-        <Section title="冻结记录"><Raw value={snapshot.data.data.input} label="完整冻结输入" /></Section>
+        <Section title={tx('冻结记录')}><Raw value={snapshot.data.data.input} label={tx('完整冻结输入')} /></Section>
       ) : null}
     </Page>
   );
@@ -55,9 +56,9 @@ export function FrozenFilePage({ id, side, path, line, end }: { id: string; side
     document.getElementById(`F${line}`)?.scrollIntoView({ block: 'center' });
   }, [read.data, line]);
   return (
-    <Page kicker={`冻结文件 · ${side === 'candidate' ? '候选' : '基线'} · 快照 ${shortId(id)}`} title={<code className="title-path">{path}</code>}>
-      <ReadFrame read={read} what="冻结文件">
-        {(f) => f.text === null ? <EmptyState compact title="二进制文件" body="冻结的是二进制内容，不显示。" /> : (
+    <Page kicker={tx('冻结文件 · {0} · 快照 {1}', side === 'candidate' ? tx('候选') : tx('基线'), shortId(id))} title={<code className="title-path">{path}</code>}>
+      <ReadFrame read={read} what={tx('冻结文件')}>
+        {(f) => f.text === null ? <EmptyState compact title={tx('二进制文件')} body={tx('冻结的是二进制内容，不显示。')} /> : (
           <div className="diff-file">
             <div className="diff-body">
               <table className="diff-table">
@@ -118,9 +119,9 @@ export function LogPage({ id, title, locking }: { id: string; title: string; loc
     ? { offset: all[0]!.offset, next_offset: last!.next_offset, byte_count: last!.byte_count, sha256: last!.sha256, text: joinLogPages(all), stream: all[0]!.stream }
     : null;
   return (
-    <Page kicker={`日志 · ${shortId(id, 12)}`} title={title}>
+    <Page kicker={tx('日志 · {0}', shortId(id, 12))} title={title}>
       {problem ? <p className="stale-note">{problem}</p> : null}
-      <ReadFrame read={first} what="日志">
+      <ReadFrame read={first} what={tx('日志')}>
         {() => (
           <LogBlock title={title} stream={joined?.stream ?? 'stdout'} page={joined}
             readAt={first.readAt} onMore={() => void more()} moreDisabled={held || loadingMore}
