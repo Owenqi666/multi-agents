@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0021",
   "goal": "为 Codex 审核会话建立可验证的上下文隔离，阻止用户记忆、指令、skills/MCP 和其他审核证据污染冻结输入，同时保留既有登录、审核、取消和证据语义。",
-  "baseline_commit": "c8322b857e38355ae7704cd0dde92ee059f2de55",
+  "baseline_commit": "00f7412656ba9d8ca1bf8b3f84bb24f630e81b5e",
   "write_scope": [
     "src/multi_agent/adapters/runtime.py",
     "src/multi_agent/adapters/codex_isolation.py",

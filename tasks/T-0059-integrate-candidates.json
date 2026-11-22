@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0059",
   "goal": "把同仓已验证的任务候选按依赖顺序集成为一个固定的 Git 候选，提供可追溯的成员与冲突结果，作为最终测试和审核的直接输入。",
-  "baseline_commit": "22c03bf82f50ced18c0c0cdf16ace24f7d27ff63",
+  "baseline_commit": "5e35094b01b7d3765838fbca71bf78d20ddcae42",
   "write_scope": [
     "src/multi_agent/cli/main.py",
     "src/multi_agent/cli/task_cli.py",

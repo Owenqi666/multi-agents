@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0031",
   "goal": "单执行者在拥有的工作树中准备实现并独立校验实际交付路径，将通过范围检查的完整文件内容固定为候选提交，保持用户分支和工作区不变。",
-  "baseline_commit": "1b286695c0b98ce0ef3385b233f31399d95fba52",
+  "baseline_commit": "438561c4913e31cb0dd7a12813df19965139bc6c",
   "write_scope": [
     "src/multi_agent/core/workspaces.py",
     "src/multi_agent/cli/workspaces.py",

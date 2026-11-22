@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0074",
   "goal": "用户可以真正只读地查看归档库；同时使用网页和终端时，读取不会让正常作业误失败，用户能读懂业务拒绝并把已中断的咨询对账。",
-  "baseline_commit": "7aa53ae59bf83ddcdcdbd31c341b7d149e05feed",
+  "baseline_commit": "d432872a074891a826651b214704b628b1e72e3d",
   "write_scope": [
     "frontend/src/**",
     "frontend/e2e/**",

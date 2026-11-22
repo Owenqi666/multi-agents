@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0067",
   "goal": "本机 HTTP 客户端与既有 CLI 能在同一数据库上交替完成需求咨询、确认目标、项目规划和逐阶段直接或委派开发，并以实际候选为单位完成测试、审核和有资格时的显式接受。",
-  "baseline_commit": "601c907910fdff4a33bfc768b6671a8f0ec6d6ba",
+  "baseline_commit": "22d526a62eb725706bc85bed4f4e0d5952496f45",
   "write_scope": [
     "src/multi_agent/web/**",
     "tests/unit/test_web_*.py",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0063",
   "goal": "PM 明确确认目标后，可从本地 CLI 调用选定的顶层规划模型，在项目基线上生成可追溯的多阶段项目计划并在重启后读回。",
-  "baseline_commit": "b9dff6509e287307a6cf7fb50a4a3ad950ca0af5",
+  "baseline_commit": "0c3cdca8d24993a0f5bcc248a717ab4d144bcd55",
   "write_scope": [
     "src/multi_agent/cli/main.py",
     "src/multi_agent/cli/project*.py",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0004",
   "goal": "定义 Codex 和 Claude 两个适配器共用的异步接口和事件产出约定，并用一个按脚本产出事件的适配器证明这个接口能被实现和驱动。不调用真实 CLI。",
-  "baseline_commit": "22e8e3ddc09833306cc2aefc0ec92abd5aac542d",
+  "baseline_commit": "70cb7167d4c4019e13b20b21958d3b6c6b69aa20",
   "write_scope": [
     "src/multi_agent/adapters/**",
     "tests/unit/test_adapters_*.py"

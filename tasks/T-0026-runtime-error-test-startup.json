@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0026",
   "goal": "消除 runtime 错误分类回归对假 CLI 在 0.4 秒内启动的依赖，证明慢启动后仍实际到达目标错误分支，并保留真实超时和进程退出覆盖。",
-  "baseline_commit": "4328ed51314aef88094568f2c9fe4aa5fdaec780",
+  "baseline_commit": "dc47dd49d9332fb84ac6c1a3078ef4db313ef166",
   "write_scope": [
     "tests/unit/test_runtime.py",
     "tests/unit/runtime_fakes/fake_cli.py",

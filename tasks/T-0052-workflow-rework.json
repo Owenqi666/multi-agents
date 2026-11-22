@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0052",
   "goal": "补齐需求规划、实现与候选展示的 CLI，接通同任务至多一次原范围返工，并以真实模块 CLI 验证修订后重新测试和审核的完整闭环。",
-  "baseline_commit": "e694d99a793cb079ac9b7fc1dc9aaef1bc78c64b",
+  "baseline_commit": "4d87781915dc77c5b2c2e502624591756f56faea",
   "write_scope": [
     "src/multi_agent/core/task_rework.py",
     "src/multi_agent/core/task_events.py",

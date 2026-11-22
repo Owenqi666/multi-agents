@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0058",
   "goal": "在现有 CLI 中让同仓的两个独立、已通过规划的任务在各自工作区同时执行，分别产出可供后续集成的已验证候选。",
-  "baseline_commit": "adadbdef8af5eea893148dbbad2e9d4465221d3b",
+  "baseline_commit": "2b5d0c4c8e70932206777397bcdcf0b5360e8a32",
   "write_scope": [
     "AGENTS.md", "PROJECT_PLAN.md", "docs/phase-three-development.md",
     "tasks/T-0058-parallel-task-execution.json",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0046",
   "goal": "保存固定候选与当前受管实现尝试及其执行证据的不可变关联，为独立测试提供可追溯输入，保留旧数据和迟到历史。",
-  "baseline_commit": "a2f9174f9b974d233ee9fcb9604769a6a5fe3d21",
+  "baseline_commit": "85265964e2b0bc2970e0a835724323d42be06e26",
   "write_scope": [
     "src/multi_agent/core/task_events.py",
     "src/multi_agent/core/task_state.py",

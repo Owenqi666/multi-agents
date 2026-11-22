@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0032",
   "goal": "为单执行者提供绑定宿主工作树的独立写模式适配器，复用已验证的传输/证据/清理，保持默认审核只读入口不变，并用离线假CLI验证精确权限请求和失败封闭。",
-  "baseline_commit": "0d9689d3d08b10a28a426f5150f6d677373f1467",
+  "baseline_commit": "7a0b2633a0dbc36a7097439d2f8f8e6d80a7fa78",
   "write_scope": [
     "src/multi_agent/adapters/implementation_runtime.py",
     "src/multi_agent/adapters/runtime.py",

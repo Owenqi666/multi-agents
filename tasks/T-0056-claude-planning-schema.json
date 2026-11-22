@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0056",
   "goal": "让真实 Claude 规划草拟能提交可由仓库原规则校验的任务卡，并在修复提交上用原打印预览样例验收自动返工、完整复测和复审。",
-  "baseline_commit": "2de19ed49eff2c30eaaa6937c9571c438462acf4",
+  "baseline_commit": "f803726fc0f65b99041ef49d62cf4c871526c0aa",
   "write_scope": [
     "src/multi_agent/adapters/runtime.py",
     "src/multi_agent/adapters/claude_planning_schema.py",

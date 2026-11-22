@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0078",
   "goal": "修复 bf258a7 独立复核的一个 P1 和四个 P2，使原收尾候选可重新独立验收。",
-  "baseline_commit": "bf258a7dbf628aef0ef83d034d347920a9a4f847",
+  "baseline_commit": "813e779e615c457b89234b03fd5aee18edb75783",
   "write_scope": [
     "src/multi_agent/adapters/provider_limits.py",
     "src/multi_agent/adapters/provider_watchdog.py",

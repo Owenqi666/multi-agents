@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0054",
   "goal": "修复测试运行时误拒合法异步通知，使预检、执行和清理保持协议兼容；完整检查后直接复验最后零模型权限case并保留历次失败。",
-  "baseline_commit": "bd50c78f58c2bcb9a2dbdad23e61aa58d5c0f81b",
+  "baseline_commit": "c4198d6811ae0514cb77c616bbb1c4ecf211434c",
   "write_scope": [
     "src/multi_agent/adapters/test_runtime.py",
     "src/multi_agent/adapters/test_probe.py",

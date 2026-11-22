@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0041",
   "goal": "将一次新冻结规划尝试连接到实际预检、模型事件及T40证据封存，在取消和故障下保留真实结果并完成资源结算。",
-  "baseline_commit": "644d70ccdcbaf30bea043113cd7500976eed70fe",
+  "baseline_commit": "0192a3bc855659706ad35fa66102b08922bfb696",
   "write_scope": [
     "src/multi_agent/cli/planning_runner.py",
     "tests/unit/test_planning_runner.py",

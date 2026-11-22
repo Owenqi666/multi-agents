@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0019",
   "goal": "对阶段 1 当前候选执行真实 CLI 验收，保留可复核证据并报告通过项、失败项和未完成项，供原审核窗口独立复核。",
-  "baseline_commit": "87045fc6c138566d86d11b46e3b2744caf97b9b8",
+  "baseline_commit": "6b217679c568443c3a31374e593bcb7f637e9088",
   "write_scope": [
     "docs/deliveries/T-0019.md",
     "docs/acceptance/phase-one-live.md",

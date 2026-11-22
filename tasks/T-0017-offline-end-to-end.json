@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0017",
   "goal": "用真实CLI入口与假可执行文件贯通冻结、运行时传输和持久化，并统一审核会话的实际工作目录路径。",
-  "baseline_commit": "092ca35191024738ddd50389a1dd0996cf1878e5",
+  "baseline_commit": "4caeb02fdb5ce1d0dfeb8871e2a2cb4a2cb736ec",
   "write_scope": [
     "tests/unit/test_review_end_to_end.py",
     "docs/deliveries/T-0017.md",

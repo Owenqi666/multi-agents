@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0016",
   "goal": "先交付可实际使用的freeze/snapshot CLI，校验用户输入并持久化冻结输入。",
-  "baseline_commit": "f38a32c0ad3d009a1538944ee535c76e50f93075",
+  "baseline_commit": "7d7d5946f8c68e568467bd64d16271ab7cd59c08",
   "write_scope": [
     "src/multi_agent/__main__.py",
     "src/multi_agent/cli/main.py",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0042",
   "goal": "持久化managed实现尝试的完整工作区身份、冻结调用策略与实际执行事件，并用原子准备和证据门禁防止旧路径或旧结果取得交付资格。",
-  "baseline_commit": "b624e8e8d5ee73d6eaba141c564a488de68b56bc",
+  "baseline_commit": "9b46587c4b3f89fde123b6bf691c3e8e8133ba90",
   "write_scope": [
     "src/multi_agent/core/task_execution.py",
     "src/multi_agent/core/task_events.py",

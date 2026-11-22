@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0030",
   "goal": "单执行者任务的实现尝试与冻结输入可持久化、恢复和审计，只有当前尝试能推进状态，重试前必须完成进程与工作区核对。",
-  "baseline_commit": "da710d5edf7df101cd0e8b6ab10ff2642d072589",
+  "baseline_commit": "b3e413a3e3ad858b572543baac6657824adb6d0c",
   "write_scope": [
     "src/multi_agent/core/task_state.py",
     "src/multi_agent/core/task_events.py",

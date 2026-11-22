@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0070",
   "goal": "使用者在本机网页上一眼看出哪个模型在工作、工作怎样在模型之间交接，并能从提出目标一路操作到接受，每一步的状态、改动和日志都按真实记录显示。",
-  "baseline_commit": "2417007646b03301b65b7a38f1af0b1d13ff8b4f",
+  "baseline_commit": "c2c027ff3fbfb13817ac8698e5722b3ec8eb4e3b",
   "write_scope": [
     "frontend/**",
     "tasks/T-0070-web-pages.json"

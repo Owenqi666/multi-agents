@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0022",
   "goal": "在测试同步与Codex隔离修复独立提交后，补跑受影响的阶段1真实验收，并将可复核证据交原窗口审核。",
-  "baseline_commit": "adbf4928b057769bc62b7b0a51c5a248e0e236b7",
+  "baseline_commit": "b6d308b526ea9c806c69d13edee1240dc798249d",
   "write_scope": [
     "docs/acceptance/phase-one-live-recheck.md",
     "docs/deliveries/T-0022.md",

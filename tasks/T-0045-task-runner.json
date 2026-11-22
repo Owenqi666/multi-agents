@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0045",
   "goal": "把已绑定规划任务的一次新实现尝试连接到真实公共运行时、合作取消与一次证据封存，在故障后仍保存实际停止和最终工作区事实，安全返回实现结果或范围交回。",
-  "baseline_commit": "473bcce4305807fc909f4927b226954c27e3e737",
+  "baseline_commit": "efc72467bf157933cfb7c32a5173a28ba5b5a5e0",
   "write_scope": [
     "src/multi_agent/cli/task_runner.py",
     "tests/unit/test_task_runner.py",

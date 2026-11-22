@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0071",
   "goal": "从网页完成 T-0069/T-0070 合并审核指出的恢复和交付流程，并能在页面正确识别所派模型、作业所属阶段、返工前后的证据。",
-  "baseline_commit": "9daf08b16adf5c5e134ae521f887a670f8a7099d",
+  "baseline_commit": "222c44c5826393077c9779fe6be387b9a5164433",
   "write_scope": [
     "frontend/src/**",
     "frontend/e2e/**",

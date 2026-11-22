@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0040",
   "goal": "将规划执行的实际资源、日志及终态封存为可核验证据，并在核验精确来源后原子绑定任务。",
-  "baseline_commit": "16a063e73154577541997c83379b240d52299217",
+  "baseline_commit": "66b618bfc8881a89ab723323006973a1994ec104",
   "write_scope": [
     "src/multi_agent/cli/planning_evidence.py",
     "src/multi_agent/store/planning_store.py",

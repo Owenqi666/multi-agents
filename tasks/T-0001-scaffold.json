@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0001",
   "goal": "建立 Python 项目骨架，使 scripts/verify.sh 的五个步骤在空实现上全部通过。",
-  "baseline_commit": "029e6b2bb0b3ab73da2c9a3663b769367d673b34",
+  "baseline_commit": "99f898b190e219dbe0fe70117582a72acc2a4a03",
   "write_scope": [
     "pyproject.toml",
     "uv.lock",

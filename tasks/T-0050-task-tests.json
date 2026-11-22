@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0050",
   "goal": "让用户从已核验的固定候选，一次运行冻结且明确声明的测试套件，在独立检出中顺序执行 build/test，并查看可追溯的成功、失败、退出报告和日志。",
-  "baseline_commit": "eb1dd4590e2270f101afe699d128673397a904f7",
+  "baseline_commit": "e0911e0214dd571ff0772e88d66f2bd9c05f6a43",
   "write_scope": [
     "src/multi_agent/core/task_test_execution.py",
     "src/multi_agent/core/task_test_events.py",

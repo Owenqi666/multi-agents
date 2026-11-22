@@ -1,6 +1,6 @@
 # Multi-agent 本地开发工作台
 
-> **首版已完成 · 2026 年 11 月 22 日。** 最终通过验收的 `main` 产品提交为 `47122515fc0c6ea61982832b065788b326b60d48`。阶段 0–3、项目分阶段开发与可选委派、本机 HTTP 服务及网页工作台已交付。[首版验收回执](docs/acceptance/first-release.md) · [安装与启动](README.md#快速启动)
+> **首版已完成 · 2026 年 11 月 22 日。** 最终通过验收的 `main` 产品提交为 `47122515fc0c6ea61982832b065788b326b60d48`。阶段 0–3、项目分阶段开发与可选委派、本机 HTTP 服务及网页工作台已交付。[首版验收回执](docs/acceptance/first-release.md) · [安装与启动](README.md#quick-start)
 
 用户确认目标后，顶层规划模型给出阶段任务书。每个阶段可以由主执行者直接完成，也可以按用户选择拆成子卡委派。网页可查看候选差异、完整测试、审核与返工记录，接受仍由用户触发。[版本项目书](docs/requirements-and-delegation-update.md) · [项目流程](docs/project-workflow.md)
 

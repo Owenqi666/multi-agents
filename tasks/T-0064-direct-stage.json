@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0064",
   "goal": "用户在已生成的项目计划中领取一个阶段，默认由 Sol 制定该阶段的一份正式卡并完成整阶段实施，能在 CLI 查到阶段候选和既有测试、独立审核结果。",
-  "baseline_commit": "8455461860ea14f830cee30c63dc25ff2303d638",
+  "baseline_commit": "b665aaf66bfaf0b72701b6526bc076f931161f83",
   "write_scope": [
     "src/multi_agent/cli/project*.py",
     "src/multi_agent/core/project*.py",

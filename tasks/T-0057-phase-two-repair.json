@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0057",
   "goal": "按阶段 2 统一修复任务书消除当前 Codex 规划复核阻塞，并在原打印预览样例上验证一次自动返工、完整复测和复审，连续处理实机新证实的同链缺陷。",
-  "baseline_commit": "70a819962727eab728ccdfd3434f31e0dd45f60d",
+  "baseline_commit": "87c0619cf1621bc97e577846a4591feebcbe6434",
   "write_scope": [
     "src/multi_agent/adapters/runtime.py",
     "src/multi_agent/cli/planning_runner.py",

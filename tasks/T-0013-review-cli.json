@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0013",
   "goal": "连接冻结输入、持久化和审核适配器，交付可补跑且历史隔离的单审/双审 CLI。",
-  "baseline_commit": "38d680caaa03211b237b4c81fa637a0d3abd9209",
+  "baseline_commit": "9aead49c0256c476615a87d0ddfe7e9d494379e2",
   "write_scope": [
     "src/multi_agent/__main__.py",
     "src/multi_agent/cli/main.py",

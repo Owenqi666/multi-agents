@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0020",
   "goal": "消除 probe 取消清理回归测试对假 CLI 启动速度和日志轮询时序的依赖，同时保留对取消传播、强制终止与进程回收的有效检查。",
-  "baseline_commit": "c8322b857e38355ae7704cd0dde92ee059f2de55",
+  "baseline_commit": "00f7412656ba9d8ca1bf8b3f84bb24f630e81b5e",
   "write_scope": [
     "tests/unit/test_adapters_probe.py",
     "tests/unit/probe_fakes/fake_cli.py",

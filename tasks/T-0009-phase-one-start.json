@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0009",
   "goal": "根据用户授权进入阶段 1，保留历史并明确离线实施顺序。",
-  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "baseline_commit": "e89a1318ef3ee9e3a6a0ca09bb968e9acf74cf95",
   "write_scope": [
     "AGENTS.md",
     "PROJECT_PLAN.md",

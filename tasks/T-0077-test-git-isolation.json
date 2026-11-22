@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0077",
   "goal": "从 linked worktree 提交时，提交钩子运行的测试不再读写发起提交的那个仓库：它的 config、索引和分支保持原样。",
-  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "baseline_commit": "fac333fd9375afe9c405cfe619ed6c9504116f0f",
   "write_scope": [
     "tests/conftest.py",
     "tests/unit/test_git_environment.py",

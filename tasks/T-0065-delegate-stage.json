@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0065",
   "goal": "用户按阶段选择委派后，Sol 一次细化当前阶段，小阶段逐卡独立复核与执行，用户可查看各自候选、阻塞项和阶段整体的集成测试、审核证据。",
-  "baseline_commit": "41d482f0da5d69afb5f995acfa232ae989fb4c54",
+  "baseline_commit": "ac22d4378d14156dc6b2a11ef519a2a4d392f59b",
   "write_scope": [
     "src/multi_agent/cli/project*.py",
     "src/multi_agent/core/project*.py",

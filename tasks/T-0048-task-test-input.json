@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0048",
   "goal": "在真实已核验候选上冻结调用方明确声明的完整测试集合，保留命令名称、顺序、原规则来源及后续原子登记所需历史锚点。",
-  "baseline_commit": "cdf381c5306743a579bbd946a97f76ab42bef25a",
+  "baseline_commit": "85b55838d545cb4b930dab223d22b2eb90d97efc",
   "write_scope": [
     "src/multi_agent/core/task_test_input.py",
     "src/multi_agent/cli/task_test_inputs.py",

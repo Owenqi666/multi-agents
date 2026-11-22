@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0010",
   "goal": "从本地仓库两个提交或粘贴 diff 生成可复现的冻结审核输入。",
-  "baseline_commit": "6b0b0b84a8f0130d4dfcaee4e3c12c5fa0335497",
+  "baseline_commit": "e89a1318ef3ee9e3a6a0ca09bb968e9acf74cf95",
   "write_scope": [
     "src/multi_agent/core/snapshot.py",
     "src/multi_agent/cli/__init__.py",

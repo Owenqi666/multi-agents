@@ -1,21 +1,21 @@
-# Multi-agents · 本地多模型开发工作台
+# Multi-agents
 
-在 Mac 上用一个网页协调已登录的 Codex 和 Claude Code。从一个项目目标出发，你可以让两个模型先给意见，确认目标后再制定阶段计划。每次实施都有独立的 Git 工作树，交付时可以回到同一个候选提交，查看改了什么、跑过哪些测试，以及各个审核席位的意见。
+Multi-agents is a local macOS workbench for coordinating Codex and Claude Code through their existing CLI logins. Start with a project goal, let the models propose a plan, and decide how to split the work. When a change is ready, the workbench shows the Git diff, test results, and independent reviews for the exact commit you are accepting.
 
-**首版已完成。** 最终产品提交为 [`4712251`](https://github.com/Owenqi666/multi-agents/commit/47122515fc0c6ea61982832b065788b326b60d48)。[首版验收回执](docs/acceptance/first-release.md)
+The first release is complete. [Accepted code](https://github.com/Owenqi666/multi-agents/commit/12c10e995009bef5ea6a28ddc5705664d06b89f2) · [Acceptance report](docs/acceptance/first-release.md)
 
-## 一次开发怎样进行
+## How a project moves through the workbench
 
-1. **确认目标。** 从首页发起需求咨询，读完意见后由你确认目标。规划模型据此拆出阶段，给出阶段任务书。
-2. **选择实施方式。** 每个阶段可由一名主执行者直接完成，也可以进一步拆成输入、输出明确的子卡。独立任务可在不同 worktree 并行；仓库规则可指定哪些路径由哪个供应商实施。角色的模型与推理档位可配置。
-3. **查看候选与证据。** 工作台冻结候选提交，执行仓库登记的完整测试。可以选一个模型审核，也可以让两个模型分别审核同一冻结快照，再汇总意见。网页把意见定位到当时的差异，并保留各次尝试的测试和会话记录。
-4. **返工或接受。** 符合任务范围且归属明确的阻塞问题可以自动返工一次。新候选重新跑原完整测试并复审，最后由你显式接受。目标分支前移时需要重新验证。
+1. **Confirm the goal.** Ask the models for input on a requirement. Once you confirm the goal, the planner breaks it into stages and writes a brief for each one.
+2. **Choose who implements it.** One model can complete a whole stage, or you can delegate smaller tasks with clear inputs and outputs. Independent tasks can run in parallel Git worktrees. Repository rules can assign paths to a particular provider. You can select a model and reasoning level for each role.
+3. **Review a fixed commit.** The workbench runs the full set of tests registered for the candidate. Choose one reviewer or ask two models to review the same frozen snapshot independently. When both reports arrive, you can read the combined findings and follow each comment to the line it refers to.
+4. **Rework and accept.** A verified blocker that belongs to one task can trigger one automatic rework cycle. The revised commit goes through the original tests and reviewers again. You decide when to accept it. If the target branch moves, the candidate must be validated against the new baseline.
 
-已有两个提交或一段补丁时，也可以直接进入「审核」，单独获取意见。运行记录区分请求的模型、工作台的派发选择与供应商实际报告的模型、推理档位和用量；缺失的运行时证据显示为「未确认」。[网页操作说明](frontend/README.md)
+You can also start a standalone review from two commits or a pasted patch. For each attempt, the workbench distinguishes the settings you requested, the model it assigned, and the model, reasoning level, and usage the runtime actually reported. Missing runtime evidence is marked as unconfirmed. [Web interface guide](frontend/README.md)
 
-## 快速启动
+## Quick start
 
-准备 Git、Python 3.12 或更高版本、uv，以及带 Corepack 的 Node.js（建议 24.15 或更高的 24.x）。前端锁定 pnpm 10.34.9。运行真实模型任务前，请在本机安装并登录所选的 Codex CLI 或 Claude Code。
+You need Git, Python 3.12 or later, uv, and Node.js with Corepack. Node.js 24.15 or later in the 24.x series is recommended. The frontend pins pnpm 10.34.9. To run live model tasks, install and sign in to each provider CLI you intend to use.
 
 ```sh
 git clone https://github.com/Owenqi666/multi-agents.git
@@ -24,7 +24,7 @@ uv sync --frozen
 (cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm build)
 ```
 
-在工作台源码根目录启动服务。将 `REPO` 换成你要开发的 Git 仓库路径，该仓库应至少有一次提交。为这个项目选择独立的私有数据目录，放在目标仓库及其所有 worktree 之外，服务会创建缺失的目录。
+From the workbench source directory, set `REPO` to the Git repository you want to work on. It should contain at least one commit. Give that project its own private data directory outside the repository and all its worktrees. The service creates the directory if needed.
 
 ```sh
 REPO="/absolute/path/to/your-project"
@@ -32,22 +32,24 @@ DATA="$HOME/.local/share/multi-agents/my-project"
 uv run python -m multi_agent.web --repository "$REPO" --data-dir "$DATA" --port 0
 ```
 
-在浏览器打开终端打印的 `http://127.0.0.1:<端口>`。页面和 API 由同一服务提供。在真实项目中执行规划和实施前，将适用的角色、写入规则和命名测试提交到目标基线的 `.multi-agent/rules.yaml`。[规则格式与示例](docs/task-rules.md) · [服务参数与只读归档](docs/project-service.md)
+Open the `http://127.0.0.1:<port>` address printed in the terminal. The same service hosts the web interface and API. Before planning and implementing work in your own project, commit its role assignments, write rules, and named test commands to `.multi-agent/rules.yaml` on the target baseline. [Rule format and example](docs/task-rules.md) · [Service options and read-only archives](docs/project-service.md)
 
-**先离线体验。** 安装前端依赖后，在源码根目录执行下面的命令，用浏览器打开终端打印的地址。默认样例从规划走到接受，在地址后加 `?mock=rework` 可查看一次返工。这些页面回放仓内样例，模型调用次数为零。[四个录制场景](docs/web-api/samples/README.md)
+### Try it offline
+
+After installing the frontend dependencies, run the following from the workbench source directory and open the printed address. The default recording follows a project through acceptance. Append `?mock=rework` to see a change go through rework. Both replay saved responses without calling a model. [Recorded scenarios](docs/web-api/samples/README.md)
 
 ```sh
 (cd frontend && corepack pnpm mock)
 ```
 
-## 进一步使用
+## Documentation
 
-| 想做什么 | 入口 |
+The workbench runs locally for one user, with one Git repository per service instance. The web interface uses React, TypeScript, and Vite. The local service and CLI use Python. SQLite stores project state and the index of review evidence. The detailed guides below are in Chinese.
+
+| Task | Guide |
 | --- | --- |
-| 从需求咨询走到阶段规划与实施 | [项目流程](docs/project-workflow.md) |
-| 配置并行实施、依赖集成和一次返工 | [阶段 3 工作流与 CLI 示例](docs/phase-three-development.md) |
-| 通过终端冻结差异并发起独立审核 | [审核 CLI](docs/review-cli.md) |
-| 接入本机 HTTP、读取作业或归档 | [服务接口](docs/project-service.md) · [工作区 API](docs/workspace-api.md) |
-| 开发或验证工作台本身 | [仓库约定](AGENTS.md) · [前端检查](frontend/README.md#检查) · [项目书](PROJECT_PLAN.md) |
-
-本版本面向本机单用户、每个服务绑定一个 Git 仓库。网页使用 React、TypeScript 和 Vite，本地服务与 CLI 使用 Python，项目状态和审核证据索引保存在 SQLite。
+| Turn a requirement into a stage plan and implementation tasks | [Project workflow](docs/project-workflow.md) |
+| Run tasks in parallel, integrate dependencies, and handle rework | [Integration workflow and CLI examples](docs/phase-three-development.md) |
+| Freeze a diff and request an independent review from the terminal | [Review CLI](docs/review-cli.md) |
+| Read job results or open an archive through the local API | [HTTP service](docs/project-service.md) · [Workspace API](docs/workspace-api.md) |
+| Develop and test the workbench | [Contributor instructions](AGENTS.md) · [Frontend checks](frontend/README.md#%E6%A3%80%E6%9F%A5) · [Project plan](PROJECT_PLAN.md) |

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0079",
   "goal": "把已验收的本机工作台首版、运行说明与最终回执发布到 Owenqi666/multi-agents 的 main，保留两边现有历史。",
-  "baseline_commit": "47122515fc0c6ea61982832b065788b326b60d48",
+  "baseline_commit": "12c10e995009bef5ea6a28ddc5705664d06b89f2",
   "write_scope": [
     "AGENTS.md",
     "PROJECT_PLAN.md",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0061",
   "goal": "对集成初审中可明确归属且符合原卡范围的阻塞意见，沿真实集成候选执行一次有界返工，再对新候选重跑同一完整测试并以原模式复审。",
-  "baseline_commit": "4e305362dbd1ff2c7e2e365c84ed783d0d59b79e",
+  "baseline_commit": "186eb12b60f110dc536e7d987ced9b0b3e2e52aa",
   "write_scope": [
     "src/multi_agent/cli/integration*.py",
     "src/multi_agent/core/integration*.py",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0037",
   "goal": "给每次运行提供明确的进程、隔离资源与已关闭日志收据，规划不能把成功终态或父进程退出冒充完整清理。",
-  "baseline_commit": "6c6be6e7ef644ecdc6d8f481746b2cfa0c8bbe53",
+  "baseline_commit": "ea194cb027b80fd66a6c6e368e25fa74e122a7e5",
   "write_scope": [
     "src/multi_agent/adapters/ownership.py",
     "src/multi_agent/adapters/runtime.py",

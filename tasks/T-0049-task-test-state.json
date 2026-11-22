@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0049",
   "goal": "把冻结候选的独立测试阶段、尝试和命令序列持久化为可回放状态，原子预留且不把逻辑结束、退出或日志混成测试通过证据。",
-  "baseline_commit": "84dbd02146e39a12c40d4513543e805d9d6c9bdd",
+  "baseline_commit": "342bdf8688eea7629f33bcf164bf3df2606a26fa",
   "write_scope": [
     "src/multi_agent/core/task_test_events.py",
     "src/multi_agent/core/task_test_state.py",

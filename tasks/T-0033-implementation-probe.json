@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0033",
   "goal": "提供绑定当前产品源码与明确临时目录的可审核写权限探测计划和显式执行工具，分别记录原生Codex权限、Codex模型正向写入与Claude文件工具尝试，自动测试只使用假运行时。",
-  "baseline_commit": "10b2f8084823c19aa95bdce7565608ebf31f4696",
+  "baseline_commit": "86258dc71caa8338f46eb6aeadceb7c02aa0a67e",
   "write_scope": [
     "src/multi_agent/adapters/implementation_probe.py",
     "src/multi_agent/adapters/implementation_probe_cases.py",

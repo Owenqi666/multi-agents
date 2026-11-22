@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0034",
   "goal": "持久化单卡Claude起草与GPT复核的冻结来源，只有当前且完整的规划证据能原子绑定可派发任务。",
-  "baseline_commit": "c8f919b188cdf4c8157325d9b48381936b696d0a",
+  "baseline_commit": "9dd3014cbf81220d0ddfb1b9b1904eaa4c257e85",
   "write_scope": [
     "src/multi_agent/core/planning.py",
     "src/multi_agent/core/planning_events.py",

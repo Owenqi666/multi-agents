@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0051",
   "goal": "让同一固定候选的实际测试证据进入单审或双审，保留补跑和交叉确认，并展示与当前候选相符的审核结论。",
-  "baseline_commit": "864450090c1c7c58839774b5b993b0e2b9dbe0d9",
+  "baseline_commit": "a32b161c38920b4bce0987d1e9f6bfa0418394f7",
   "write_scope": [
     "src/multi_agent/core/review_input.py",
     "src/multi_agent/core/reports.py",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0024",
   "goal": "由独立新窗口完成用户授权的模型质量裁定，覆盖冻结原生报告并在插件结果封存后增补，生成可追溯的模型评审指标。",
-  "baseline_commit": "4328ed51314aef88094568f2c9fe4aa5fdaec780",
+  "baseline_commit": "dc47dd49d9332fb84ac6c1a3078ef4db313ef166",
   "write_scope": [
     "docs/acceptance/phase-one-quality-review.md",
     "docs/deliveries/T-0024.md"

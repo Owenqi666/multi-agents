@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0002",
   "goal": "用不做 I/O 的纯函数实现审核轮次的最小数据模型和状态机，并用合成事件回放守住四个基线行为：两个席位并行、同一快照补跑、旧尝试迟到、取消。",
-  "baseline_commit": "aeee4629eb2ee2af36fd028cd85c9175b6f4b269",
+  "baseline_commit": "41a6a5b2b11e3d98cb17bfc3a6967160ccfaf75e",
   "write_scope": [
     "src/multi_agent/core/**",
     "tests/unit/test_core_*.py",

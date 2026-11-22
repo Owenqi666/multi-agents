@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0036",
   "goal": "把规划模型将读取的上下文、执行配置和启动占位绑定到持久化尝试，重启不能悄悄换输入或重发未确认停止的调用。",
-  "baseline_commit": "a85a4f00e3bd00ec7bfa2d609a6a0462cf139436",
+  "baseline_commit": "27ba7002d9e5a1f7862b6f56170ba5b40a13963e",
   "write_scope": [
     "src/multi_agent/core/planning_execution.py",
     "src/multi_agent/core/planning_events.py",

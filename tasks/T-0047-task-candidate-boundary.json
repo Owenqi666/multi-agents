@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0047",
   "goal": "从合格实现归档实际冻结并持久绑定一个Git候选，使后续消费者每次都能重新核验同一提交和原执行证据。",
-  "baseline_commit": "e24619bccc2c2a0131f83ff8dc6adaaff7919b2f",
+  "baseline_commit": "380eedd4f8e5bf08d14726e1f18269d40a66d89e",
   "write_scope": [
     "src/multi_agent/cli/task_candidates.py",
     "tests/unit/test_task_candidates.py",

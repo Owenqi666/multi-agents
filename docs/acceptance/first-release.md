@@ -1,6 +1,8 @@
 # 首版验收回执
 
-2026 年 11 月 22 日，主窗口核对阶段验收、网页工作台收尾复核及 T-0077 合并回执，确认本机单用户首版交付。最终产品提交是 `47122515fc0c6ea61982832b065788b326b60d48`，验收与合并后的 Git 树均为 `e4e93fd943d1b0e2d04290209fe132cfe1f707de`。发布提交在此产品提交之上补充 README、任务卡和结项文档。[产品提交](https://github.com/Owenqi666/multi-agents/commit/47122515fc0c6ea61982832b065788b326b60d48) · [发布历史](https://github.com/Owenqi666/multi-agents/commits/main/)
+2026 年 11 月 22 日，主窗口核对阶段验收、网页工作台收尾复核及 T-0077 合并回执，确认本机单用户首版交付。最终产品提交是 `47122515fc0c6ea61982832b065788b326b60d48`，验收与合并后的 Git 树均为 `e4e93fd943d1b0e2d04290209fe132cfe1f707de`。发布提交在此产品提交之上补充 README、任务卡和结项文档。[产品提交](https://github.com/Owenqi666/multi-agents/commit/12c10e995009bef5ea6a28ddc5705664d06b89f2) · [发布历史](https://github.com/Owenqi666/multi-agents/commits/main/)
+
+公开发布后，历史提交的 Git 作者与提交者统一关联到 Owenqi666。下表中的短编号保留实测当时的值，链接指向文件树相同的公开提交。工作台收尾 `e7881b2` 对应 `e17532a`，最终产品 `4712251` 对应 `12c10e9`。原提交及完整编号对照保存在本机备份中。
 
 ## 已验收的用户流程
 
@@ -15,8 +17,8 @@
 
 | 提交 | 已记录的结果 |
 | --- | --- |
-| [`e7881b2` · 工作台收尾](https://github.com/Owenqi666/multi-agents/commit/e7881b230cfc56cc02d1339f47358d28d3a950ac) | 原提交钩子的 lint、格式、mypy、3,522 项单元测试及 77 项回放通过。前端类型检查、ESLint、58 项前端测试及 17 条 Chromium 端到端测试通过，浏览器测试零跳过、零重试。[T-0078 任务卡](../../tasks/T-0078-workbench-independent-review-fixes.json) |
-| [`4712251` · 最终产品](https://github.com/Owenqi666/multi-agents/commit/47122515fc0c6ea61982832b065788b326b60d48) | 在临时克隆的 linked worktree 中通过真实提交钩子完成 lint、格式、mypy、3,523 项单元测试和 77 项回放。本次增量仅含任务卡、pytest 环境隔离和对应回归，网页测试结果沿用上一行的提交。[T-0077 回归](../../tests/unit/test_git_environment.py) · [两次提交的差异](https://github.com/Owenqi666/multi-agents/compare/e7881b230cfc56cc02d1339f47358d28d3a950ac...47122515fc0c6ea61982832b065788b326b60d48) |
+| [`e7881b2` · 工作台收尾](https://github.com/Owenqi666/multi-agents/commit/e17532ad087a690cb6edb9842be4f05e28c8a174) | 原提交钩子的 lint、格式、mypy、3,522 项单元测试及 77 项回放通过。前端类型检查、ESLint、58 项前端测试及 17 条 Chromium 端到端测试通过，浏览器测试零跳过、零重试。[T-0078 任务卡](../../tasks/T-0078-workbench-independent-review-fixes.json) |
+| [`4712251` · 最终产品](https://github.com/Owenqi666/multi-agents/commit/12c10e995009bef5ea6a28ddc5705664d06b89f2) | 在临时克隆的 linked worktree 中通过真实提交钩子完成 lint、格式、mypy、3,523 项单元测试和 77 项回放。本次增量仅含任务卡、pytest 环境隔离和对应回归，网页测试结果沿用上一行的提交。[T-0077 回归](../../tests/unit/test_git_environment.py) · [两次提交的差异](https://github.com/Owenqi666/multi-agents/compare/e17532ad087a690cb6edb9842be4f05e28c8a174...12c10e995009bef5ea6a28ddc5705664d06b89f2) |
 
 ### 收尾问题的独立复核
 

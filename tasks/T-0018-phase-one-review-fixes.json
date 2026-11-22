@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0018",
   "goal": "修复阶段 1 审核确认的三个 P2：取消竞态丢失已完成报告、Codex 未知 phase 的合法报告被拒绝、Claude 未登录被归为未知错误；补齐离线回归并完整验证提交。",
-  "baseline_commit": "8597538dc6fbb91a23aa2eb511aa366032716c35",
+  "baseline_commit": "b403d0d7fd6d46dbdd52211e3ce97befe6fde8bb",
   "write_scope": [
     "src/multi_agent/cli/runner.py",
     "src/multi_agent/adapters/runtime.py",

@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0035",
   "goal": "在规划模型产物进入来源门禁前拒绝运行时原始JSON的重复字段和坏编码，避免普通解码悄悄覆盖证据。",
-  "baseline_commit": "e2ce295f994a47e66c03938734f198fa425abb5f",
+  "baseline_commit": "736e41ce0558154d03ad981013d34a8c6e2b2c41",
   "write_scope": [
     "src/multi_agent/adapters/runtime_decode.py",
     "src/multi_agent/adapters/probe/process.py",

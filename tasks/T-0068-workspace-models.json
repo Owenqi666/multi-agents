@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0068",
   "goal": "本地 HTTP 客户端可读取绑定仓库的工作区、按需刷新指定模型供应商环境，并取得具备来源说明的角色候选、推理档位和实施规则，供后续客户端消费。",
-  "baseline_commit": "92aa27051cb91c5032abf0414d5f29cc36a45150",
+  "baseline_commit": "2080ebdad37a6072841e8abe903fbc8899562956",
   "write_scope": [
     "src/multi_agent/web/**",
     "tests/unit/test_web_workspace*.py",

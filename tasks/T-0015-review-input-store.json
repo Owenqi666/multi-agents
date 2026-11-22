@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0015",
   "goal": "持久化冻结快照、审核元数据和唯一交叉确认关联，复用既有事务状态机。",
-  "baseline_commit": "3615af2725d0afa00de4cb1360306a1601bbf34d",
+  "baseline_commit": "7f00b62fcac5b447fd3d904a20b529db5af1667b",
   "write_scope": [
     "src/multi_agent/store/database.py",
     "src/multi_agent/store/migrations/0002_inputs.sql",

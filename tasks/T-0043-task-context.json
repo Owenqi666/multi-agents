@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0043",
   "goal": "为经实际规划证据核验的任务建立持锁、不可恢复重放的managed实现准备边界，冻结精确输入并保留所有创建残留以阻止未知工作区被绕过。",
-  "baseline_commit": "753639b876304ecffa473b0de3150430098b4bad",
+  "baseline_commit": "2df83c44be5fcfd9f3d7555e0f771c2396e7f11f",
   "write_scope": [
     "src/multi_agent/cli/task_context.py",
     "src/multi_agent/cli/task_prompt.py",

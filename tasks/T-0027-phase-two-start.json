@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0027",
   "goal": "依据用户授权进入阶段2，形成与实际代码一致的依赖开发顺序和首张可实施任务卡，并向阶段2窗口交接持续逐卡开发。",
-  "baseline_commit": "f6729e501b7b1db789d3eefdef4c41d0b1646115",
+  "baseline_commit": "406150fe31538d43c2fabfc79c474650adf2a465",
   "write_scope": [
     "AGENTS.md",
     "PROJECT_PLAN.md",

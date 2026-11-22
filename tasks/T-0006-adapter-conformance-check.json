@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0006",
   "goal": "让 typecheck 能发现脚本适配器缺少接口方法，并让测试钉住“取不到的环境信息为空”。两处都不改变现有的运行时行为。",
-  "baseline_commit": "7d2a3d1c20f90889e7d6e75261bd2001236ddcd7",
+  "baseline_commit": "fec29a8344b0a7bf1453645dbaf0bb3195489261",
   "write_scope": [
     "src/multi_agent/adapters/scripted.py",
     "tests/unit/test_adapters_interface.py"

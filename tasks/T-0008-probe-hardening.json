@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0008",
   "goal": "按 T-0007 的审核结论和第一次实机运行的结果加固探测工具：进程退出后的等待有时限，脱敏覆盖实机里出现的标识，Claude 的会话不再被环境里的 API key 接管，Codex 的只读沙箱有不依赖模型说法的检查，测试能发现审核时漏掉的那些改坏。",
-  "baseline_commit": "3672ef84b93cf97179cbe18f93367857c36b190e",
+  "baseline_commit": "d5a84deb9a1a0966df5d5abffaf87eba1c02d4a8",
   "write_scope": [
     "src/multi_agent/adapters/probe/**",
     "tests/unit/test_adapters_probe*.py",

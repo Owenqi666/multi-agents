@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0029",
   "goal": "根据冻结规则与完整写入范围解析可用实现提供方和模型，明确拒绝冲突/保护路径，并记录覆盖及有序备选的选择理由。",
-  "baseline_commit": "a0c9d0705439b1ce044ed44212cbc92af524c102",
+  "baseline_commit": "117f13ad29762dbcd51b70040c0e2f50a3b0174c",
   "write_scope": [
     "src/multi_agent/core/path_patterns.py",
     "src/multi_agent/core/dispatch.py",

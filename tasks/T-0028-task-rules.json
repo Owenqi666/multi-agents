@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0028",
   "goal": "产品可以校验任务卡并从指定基线冻结项目规则，向后续派发和持久化提供不可变且可追溯的输入。",
-  "baseline_commit": "5b900581cbb7ceb891881e936b1f912c9a63aab3",
+  "baseline_commit": "35e1d214c59251eef2b3a5ce7aa34ca27d713967",
   "write_scope": [
     "src/multi_agent/core/tasks.py",
     "src/multi_agent/cli/task_inputs.py",

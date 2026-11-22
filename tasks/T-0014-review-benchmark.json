@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0014",
   "goal": "提供 8 个固定审核样本、留出集和可导入真实结果的评估基准。",
-  "baseline_commit": "092ca35191024738ddd50389a1dd0996cf1878e5",
+  "baseline_commit": "4caeb02fdb5ce1d0dfeb8871e2a2cb4a2cb736ec",
   "write_scope": [
     "src/multi_agent/cli/benchmark.py",
     "tests/fixtures/benchmark/**",

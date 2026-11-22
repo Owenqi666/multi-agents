@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0060",
   "goal": "在 T59 固定的集成候选上运行原项目的完整测试和所选单审/双审，提供可核验的最终结论及由用户显式触发的接受，并在目标分支变化后重新验证。",
-  "baseline_commit": "46bde671221f631ea17c0550c58b90c8a4ae98b2",
+  "baseline_commit": "e04a86a03507ef418ff74d8c5be62a462063480a",
   "write_scope": [
     "src/multi_agent/cli/integration*.py",
     "src/multi_agent/cli/main.py",

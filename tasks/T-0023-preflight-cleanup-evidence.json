@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0023",
   "goal": "保留环境预检的退出与清理未知证据，避免取消或预检失败把尚未确认停止的尝试错误结束并开放补跑。",
-  "baseline_commit": "c46c21353c5b9f29418b2e6252da9c48a53f1b64",
+  "baseline_commit": "358f607988849f0c65f5a2fff4ac0382d450fe1b",
   "write_scope": [
     "src/multi_agent/cli/runner.py",
     "src/multi_agent/adapters/runtime.py",

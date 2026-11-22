@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0055",
   "goal": "从正常审核执行入口自动完成一次符合准入的原范围返工、新候选完整复测和原配置复审，使调用方无需分别发起三个业务命令。",
-  "baseline_commit": "178e365a8959fa9617bc1f4bbe32a47f7352cdee",
+  "baseline_commit": "6d5c5f72cba686263ce89e6c21248caf873da8b3",
   "write_scope": [
     "src/multi_agent/cli/task_cli.py",
     "src/multi_agent/cli/task_review_cli.py",

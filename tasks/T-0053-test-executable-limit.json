@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0053",
   "goal": "修复测试探测器及运行时与产品入口的可执行文件大小上限不一致，并在保留原失败证据的前提下直接复验最后零模型权限case。",
-  "baseline_commit": "2b2b85d5691b5540956db96559402f5a75745423",
+  "baseline_commit": "72fa4033a5160eb327699d44e6b9650ecf9cadcb",
   "write_scope": [
     "src/multi_agent/adapters/test_probe.py",
     "src/multi_agent/adapters/test_runtime.py",

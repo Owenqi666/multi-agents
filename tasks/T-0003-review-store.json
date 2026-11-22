@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0003",
   "goal": "用 SQLite 持久化审核轮次，让“检查该尝试是否仍是当前尝试”和“写入状态”在同一个事务里完成，并让五个基线场景经过 store 回放的结果与直接调用 core 的结果一致。",
-  "baseline_commit": "22e8e3ddc09833306cc2aefc0ec92abd5aac542d",
+  "baseline_commit": "70cb7167d4c4019e13b20b21958d3b6c6b69aa20",
   "write_scope": [
     "src/multi_agent/store/**",
     "tests/unit/test_store_*.py",

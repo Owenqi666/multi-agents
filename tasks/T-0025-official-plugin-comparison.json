@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0025",
   "goal": "由阶段1窗口运行Claude Code加官方Codex插件的八样本对照，保留真实插件调用和比较差异，封存后交独立评审窗口补评。",
-  "baseline_commit": "2d77ab161157297a0a73461b4e64b4ca563a0b24",
+  "baseline_commit": "3dd6a8e4e1ceb756aab8c5155af0e27e1ac95960",
   "write_scope": [
     "docs/acceptance/phase-one-official-plugin.md",
     "docs/deliveries/T-0025.md"

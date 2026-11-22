@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0007",
   "goal": "提供一个探测工具：按固定步骤驱动本机的 Codex App Server 和 Claude 无头模式，把两边的原始事件流脱敏后录制成文件，用来核对阶段 1 审核会话的模型目录、档位、只读权限、终态和可观察到的实际模型。本卡只交付工具和离线测试；真实请求在用户本人运行工具时才发出。",
-  "baseline_commit": "9e79b33c1e1112306bc76e341aa08691e78b9428",
+  "baseline_commit": "a3976f2e29f44b0617791552868bec1ad9400afa",
   "write_scope": [
     "src/multi_agent/adapters/probe/**",
     "tests/unit/test_adapters_probe*.py",

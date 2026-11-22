@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0044",
   "goal": "将本次managed实现的真实运行结果、所有权收据、最终工作区扫描和严格输出解析绑定到独占执行manifest，拒绝旧运行、取消或不完整证据重新取得候选交付资格。",
-  "baseline_commit": "7ff2e5ad2f63da2c7caf384485773e2c8126eaba",
+  "baseline_commit": "bf80fd2ca85672a213d4d4e7c5569467803ceff7",
   "write_scope": [
     "src/multi_agent/cli/task_output.py",
     "src/multi_agent/cli/task_evidence.py",

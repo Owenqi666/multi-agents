@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0066",
   "goal": "PM 可以向一个或两个只读顾问完善原始需求，选择、编辑并确认结果，按历史版本查看或修订项目计划及其既有交付。",
-  "baseline_commit": "496983f6054e8c9b5e0572adb1b5c7bf6f5d5d48",
+  "baseline_commit": "fb39e5391dd275c533a7760bd9488476ddf51160",
   "write_scope": [
     "src/multi_agent/cli/project*.py",
     "src/multi_agent/cli/main.py",

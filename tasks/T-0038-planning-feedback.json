@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0038",
   "goal": "规划尝试可保存真实预检环境、明确拒绝不可用证据，并将返工反馈固定在启动前历史，旧上下文继续可核验。",
-  "baseline_commit": "6c6be6e7ef644ecdc6d8f481746b2cfa0c8bbe53",
+  "baseline_commit": "ea194cb027b80fd66a6c6e368e25fa74e122a7e5",
   "write_scope": [
     "src/multi_agent/core/planning_events.py",
     "src/multi_agent/core/transitions.py",

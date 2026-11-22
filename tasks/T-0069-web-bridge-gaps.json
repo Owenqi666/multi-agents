@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0069",
   "goal": "网页工作台能从本机服务的同源地址打开，并能安全地提交、找回和观察作业：一次只跑一个 CLI 作业，网页的读取不再让正在运行的作业失败，日志、返工增量 diff 和离线联调环境足够网页按约定开发和验收。",
-  "baseline_commit": "2417007646b03301b65b7a38f1af0b1d13ff8b4f",
+  "baseline_commit": "c2c027ff3fbfb13817ac8698e5722b3ec8eb4e3b",
   "write_scope": [
     "src/multi_agent/web/**",
     "tests/unit/test_web_*.py",

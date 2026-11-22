@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "T-0039",
   "goal": "同一运行实例的预检和模型调用可共用一个绝对截止时间，清理继续有界完成，取消与超时先后不会互相改写。",
-  "baseline_commit": "67288fc803f7a38c760ef58646007c7dac7422ee",
+  "baseline_commit": "2762c8821fc2434107d8de6de54c87003b09d60c",
   "write_scope": [
     "src/multi_agent/adapters/runtime.py",
     "src/multi_agent/adapters/implementation_runtime.py",
