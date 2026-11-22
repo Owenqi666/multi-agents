@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "id": "T-0079",
+  "goal": "把已验收的本机工作台首版、运行说明与最终回执发布到 Owenqi666/multi-agents 的 main，保留两边现有历史。",
+  "baseline_commit": "47122515fc0c6ea61982832b065788b326b60d48",
+  "write_scope": [
+    "AGENTS.md",
+    "PROJECT_PLAN.md",
+    "README.md",
+    "docs/acceptance/first-release.md",
+    "tasks/T-0079-first-release.json"
+  ],
+  "depends_on": [
+    "T-0077",
+    "T-0078"
+  ],
+  "interface_contracts": [],
+  "deliverables": [
+    "AGENTS.md 和 PROJECT_PLAN.md 的首版结项状态、产品提交和验收回执。",
+    "GitHub 首页 README、本机运行示例和仓内可阅读的最终验收回执。",
+    "通过 Owenqi666 发布的 main 和仓库简介。"
+  ],
+  "acceptance_criteria": [
+    "两份状态文档均标明首版已完成、已验收产品提交和仓库内回执。",
+    "README 的构建和启动命令匹配现有入口，区分离线体验和真实模型运行。",
+    "回执区分产品提交、浏览器检查所在提交以及实际验证范围。",
+    "远端 main 等于本地发布提交，包含产品提交与远端初始化提交；GitHub 可读回 README 与简介。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": []
+}
