@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "id": "T-0077",
+  "goal": "从 linked worktree 提交时，提交钩子运行的测试不再读写发起提交的那个仓库：它的 config、索引和分支保持原样。",
+  "baseline_commit": "797a31e3b09ef448e62acf6002b2d1b9ec8141b0",
+  "write_scope": [
+    "tests/conftest.py",
+    "tests/unit/test_git_environment.py",
+    "tasks/T-0077-test-git-isolation.json"
+  ],
+  "depends_on": [],
+  "interface_contracts": [
+    {
+      "name": "测试会话的 Git 环境",
+      "definition": "pytest 会话启动时从进程环境里移除所有 GIT_ 开头的变量，测试和它们启动的子进程都继承清理后的环境。需要这些变量的用例在自己的范围内显式设置。测试文件里已有的清理写法保持不动。"
+    }
+  ],
+  "deliverables": [
+    "tests/conftest.py：会话启动时清理 GIT_ 环境变量，覆盖 tests/unit 和 tests/replay。",
+    "tests/unit/test_git_environment.py：按 git 在 linked worktree 里导出 GIT_DIR 和 GIT_INDEX_FILE 的方式，对一个临时仓库重现这次事故的回归测试。",
+    "交付说明：列出改动前直接调用 git 且不清理环境的测试文件，以及在临时克隆的 linked worktree 里用真实提交钩子提交一次的结果。"
+  ],
+  "acceptance_criteria": [
+    "导出指向一个临时仓库 linked worktree 的 GIT_DIR 和 GIT_INDEX_FILE 后，运行 tests/unit/test_cli_inputs.py 里一条用到 cli_repo 的用例：用例通过，且该临时仓库的 .git/config 字节不变、仍不是 bare、worktree 的 HEAD 和状态不变。由 tests/unit/test_git_environment.py 判定。",
+    "去掉 tests/conftest.py 的清理后，上面这条回归测试失败。",
+    "在本仓库的临时克隆里建 linked worktree，经 scripts/hooks/pre-commit 完成一次非文档提交后，克隆的 core.bare 仍为 false，仓库级 config 里没有 Fixture 身份。",
+    "不修改 scripts/hooks/、scripts/verify.sh 和任何已有测试；diff 只包含 write_scope 内的路径。",
+    "完整的 scripts/verify.sh 通过。"
+  ],
+  "test_refs": [
+    "lint",
+    "format",
+    "typecheck",
+    "unit",
+    "replay"
+  ],
+  "open_questions": [
+    {
+      "question": "要不要另外在 scripts/hooks/pre-commit 里先清掉 GIT_DIR 和 GIT_INDEX_FILE 再运行检查？它能把 uv、ruff、mypy 这些步骤也一并隔离，但属于受保护文件，需要 Owen 同意。本卡不做这一项。",
+      "blocks_dispatch": false
+    }
+  ]
+}
