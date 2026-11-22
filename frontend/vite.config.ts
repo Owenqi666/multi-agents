@@ -8,7 +8,7 @@ import react from '@vitejs/plugin-react';
 const bridge = process.env.BRIDGE_URL;
 
 // Recorded bridge samples drive mock mode and the component tests. They live in the repo at
-// docs/web-api/samples (written by T-0069's recorder); SAMPLES_DIR can point elsewhere.
+// docs/web-api/samples (written by the offline HTTP recorder); SAMPLES_DIR can point elsewhere.
 const samples = resolve(import.meta.dirname, process.env.SAMPLES_DIR ?? '../docs/web-api/samples');
 
 export default defineConfig({

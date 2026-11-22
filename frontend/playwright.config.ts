@@ -1,6 +1,6 @@
 import { defineConfig } from '@playwright/test';
 
-// Browser end-to-end paths on T-0069's offline environment. Run from frontend/ after a build;
+// Browser end-to-end paths against the offline HTTP service. Run from frontend/ after a build;
 // `pnpm run e2e` does both. One worker: each test starts its own environment.
 export default defineConfig({
   testDir: 'e2e',

@@ -111,7 +111,6 @@ export function Specimen() {
           Multi-agent 本地工作台
         </span>
         <dl className="title-block">
-          <div><dt>图号</dt><dd>T-0070 / 样张</dd></div>
           <div><dt>日期</dt><dd>2026-11-19</dd></div>
           <div><dt>主题</dt><dd><ThemeSwitch onChange={onTheme} /></dd></div>
         </dl>

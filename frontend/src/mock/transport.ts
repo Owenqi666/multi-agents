@@ -57,7 +57,7 @@ export class MockTransport implements Transport {
     if (this.entries) return this.entries;
     this.loading ??= (async () => {
       const p = load<Entry[]>(indexes, this.scenario, 'index.json');
-      if (!p) throw new ApiError(404, 'not_found', `样例 ${this.scenario} 不存在。可选：${scenarios().join('、') || '（还没有样例，T-0069 合入后提供）'}`);
+      if (!p) throw new ApiError(404, 'not_found', `样例 ${this.scenario} 不存在。可选：${scenarios().join('、') || '（未找到离线样例）'}`);
       this.entries = (await p).filter((e) => e.seq <= this.at);
       return this.entries;
     })();

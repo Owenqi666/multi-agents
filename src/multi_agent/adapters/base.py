@@ -1,8 +1,8 @@
 """Async adapter contract and verified runtime mappings.
 
 Protocol snapshots: Codex 0.169.0 and Claude Code 2.1.325. Local recordings from
-2026-11-15 live under tests/fixtures/runtime/. Their precise scope and remaining
-unknowns are in .agents/skills/runtime-protocols/references/.
+2026-11-15 live under tests/fixtures/runtime/. The wire schemas and CLI help
+used to interpret those recordings are checked into protocol/.
 
 Codex uses initialize, account/read, model/list, thread/start, turn/start and
 turn/interrupt. The recorded sandbox rejected writes. turn/completed.turn.status

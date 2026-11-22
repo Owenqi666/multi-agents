@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Pre-commit gate: the single entry point for the verify skill, git hooks and CI.
+# Run the project's lint, format, type, unit, and replay checks.
 # Usage: scripts/verify.sh [--list] [step ...]   (no step = every step, in order)
 set -euo pipefail
 

@@ -8,3 +8,11 @@ dist/
 *.egg-info/
 .DS_Store
 probe-runs/
+
+# Local development-agent configuration and planning files
+/.agents/
+/.claude/
+/AGENTS.md
+/CLAUDE.md
+/PROJECT_PLAN.md
+/tasks/

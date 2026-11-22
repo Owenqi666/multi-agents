@@ -1,13 +1,27 @@
-# 离线 HTTP 样例
+# Recorded HTTP scenarios
 
-每个场景的 `index.json` 按请求次序列出序号、HTTP 方法、路径、原始查询字符串、请求 JSON、HTTP 状态码和响应文件名。没有查询字符串或请求体时，相应字段为 `null`。各响应体保存在同目录的 `NNN.json`。同一场景中各文件共享标识符、提交和时间的占位值。
+These four scenarios capture responses from a real local workbench service running against a temporary Git repository and SQLite database. Executable test substitutes supply the model responses. The frontend's offline demo replays the saved exchanges in the browser. [Run the demo](../../../frontend/README.md#run-the-recorded-demo)
 
-在仓库根目录重录全部场景。
+| Scenario | What to inspect |
+| --- | --- |
+| [accept](accept/index.json) | A direct implementation and a delegated integration. Acceptance uses the review round bound to the tested candidate. |
+| [rework](rework/index.json) | A reviewer reports a blocker, the implementation changes, and the revised candidate goes through testing and review. |
+| [dual-partial](dual-partial/index.json) | Two seats review the same snapshot. The failed seat retries while the successful report remains available. |
+| [cancel](cancel/index.json) | A job is cancelled and a separate job is interrupted by a service restart. The earlier result is still readable. |
+
+## File format
+
+In each scenario, `index.json` lists exchanges in order. An entry contains `seq`, `method`, `path`, `query`, `request_body`, `status` and `response_file`. A missing query or request body is JSON `null`. The query omits the leading question mark. Each numbered file, such as `001.json`, contains the corresponding response body.
+
+The recorder normalizes IDs, commits, digests, timestamps, process and file identities, temporary paths and ports consistently across a scenario. Log `byte_count` retains the observed byte length. Rerecord comparisons account for variable-length metadata in CLI receipts and protocol logs. Fixed test output, pagination and exit codes are compared directly.
+
+## Record locally
+
+From the workbench repository root with the Python dependencies installed, write a fresh scenario to a separate directory.
 
 ```sh
-uv run python tests/unit/web_support/record_samples.py
+uv run python tests/unit/web_support/record_samples.py \
+  --scenario rework --output /tmp/multi-agents-recordings
 ```
 
-用 `--scenario` 选择 `accept`、`rework`、`dual-partial` 或 `cancel`，用 `--output DIR` 将录制写到指定目录。场景的页面输入与预期结果见 [项目服务说明](../../project-service.md#离线联调)。样例由录制脚本生成。
-
-样例中的 `byte_count` 保留 HTTP 实际返回值。重录测试在比较时统一处理含运行元数据的日志长度，包括 CLI 的 JSON 回执、运行时事件和工具协议记录。固定测试输出、日志分页和退出码逐值比较。
+Omit `--scenario` to run all four. Omitting `--output` writes to this checked-in sample directory. [Recorder source](../../../tests/unit/web_support/record_samples.py) · [Local service guide](../../workbench.md)
