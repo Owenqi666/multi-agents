@@ -15,7 +15,7 @@ import { EmptyState } from '../components/EmptyState';
 import { ModelPicker, type PickerChoice } from '../components/ModelPicker';
 import { ReadFrame } from '../components/ReadNote';
 import { EnvironmentHint } from './GoalPages';
-import { ArtifactLinks, Evidence, Facts, Page, Raw, Section, useResource } from './common';
+import { ArtifactLinks, Evidence, Facts, Page, Raw, Section, useLocate, useResource } from './common';
 import { tx, joinList } from '../i18n';
 
 type StageRuns = { plan_id: string; stages: StageRun[] };
@@ -155,8 +155,10 @@ function Revise({ plan }: { plan: ProjectPlan }) {
   );
 }
 
-export function PlanPage({ id }: { id: string }) {
+/** `stage` comes from a link that points at one stage (?stage=), for example from the inbox. */
+export function PlanPage({ id, stage = null }: { id: string; stage?: string | null }) {
   const archive = useArchiveMode();
+  const locate = useLocate(stage);
   const read = useResource<ProjectPlan>('project-plan', id);
   const plan = read.data?.data?.plan_id === id ? read.data.data : null;
   const stages = useResource<StageRuns>('project-stages', plan?.status === 'succeeded' ? id : null);
@@ -191,6 +193,9 @@ export function PlanPage({ id }: { id: string }) {
               <>
                 {p.document.architecture ? <Section title={tx('整体架构')}><pre className="goal-text">{p.document.architecture}</pre></Section> : null}
                 <Section title={tx('阶段')} note={tx('阶段按计划顺序列出。前置阶段的候选通过测试和审核后，后面的阶段才能领取。')}>
+                  {stage !== null && !p.document.stages.some((s) => s.stage_id === stage) ? (
+                    <p className="stale-note">{tx('这一版计划里没有阶段 {0}。', stage)}</p>
+                  ) : null}
                   <ol className="stage-list">
                     {p.document.stages.map((s) => {
                       const claimed = runs?.stages.find((stage) => stage.stage_id === s.stage_id);
@@ -204,7 +209,8 @@ export function PlanPage({ id }: { id: string }) {
                         else if (missing.length) blocker = tx('等待前置阶段通过测试和审核：{0}。', joinList(missing));
                       }
                       return (
-                        <li key={s.stage_id}>
+                        <li key={s.stage_id} ref={s.stage_id === stage ? locate : undefined} className={s.stage_id === stage ? 'located' : undefined}
+                          aria-current={s.stage_id === stage ? 'location' : undefined}>
                           <div className="stage-row-head"><strong>{s.title}</strong> <code className="stamp">{s.stage_id}</code>
                             {s.depends_on.length ? <span className="stamp">{tx('依赖')} {joinList(s.depends_on)}</span> : null}</div>
                           {s.goal ? <p className="muted">{s.goal}</p> : null}

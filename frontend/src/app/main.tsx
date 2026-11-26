@@ -15,7 +15,9 @@ async function start(): Promise<void> {
     const scenario = params.get('mock') ?? (import.meta.env.MODE === 'mock' ? 'accept' : null);
     if (scenario) {
       const { MockTransport } = await import('../mock/transport');
-      setTransport(new MockTransport(scenario, Number(params.get('at') ?? Infinity)));
+      // An `at` that is not a positive number means the whole recording.
+      const at = Number(params.get('at'));
+      setTransport(new MockTransport(scenario, at > 0 ? at : Infinity));
     }
   }
   createRoot(document.getElementById('root')!).render(

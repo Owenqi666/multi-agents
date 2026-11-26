@@ -121,7 +121,7 @@ export function DiffView({ diff, annotations = [], onOpenFinding, emptyNote, loc
                               <td className="tx">{l.kind === 'note' ? `\\ ${l.text}` : l.text}</td>
                             </tr>
                             {notes.length ? (
-                              <tr className="dl-notes"><td colSpan={4}>{notes.map((a) => <FindingRow key={a.finding.id} a={a} onOpen={onOpenFinding} />)}</td></tr>
+                              <tr className="dl-notes"><td colSpan={4}>{notes.map((a) => <FindingRow key={`${a.seat}/${a.finding.id}`} a={a} onOpen={onOpenFinding} />)}</td></tr>
                             ) : null}
                           </Fragment>
                         );

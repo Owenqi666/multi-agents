@@ -1,5 +1,6 @@
 // 首页：the weave stage, read from the run state of the most recent stage (or, before any
-// stage, the most recent project). Read-only: nothing here submits a job.
+// stage, the most recent project), and next to it everything in the repository that waits
+// for the user. Read-only: nothing here submits a job.
 
 import { useMemo } from 'react';
 import { api } from '../api/client';
@@ -14,6 +15,7 @@ import { deriveStory, withRunningJob } from '../stage/derive';
 import { useIntegrationHistory } from '../stage/integrationLineage';
 import { belongsToProjectTimeline, belongsToStage } from '../stage/jobScope';
 import { Stage } from '../stage/Stage';
+import { AttentionPanel, useAttention } from './Attention';
 import { NextNote, RecordLink, useResource } from './common';
 import { tx, pair } from '../i18n';
 
@@ -28,6 +30,7 @@ function latestSubject(items: RunItem[]): RunItem | null {
 export function HomePage() {
   const { active, ready } = useJobs();
   const runs = useRead<{ items: RunItem[] }>('runs', () => api.runs(), { locking: false, pollWhileJob: true });
+  const attention = useAttention();
   const items = runs.data?.items ?? [];
   const subject = latestSubject(items);
   const stageId = subject?.kind === 'stage' ? subject.id : null;
@@ -68,6 +71,9 @@ export function HomePage() {
     return (
       <div className="home">
         <EmptyState title={tx('还没有项目')} body={tx('写下想做成的事。顾问会先读它，帮你写成可以确认的目标；之后规划、实施和审核都会画在这里。')} action={<Link className="btn primary" href="/new">{tx('提出目标')}</Link>} />
+        {/* Records made from the command line can wait for the user before the workbench lists any run. */}
+        {/* A partial or failed reading is said too: an empty screen must not read as "nothing waits". */}
+        {attention.rows.length || attention.partial || attention.error ? <AttentionPanel attention={attention} /> : null}
       </div>
     );
   }
@@ -83,6 +89,7 @@ export function HomePage() {
       ) : loading ? (
         <p className="loading">{tx('正在读取运行状态…')}</p>
       ) : null}
+      <AttentionPanel attention={attention} />
       <div className="home-below">
         <section className="home-card">
           <h2>{tx('接下来')}</h2>

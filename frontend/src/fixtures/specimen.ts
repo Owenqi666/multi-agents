@@ -259,9 +259,9 @@ export const jobs: { label: string; job: Job }[] = [
   { label: 'cancelling', job: job({ state: 'cancelling', exit_code: null, result: null, cancel_requested_at: '2026-11-19T20:14:03Z' }) },
   { label: 'finished · 0', job: job({}) },
   { label: 'finished · 1，带结果', job: job({ exit_code: 1, result: { workflow: { outcome: 'needs_rework' } } }) },
-  { label: 'finished · 2，没有结果', job: job({ action: 'integration.accept', exit_code: 2, result: null, error: { code: 'cli_failed', message: 'exit code 2' } }) },
-  { label: 'finished · 130', job: job({ exit_code: 130, result: null, error: { code: 'cli_cancelled', message: 'cancelled' } }) },
-  { label: 'interrupted', job: job({ state: 'interrupted', exit_code: null, result: null, error: { code: 'service_interrupted', message: 'service restarted' } }) },
+  { label: 'finished · 2，没有结果', job: job({ action: 'integration.accept', exit_code: 2, result: null, error: { code: 'integration_accept_refused', message: 'exit code 2' }, error_kind: 'refused' }) },
+  { label: 'finished · 130', job: job({ exit_code: 130, result: null, error: { code: 'cli_cancelled', message: 'cancelled' }, error_kind: 'cancelled' }) },
+  { label: 'interrupted', job: job({ state: 'interrupted', exit_code: null, result: null, error: { code: 'service_interrupted', message: 'service restarted' }, error_kind: 'interrupted' }) },
 ];
 
 // ---- Diff, as the text inside GET /api/diffs/task/{id} ----

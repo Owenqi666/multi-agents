@@ -21,6 +21,8 @@ a { color: var(--ink); text-decoration-color: var(--ink-3); text-underline-offse
 }
 .job-bar-action { font-weight: 500; }
 .job-bar-note { flex-basis: 100%; font-size: 12.5px; color: var(--ink-3); }
+.demo-note { margin: 0; padding: 8px 24px; font-size: 13px; color: var(--ink-2); background: var(--warn-wash); border-bottom: 1px solid var(--hair); }
+.plan-default { margin: 0; font-size: 13px; }
 
 .app-main { min-width: 0; }
 .page-body { display: grid; gap: 0; }
@@ -126,6 +128,9 @@ a { color: var(--ink); text-decoration-color: var(--ink-3); text-underline-offse
 .task-counters > div { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding-bottom: 3px; border-bottom: 1px solid var(--wash); }
 .task-counters dt { color: var(--ink-2); overflow-wrap: anywhere; }
 .task-counters dd { margin: 0; text-align: end; overflow-wrap: anywhere; }
+.task-report { display: grid; gap: 6px; min-width: 0; }
+.task-report .goal-text { font-size: 14px; line-height: 1.65; }
+.task-report .stamp { display: inline-flex; flex-wrap: wrap; gap: 3px 8px; align-items: baseline; }
 .task-reroutes { list-style: none; display: grid; gap: 6px; padding: 0; margin: 0; }
 .task-reroutes li { display: flex; flex-wrap: wrap; gap: 3px 12px; align-items: baseline; }
 .plan-fields, .plan-declaration { min-width: 0; margin: 0; padding: 0; border: 0; }
@@ -156,8 +161,21 @@ a { color: var(--ink); text-decoration-color: var(--ink-3); text-underline-offse
 .round-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 .seat-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .seat-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 14px; }
-.finding-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
-.finding-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+/* Findings of a review round: groups by frozen location, one card per seat's finding, and
+   under each card what the user did with it. */
+.finding-groups, .finding-list, .finding-thread { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.finding-group { display: grid; gap: 8px; padding: 12px 14px; border: 1px solid var(--hair); border-radius: 10px; background: var(--plate); }
+.finding-group-head, .finding-card-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.finding-card { display: grid; gap: 8px; padding-top: 10px; border-top: 1px solid var(--wash); min-width: 0; }
+.finding-card .finding-body { margin: 0; }
+.finding-thread { gap: 8px; padding-left: 12px; border-left: 2px solid var(--hair); }
+.thread-entry { display: grid; gap: 4px; }
+.thread-entry .goal-text { font-size: 14px; line-height: 1.65; }
+.finding-actions { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 18px; }
+.finding-form[open] { flex-basis: 100%; }
+.finding-form-body { display: grid; gap: 8px; margin-top: 8px; max-width: 46em; }
+.finding-form-body .seg { justify-self: start; }
+.section-note.wide { max-width: 46em; }
 
 .home { display: grid; gap: 32px; }
 .home-below { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
@@ -173,4 +191,37 @@ a { color: var(--ink); text-decoration-color: var(--ink-3); text-underline-offse
 .next-note { display: grid; gap: 4px; }
 .next-detail { font-family: var(--mono); font-size: 11.5px; color: var(--ink-3); }
 .home-card .btn { justify-self: start; }
+
+/* 需要我处理: one row per thing that waits, with the action it asks for and a link to it. */
+.attention-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; }
+.attention-head .btn { margin-left: auto; }
+.attention-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.attention-row { display: grid; gap: 2px; padding: 10px 0; border-top: 1px solid var(--wash); min-width: 0; }
+.attention-row:first-child { border-top: 0; padding-top: 2px; }
+.attention-what { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.attention-reason { font-size: 14px; font-weight: 500; color: var(--ink); }
+.attention-label { font-size: 14px; overflow-wrap: anywhere; }
+.attention-row.pending .attention-reason, .attention-row.pending .attention-label { color: var(--ink-2); }
+
+/* A row a link pointed at (?stage=, ?card=). */
+.located { box-shadow: -3px 0 0 var(--ink-2); }
+.stage-list > li.located { padding-left: 10px; }
+
+/* Job activity: executors as last observed, what can continue, the recent events. */
+.job-actors, .recovery-list, .event-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.job-actor { display: grid; gap: 4px; }
+.job-actor-head, .recovery-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.job-actor-seen { margin: 0; font-size: 13px; color: var(--ink-2); }
+.event-list { gap: 4px; max-height: 26em; overflow: auto; }
+.event-list li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font-size: 13.5px; }
+.event-seat { color: var(--ink-2); }
+
+/* Setup check, rework eligibility and the delivery summary. */
+.onboarding, .delivery { display: grid; gap: 14px; min-width: 0; }
+.onboarding-status { margin: 0; min-height: 1.5em; }
+.next-steps { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: 13.5px; line-height: 1.65; color: var(--ink-2); }
+.next-steps li.ready { color: var(--ink); font-weight: 500; }
+.rework-check .plain-list { font-size: 13.5px; }
+.delivery { padding-top: 14px; border-top: 1px solid var(--hair); }
+.delivery textarea { min-height: 14em; }
 .section-body > .seg { justify-self: start; }

@@ -19,7 +19,7 @@
   --groove-in: #eeeeea;
   --ink: #1d2227;
   --ink-2: #545c64;
-  --ink-3: #8c939a;
+  --ink-3: #616971; /* small labels: at least 4.5:1 on every background it is used on */
   --hair: #cfd1cc;
   --wash: rgba(29, 34, 39, 0.035);
 
@@ -31,7 +31,7 @@
   --tone-terra: #5b5ea8;
   --tone-you: #23282d;
   --tone-bench: #7f8790;
-  --tone-unknown: #8c939a;
+  --tone-unknown: #616971; /* at least 4.5:1 on the plate and the page */
 
   --ok: #3f7a45;
   --ok-wash: rgba(63, 122, 69, 0.09);
@@ -72,7 +72,7 @@
     --groove-in: #161c23;
     --ink: #e8e9e6;
     --ink-2: #9aa3ac;
-    --ink-3: #66717b;
+    --ink-3: #7f8a93;
     --hair: #252d36;
     --wash: rgba(255, 255, 255, 0.03);
 
@@ -84,7 +84,7 @@
     --tone-terra: #aaa8f0;
     --tone-you: #eef0f2;
     --tone-bench: #8794a1;
-    --tone-unknown: #66717b;
+    --tone-unknown: #66717b; /* graphics only: above 3:1, kept apart from --tone-bench */
 
     --ok: #8fc48a;
     --ok-wash: rgba(143, 196, 138, 0.1);
@@ -122,7 +122,7 @@
   --groove-in: #161c23;
   --ink: #e8e9e6;
   --ink-2: #9aa3ac;
-  --ink-3: #66717b;
+  --ink-3: #7f8a93;
   --hair: #252d36;
   --wash: rgba(255, 255, 255, 0.03);
 
@@ -134,7 +134,7 @@
   --tone-terra: #aaa8f0;
   --tone-you: #eef0f2;
   --tone-bench: #8794a1;
-  --tone-unknown: #66717b;
+  --tone-unknown: #66717b; /* graphics only: above 3:1, kept apart from --tone-bench */
 
   --ok: #8fc48a;
   --ok-wash: rgba(143, 196, 138, 0.1);

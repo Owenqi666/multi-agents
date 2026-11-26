@@ -3,7 +3,7 @@ import { jobs, useJobs } from '../api/jobs';
 import { errorText } from '../api/transport';
 import type { Job } from '../api/types';
 import { useWorkspaceWritesAllowed } from '../api/workspace';
-import { JobBadge } from '../components/Badge';
+import { JobBadge, jobEnding } from '../components/Badge';
 import { actionLabel } from './labels';
 import { Link, to } from './router';
 import { tx } from '../i18n';
@@ -58,7 +58,10 @@ export function JobBar() {
         <>
           <JobBadge job={ended} />
           <span className="job-bar-action">{actionLabel(ended.action)}</span>
-          {ended.exit_code !== null ? <span className="stamp">{tx('退出码')} {ended.exit_code}</span> : null}
+          {ended.exit_code !== null && ended.exit_code !== undefined ? <span className="stamp">{tx('退出码')} {ended.exit_code}</span> : null}
+          {/* The badge alone does not say whether the job broke or only its conclusion is not a pass. */}
+          {jobEnding(ended) === 'unmet' ? <span className="job-bar-note">{tx('作业跑完了，结果不是成功，见它的记录。')}</span> : null}
+          {jobEnding(ended) === 'refused' ? <span className="job-bar-note">{tx('服务拒绝了这次提交，原因见作业详情。')}</span> : null}
           <Link href={to('jobs', ended.job_id)}>{tx('作业详情')}</Link>
           <button type="button" className="btn small quiet" onClick={() => setEnded(null)}>{tx('收起')}</button>
         </>

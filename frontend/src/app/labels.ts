@@ -32,6 +32,7 @@ export const ACTION_LABEL: Record<string, string> = translated({
   'integration.accept': '接受',
   'review.freeze': '冻结审核输入',
   'review.run': '独立审核',
+  'review.followup': '追问审核意见',
   'review.retry': '补跑独立审核',
   'review.confirm': '发起交叉确认',
 });

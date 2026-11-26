@@ -20,6 +20,8 @@ export class OfflineEnv {
   url = '';
   standalonePlans: { codex: string; claude: string } | null = null;
   archive: { snapshotId: string; version: number; files: Record<string, string> } | null = null;
+  /** The temporary target repository, for scenarios that move its branch from outside. */
+  repository: string | null = null;
 
   private constructor(private readonly proc: ChildProcess, readonly scenario: string) {
     createInterface({ input: proc.stdout! }).on('line', (line) => {
@@ -44,12 +46,14 @@ export class OfflineEnv {
     if (['review-fixes', 'claim'].includes(scenario)) fixture = 'frontend/e2e/review_fixes_env.py';
     if (scenario === 'task-evidence') fixture = 'frontend/e2e/task_evidence_env.py';
     if (scenario === 'archive') fixture = 'frontend/e2e/archive_env.py';
+    if (scenario.startsWith('workbench')) fixture = 'frontend/e2e/workbench_env.py';
     const proc = spawn('uv', ['run', 'python', fixture, '--scenario', scenario, '--port', '0', '--frontend-dist', DIST], {
       cwd: REPO, stdio: ['ignore', 'pipe', 'pipe'],
     });
     const env = new OfflineEnv(proc, scenario);
     if (scenario === 'task-evidence') env.standalonePlans = JSON.parse(await env.nextLine()) as NonNullable<OfflineEnv['standalonePlans']>;
     if (scenario === 'archive') env.archive = JSON.parse(await env.nextLine()) as NonNullable<OfflineEnv['archive']>;
+    if (scenario.startsWith('workbench')) env.repository = (JSON.parse(await env.nextLine()) as { repository: string }).repository;
     env.url = (await env.nextLine()).trim();
     return env;
   }

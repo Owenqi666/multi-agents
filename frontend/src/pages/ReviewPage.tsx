@@ -1,6 +1,7 @@
-// 审核轮: seats and their evidence, findings grouped by place, and the frozen input as a
-// diff with each finding under its lines. Review rounds and snapshots do not take the
-// repository lock, so this page also shows seat progress while a review job runs.
+// 审核轮: seats and their evidence, findings grouped by place with their discussion (the
+// user's decisions, follow-up questions, linked corrections), and the frozen input as a diff
+// with each finding under its lines. Review rounds and snapshots do not take the repository
+// lock, so this page also shows seat progress while a review job runs.
 
 import { useMemo } from 'react';
 import { api } from '../api/client';
@@ -16,6 +17,7 @@ import { EmptyState } from '../components/EmptyState';
 import { ReadFrame } from '../components/ReadNote';
 import { currentIntegrationReview, currentTaskReview, openIntegrationRevision, ReviewRetry, ROUND_TONE, RoundSummary } from './bits';
 import { ArtifactLinks, Page, Section, useResource } from './common';
+import { FindingsPanel, useFindings } from './ReviewFindings';
 import { UserTests } from './StandaloneReviewPages';
 import { ReviewSessionLogs } from './SessionLogs';
 import { tx } from '../i18n';
@@ -97,6 +99,9 @@ export function ReviewPage({ id, patchLocation }: { id: string; patchLocation?: 
   const search = patchLocation?.toString() ?? '';
   const location = useMemo(() => parseLocation(search), [search]);
   const groups = round?.assessment?.groups ?? [];
+  // Finding discussions hang off the original round; a confirmation round points back to it.
+  const original = round?.metadata.kind === 'review';
+  const findings = useFindings(original ? id : null);
   const annotations: Annotation[] = groups.flatMap((g) => g.members.map((m) => ({ finding: m.finding, seat: m.seat, anchor: m.finding.side === 'candidate' ? 'new' as const : 'old' as const })));
   const findingLink = (snapshotId: string, finding: Finding) => pasted
     ? `${to('reviews', id)}?${new URLSearchParams({ side: finding.side, path: finding.path, line: String(finding.line_start), end: String(finding.line_end) })}`
@@ -112,20 +117,16 @@ export function ReviewPage({ id, patchLocation }: { id: string; patchLocation?: 
                 : r.metadata.kind === 'confirmation' ? <ConfirmationActions key={r.round_id} round={r} /> : null}
             </Section>
             <Section title={tx('意见')} note={pasted ? tx('点击意见的文件名和行号，跳到补丁中的对应位置。') : tx('点击意见的文件名和行号，打开冻结文件。')}>
-              {r.assessment ? <p className="row"><Badge tone={ROUND_TONE[r.assessment.status] ?? 'muted'}>{ASSESSMENT_LABEL[r.assessment.status] ?? r.assessment.status}</Badge>{r.assessment.reasons.map((x) => <code key={x} className="stamp">{x}</code>)}</p> : null}
-              {groups.length ? (
-                <ul className="finding-list">
-                  {groups.flatMap((g) => g.members).map((m) => (
-                    <li key={`${m.seat}-${m.finding.id}`}>
-                      <Badge tone={m.finding.severity === 'P0' || m.finding.severity === 'P1' ? 'fail' : 'warn'}>{m.finding.severity}</Badge>
-                      <span className="finding-title">{m.finding.title}</span>
-                      <code className="stamp">{m.seat}</code>
-                      {r.independent_review && !standalone ? <code className="task-data">{m.finding.path}:{m.finding.line_start}</code>
-                        : <Link href={findingLink(r.snapshot_id, m.finding)}>{m.finding.path}:{m.finding.line_start}</Link>}
-                    </li>
-                  ))}
-                </ul>
-              ) : <p className="muted">{tx('没有意见。')}</p>}
+              {r.assessment ? <p className="row"><span className="stamp">{tx('审核结论')}</span><Badge tone={ROUND_TONE[r.assessment.status] ?? 'muted'}>{ASSESSMENT_LABEL[r.assessment.status] ?? r.assessment.status}</Badge>{r.assessment.reasons.map((x) => <code key={x} className="stamp">{x}</code>)}</p> : null}
+              {r.metadata.kind === 'review' ? (
+                <FindingsPanel round={r} findings={findings}
+                  fileHref={r.independent_review && !standalone ? undefined : (finding) => findingLink(r.snapshot_id, finding)} />
+              ) : (
+                <p className="muted">
+                  {tx('交叉确认轮不单独列意见。意见、追问和判断都在原审核轮。')}
+                  {r.metadata.parent_round_id ? <> <Link href={to('reviews', r.metadata.parent_round_id)}>{tx('返回原审核轮')}</Link></> : null}
+                </p>
+              )}
               {r.confirmation_round_id ? <p><Link href={to('reviews', r.confirmation_round_id)}>{tx('查看交叉确认')}</Link></p> : null}
             </Section>
             <ReviewSessionLogs round={r} artifacts={read.data?.artifacts ?? []} />

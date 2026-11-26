@@ -1,4 +1,5 @@
 import { useEffect, type ReactNode } from 'react';
+import { demoScenario } from '../api/client';
 import { jobs, useJobs } from '../api/jobs';
 import { useReadsInFlight } from '../api/reads';
 import { useArchiveMode, useWorkspaceWritesAllowed, WorkspaceProvider } from '../api/workspace';
@@ -7,6 +8,7 @@ import { LanguageSwitch } from '../components/LanguageSwitch';
 import { useLang } from '../i18n';
 import { EmptyState } from '../components/EmptyState';
 import { JobBar } from './JobBar';
+import { PageBoundary } from './PageBoundary';
 import { Link, match, navigate, useLocation } from './router';
 import { ArchivePage } from '../pages/ArchivePage';
 import { HomePage } from '../pages/HomePage';
@@ -15,7 +17,7 @@ import { ProjectsPage, ProjectPage, GoalPage } from '../pages/ProjectPages';
 import { PlanPage } from '../pages/PlanPage';
 import { StagePage } from '../pages/StagePage';
 import { TaskPage } from '../pages/TaskPage';
-import { NewTaskPlanPage } from '../pages/NewTaskPlanPage';
+import { NewTaskPlanPage, reviewLink } from '../pages/NewTaskPlanPage';
 import { OpenTaskPlanPage, TaskPlanPage } from '../pages/TaskPlanPage';
 import { IntegrationPage } from '../pages/IntegrationPage';
 import { ReviewPage } from '../pages/ReviewPage';
@@ -29,18 +31,18 @@ type Route = [string, (p: Record<string, string>, q: URLSearchParams) => ReactNo
 const ROUTES: Route[] = [
   ['/', () => <HomePage />],
   ['/archive', () => <ArchivePage />],
-  ['/new', () => <NewGoalPage />],
+  ['/new', (_, q) => <NewGoalPage key={q.get('consultation') ?? ''} consultation={q.get('consultation')} />],
   ['/projects', () => <ProjectsPage />],
   ['/projects/:id', (p) => <ProjectPage id={p.id!} />],
   ['/goals/:id', (p) => <GoalPage id={p.id!} />],
   ['/consultations/:id', (p) => <ConsultationPage key={p.id!} id={p.id!} />],
-  ['/plans/:id', (p) => <PlanPage id={p.id!} />],
-  ['/stages/:id', (p) => <StagePage id={p.id!} />],
+  ['/plans/:id', (p, q) => <PlanPage id={p.id!} stage={q.get('stage')} />],
+  ['/stages/:id', (p, q) => <StagePage id={p.id!} card={q.get('card')} />],
   ['/task-plans', () => <OpenTaskPlanPage />],
-  ['/task-plans/new', (_, q) => <NewTaskPlanPage key={q.toString()} from={q.get('from')} questionIndex={q.get('question')} />],
-  ['/task-plans/:id', (p) => <TaskPlanPage key={p.id!} id={p.id!} />],
+  ['/task-plans/new', (_, q) => <NewTaskPlanPage key={q.toString()} from={q.get('from')} questionIndex={q.get('question')} review={reviewLink(q)} />],
+  ['/task-plans/:id', (p, q) => <TaskPlanPage key={p.id!} id={p.id!} reused={q.get('reused') === '1'} />],
   ['/tasks/:id', (p) => <TaskPage id={p.id!} />],
-  ['/integrations/:id', (p) => <IntegrationPage id={p.id!} />],
+  ['/integrations/:id', (p, q) => <IntegrationPage id={p.id!} reworkJob={q.get('rework_job')} />],
   ['/reviews', () => <ReviewHomePage />],
   ['/reviews/new', () => <NewReviewPage />],
   ['/reviews/:id', (p, q) => <ReviewPage key={p.id!} id={p.id!} patchLocation={q} />],
@@ -49,7 +51,7 @@ const ROUTES: Route[] = [
   ['/diffs/:kind/:id', (p, q) => <DiffPage kind={p.kind as 'task' | 'integration' | 'snapshot'} id={p.id!} against={q.get('against') === 'parent' ? 'parent' : undefined} />],
   ['/logs/:id', (p, q) => <LogPage key={p.id!} id={p.id!} title={q.get('title') ?? tx('日志')} locking={q.get('locking') === '1'} />],
   ['/jobs', () => <JobsPage />],
-  ['/jobs/:id', (p) => <JobPage id={p.id!} />],
+  ['/jobs/:id', (p) => <JobPage key={p.id!} id={p.id!} />],
 ];
 
 function Outlet() {
@@ -67,7 +69,7 @@ function Outlet() {
 }
 
 function WorkspaceShell() {
-  const { path } = useLocation();
+  const { path, query } = useLocation();
   const archive = useArchiveMode();
   const writesAllowed = useWorkspaceWritesAllowed();
   const reading = useReadsInFlight();
@@ -106,7 +108,10 @@ function WorkspaceShell() {
         </div>
       </header>
       <JobBar />
-      <main className="app-main"><Outlet /></main>
+      {/* A recording, not a service: said on every page, so that a replayed submission is not taken for a real one. */}
+      {demoScenario() ? <p className="demo-note" role="note">{tx('演示：这里回放录制好的样例「{0}」。提交的操作只重放录制的结果，不会真的执行，也不会改动任何仓库。', demoScenario())}</p> : null}
+      {/* A page that throws while rendering is replaced by a notice; going elsewhere clears it. */}
+      <main className="app-main"><PageBoundary location={`${path}?${query}`}><Outlet /></PageBoundary></main>
     </div>
   );
 }

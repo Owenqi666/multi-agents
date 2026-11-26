@@ -1,4 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
+import { ApiError, errorText } from '../api/transport';
 import { api } from '../api/client';
 import { useJobs } from '../api/jobs';
 import { useRead } from '../api/reads';
@@ -149,13 +150,17 @@ function DispatchForm({ planId, stale }: { planId: string; stale: boolean }) {
   );
 }
 
-export function TaskPlanPage({ id }: { id: string }) {
+/** `reused` comes from a correction that was submitted again (?reused=1): the service made no
+ *  second planning and sent the page to the one it already had. */
+export function TaskPlanPage({ id, reused = false }: { id: string; reused?: boolean }) {
   const read = useResource<PlanningView>('plan', id, { implementation: 1 });
   const plan = read.data?.id === id ? read.data.data : null;
   const archive = useArchiveMode();
   const writesAllowed = useWorkspaceWritesAllowed();
+  const [refused, setRefused] = useState<string | null>(null);
   return (
     <Page title={tx('单卡规划')} aside={<Link className="btn small" href="/task-plans">{tx('打开其他规划')}</Link>}>
+      {reused ? <p className="stale-note" role="status">{tx('这是之前那次提交已经建好的规划，这一次没有重复创建。它还没开始或没有完成时，可以在本页点「重试规划」继续。规划预算用完时，相同的输入不会重置预算：要改需求、基线、指定的模型或声明再提交，才会建新的一份。')}</p> : null}
       <ReadFrame read={{ ...read, data: plan }} what={tx('单卡规划')}>
         {(record) => {
           const input = record.details?.input;
@@ -164,7 +169,7 @@ export function TaskPlanPage({ id }: { id: string }) {
           const next = record.next_action;
           return <>
             <Section title={tx('卡片')} note={archive ? undefined : blocked ? tx('回答阻塞问题后新建一份规划。')
-              : next?.kind === 'budget_exhausted' ? tx('冻结的规划预算已用完。')
+              : next?.kind === 'budget_exhausted' ? tx('冻结的规划预算已用完。相同的输入不会重置预算：要改需求、基线、指定的模型或声明，新建一份规划。')
                 : next?.kind === 'plan_retry' ? next.detail : <NextNote next={next} />}>
               <Facts rows={[
                 [tx('规划运行 ID'), <code className="task-data">{record.planning_run_id}</code>],
@@ -178,12 +183,17 @@ export function TaskPlanPage({ id }: { id: string }) {
               {record.task_run_id ? <div><Link className="btn" href={to('tasks', record.task_run_id)}>{tx('实施详情')}</Link></div> : null}
               {writesAllowed && record.retry_configurable === true && !record.task_run_id ? (
                 <ActionButton action="plan.retry" label={tx('重试规划')} disabled={read.stale} args={() => ({ planning_run_id: record.planning_run_id })}
+                  // Refused on submission (the budget ran out meanwhile, say): what the page shows is out
+                  // of date. The reason is kept here, because the button may be gone after the reading.
+                  onRejected={(error) => { setRefused(error instanceof ApiError ? error.message || errorText(error) : null); read.reload(); }}
+                  onSubmitted={() => setRefused(null)}
                   onDone={(job) => {
                     if (window.location.pathname === to('task-plans', id) && job.exit_code !== 0 && !job.resources?.some((resource) => resource.kind === 'plan' && resource.id === id)) {
                       navigate(to('jobs', job.job_id));
                     }
                   }} />
               ) : null}
+              {refused ? <p className="stale-note problem" role="alert">{tx('重试没有被接受：{0}', refused)}</p> : null}
             </Section>
             {questions.length ? (
               <Section title={tx('规划问题')}>

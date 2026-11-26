@@ -2,12 +2,12 @@
 // the next step the readback offers. Buttons follow next_action and the gate fields only.
 
 import { useState } from 'react';
-import type { ArtifactRef, TaskView } from '../api/types';
+import type { ArtifactRef, Job, TaskView } from '../api/types';
 import { useArchiveMode, useWorkspace } from '../api/workspace';
 import { shortId, timeText, VERIFICATION_LABEL } from '../app/labels';
 import { Link, to } from '../app/router';
 import { ActionButton } from '../components/Action';
-import { Badge } from '../components/Badge';
+import { Badge, endingText, jobEnding } from '../components/Badge';
 import { ReadFrame } from '../components/ReadNote';
 import { TaskAttemptEvidence } from './TaskAttemptEvidence';
 import { TaskSessionLogs } from './SessionLogs';
@@ -34,6 +34,24 @@ export function TaskPanel({ task, detail = false, sessionArtifacts }: { task: Ta
     ? task.reviews.find((round) => round.round_id === lastRound.confirmation_round_id)
     : lastRound;
   const attempt = task.implementation_attempt;
+  // Retesting the same candidate. The task record carries one test per implementation: its
+  // current one. On it the service says whether it would accept a retest (`details.retry_ready`:
+  // the current test of the current candidate, finished as failed, cancelled or awaiting
+  // evidence, and settled). That alone decides the entry, whatever the next step is and whether
+  // or not this test was already reviewed: the earlier review stays on record with the test it
+  // looked at, and a review after the retest is about the new test. The commands go out in
+  // their order with the declaration of that test. A record without the field (an older
+  // service) gets no entry. The test policy (tool directories) is checked by the service when
+  // the retest runs.
+  const [retested, setRetested] = useState<Job | null>(null);
+  const lastTest = attempt === null ? undefined : task.tests.find((t) => t.implementation_attempt === attempt && t.details?.is_current !== false);
+  const declared = lastTest?.details?.declaration_source;
+  const retest = !archive && attempt !== null && lastTest
+    && lastTest.details?.retry_ready === true && typeof declared === 'string' && declared && lastTest.commands.length
+    ? { commands: [...lastTest.commands].sort((a, b) => a.sequence - b.sequence).map((c) => c.name), declaration_source: declared }
+    : null;
+  // A review of this implementation exists already (of the test that is about to be replaced).
+  const reviewedBefore = task.reviews.some((round) => round.implementation_attempt === undefined || round.implementation_attempt === attempt);
   const reworked = task.attempts.some((a) => a.request.kind === 'task_rework_started');
   return (
     <>
@@ -92,6 +110,26 @@ export function TaskPanel({ task, detail = false, sessionArtifacts }: { task: Ta
             <ActionButton action="task.test" primary label={tx('运行测试')} disabled={!cmd.commands.length} reason={tx('至少选一条命令。')}
               args={() => ({ task_run_id: task.task_run_id, implementation_attempt: attempt, commands: cmd.commands, declaration_source: 'PM' })} />
           </div>
+        ) : null}
+        {retest && attempt !== null ? (
+          <div className="form-actions column">
+            <ActionButton action="task.test" label={tx('按原环境重新测试')}
+              args={() => ({ task_run_id: task.task_run_id, implementation_attempt: attempt, commands: retest.commands, declaration_source: retest.declaration_source })}
+              onSubmitted={() => setRetested(null)} onDone={setRetested} />
+            <p className="action-why">{tx('用上一次测试的命令（{0}）和声明对同一个候选再跑一遍。运行环境没有变化时结果通常相同；服务换过工具目录之后的重测暂不支持，会被拒绝。', joinList(retest.commands))}</p>
+            <p className="action-why">{reviewedBefore
+              ? tx('之前的审核会保留，它看的是上一次测试。重新测试通过后，要对新的测试结果重新送审。')
+              : tx('重新测试会成为这个候选当前的测试：它结束之前不能开始审核，之后的审核看的是这一次的结果。')}</p>
+          </div>
+        ) : null}
+        {retested ? (
+          <p className={jobEnding(retested) === 'done' ? 'stale-note' : 'stale-note problem'} role="status">
+            {jobEnding(retested) === 'done' ? tx('重新测试通过了，上面是最新一次测试。')
+              : jobEnding(retested) === 'unmet' ? tx('重新测试跑完了，结果不是通过。看上面最新一次测试的记录和日志。')
+                : jobEnding(retested) === 'refused' ? tx('重新测试被服务拒绝：{0}。上面的测试记录是重新读取的，以它为准。', retested.error?.message ?? tx('退出码 {0}', retested.exit_code ?? '—'))
+                  : endingText(tx('重新测试'), retested)}
+            {' '}<Link href={to('jobs', retested.job_id)}>{tx('查看那个作业')}</Link>
+          </p>
         ) : null}
       </Section>
 

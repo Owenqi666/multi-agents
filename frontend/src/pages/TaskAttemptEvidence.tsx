@@ -1,6 +1,6 @@
 import type { ImplementationAttempt, RoleRequest } from '../api/types';
 import { timeText } from '../app/labels';
-import { Unconfirmed } from '../components/Badge';
+import { Badge, Unconfirmed, type BadgeTone } from '../components/Badge';
 import { Evidence, Facts } from './common';
 import { tx } from '../i18n';
 
@@ -15,6 +15,12 @@ const SELECTION_OUTCOME: Record<string, string> = {
   disallowed_by_rules: '冻结规则禁止',
   known_unavailable: '已知不可用',
   selected_request: '已选择',
+};
+
+// What the implementer says about its own run. It is a claim: the candidate, tests and review decide.
+const OUTCOME: Record<string, { label: string; tone: BadgeTone }> = {
+  completed: { label: '报告完成', tone: 'plain' },
+  scope_blocked: { label: '报告改动范围不够，没有交付', tone: 'warn' },
 };
 
 const USAGE_LABEL = new Map(Object.entries({
@@ -65,6 +71,23 @@ function Usage({ evidence }: { evidence: ImplementationAttempt['usage_evidence']
   );
 }
 
+function Report({ result }: { result: unknown }) {
+  const report = result && typeof result === 'object' ? result as { outcome?: unknown; summary?: unknown; required_paths?: unknown } : null;
+  const outcome = typeof report?.outcome === 'string' ? report.outcome : null;
+  if (!report || !outcome) return <Unconfirmed what={tx('实施者报告')} />;
+  const paths = Array.isArray(report.required_paths) ? report.required_paths.filter((path): path is string => typeof path === 'string') : [];
+  const known = OUTCOME[outcome];
+  return (
+    <div className="task-report">
+      <span className="row">
+        {known ? <Badge tone={known.tone}>{tx(known.label)}</Badge> : <code className="task-data">{outcome}</code>}
+        {paths.length ? <span className="stamp task-data">{tx('它说还需要改')} {paths.map((path) => <code key={path}>{path}</code>)}</span> : null}
+      </span>
+      {typeof report.summary === 'string' && report.summary ? <p className="goal-text">{report.summary}</p> : null}
+    </div>
+  );
+}
+
 function RuntimeReroutes({ reroutes }: { reroutes: ImplementationAttempt['runtime_reroutes'] }) {
   if (!reroutes) return <Unconfirmed what={tx('运行时改派')} />;
   if (!reroutes.length) return <span className="stamp">{tx('未记录改派')}</span>;
@@ -95,6 +118,7 @@ export function TaskAttemptEvidence({ attempt, number }: { attempt: Implementati
         {runtime?.status ? <span className="stamp">{runtime.status}</span> : null}
       </header>
       <Facts rows={[
+        [tx('实施者报告'), <Report result={runtime?.result} />],
         [tx('工作树'), request.worktree ? <code className="task-data">{request.worktree}</code> : <Unconfirmed what={tx('工作树')} />],
         [tx('请求'), requested],
         [tx('工作台选择'), <span className="row">

@@ -6,7 +6,7 @@ import type { IntegrationRecord, Job, ReviewRound, RoleRequest, TaskView, Worksp
 import { ASSESSMENT_LABEL, shortId, VERIFICATION_LABEL } from '../app/labels';
 import { Link, navigate, to } from '../app/router';
 import { ActionButton } from '../components/Action';
-import { Badge, type BadgeTone } from '../components/Badge';
+import { Badge, jobEnding, type BadgeTone } from '../components/Badge';
 import { candidatesFor, ModelPicker, type PickerChoice } from '../components/ModelPicker';
 import { Evidence } from './common';
 import { tx, joinList } from '../i18n';
@@ -58,7 +58,12 @@ export function currentIntegrationReview(integration: IntegrationRecord): Review
 /** Integration review, confirmation and retry may all produce a reworked revision. */
 export function openIntegrationRevision(job: Job) {
   const revision = job.result?.revision as { integration_id?: string } | undefined;
-  if (revision?.integration_id) navigate(to('integrations', revision.integration_id));
+  if (!revision?.integration_id) return;
+  const target = to('integrations', revision.integration_id);
+  // A revision that is another integration came out of a rework inside this job. When the
+  // job did not end as a success, the page it opens says so (see ReworkOutcome).
+  const reworked = revision.integration_id !== (job.args as { integration_id?: string } | null | undefined)?.integration_id;
+  navigate(reworked && jobEnding(job) !== 'done' ? `${target}?rework_job=${encodeURIComponent(job.job_id)}` : target);
 }
 
 function retryableSeats(round: ReviewRound): string[] {

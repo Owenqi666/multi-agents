@@ -126,6 +126,22 @@ export function useRead<T>(key: string | null, fetcher: () => Promise<T>, opts: 
   return { ...state, reload: () => setNonce((n) => n + 1) };
 }
 
+/** Keep a value next to the reads, under its own key; it is forgotten together with them. */
+export function remember<T>(key: string, data: T): void {
+  cache.set(key, { data, readAt: new Date().toISOString() });
+}
+
+export function recall<T>(key: string): { data: T; readAt: string } | null {
+  const c = cache.get(key);
+  return c ? { data: c.data as T, readAt: c.readAt } : null;
+}
+
+/** Forget what was read, so that every page reads its records again instead of starting
+ *  from the last answer (used when a page could not be drawn from it). */
+export function forgetReads(): void {
+  cache.clear();
+}
+
 /** Test hook: forget everything read so far. */
 export function clearReadCache(): void {
   cache.clear();

@@ -10,5 +10,7 @@ export default defineConfig({
   reporter: [['list'], ['json', { outputFile: 'e2e/records/report.json' }]],
   expect: { timeout: 30_000 },
   // The scenarios read the Chinese interface; a zh-CN browser opens it in Chinese on the first visit.
-  use: { trace: 'off', locale: 'zh-CN', viewport: { width: 1280, height: 900 }, reducedMotion: 'reduce', actionTimeout: 60_000 },
+  // Reduced motion is a browser-context option: Playwright Test takes it under contextOptions
+  // and ignores it directly under `use`.
+  use: { trace: 'off', locale: 'zh-CN', viewport: { width: 1280, height: 900 }, contextOptions: { reducedMotion: 'reduce' }, actionTimeout: 60_000 },
 });

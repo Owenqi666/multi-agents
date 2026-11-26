@@ -1,5 +1,6 @@
 // 集成: the merged candidate of a delegate stage (or a direct stage taken to a branch), its
-// test, review, one rework per lineage, rebase when the target moved, and acceptance.
+// test, review, one rework per lineage, rebase when the target moved, acceptance, and the
+// delivery summary of the accepted candidate.
 
 import type { ArtifactRef, IntegrationRecord, ReviewRound } from '../api/types';
 import { commitOf } from '../api/types';
@@ -12,6 +13,7 @@ import { ReadFrame } from '../components/ReadNote';
 import { integrationPredecessor } from '../stage/integrationLineage';
 import { currentIntegrationReview, openIntegrationRevision, ReviewRetry, RoundSummary, useSeats } from './bits';
 import { ArtifactLinks, Facts, Page, Raw, Section, useResource } from './common';
+import { DeliverySummary, ReworkBlock, ReworkOutcome } from './IntegrationExtras';
 import { tx, pair } from '../i18n';
 
 // Retesting takes the old round out of play. Resolve an existing confirmation before
@@ -93,12 +95,10 @@ function Body({ it, artifacts }: { it: IntegrationRecord; artifacts: ArtifactRef
           {current && current.seats.length === 2 && !confirmationId && current.status === 'ready_for_assessment' && current.assessment?.status !== 'ready' ? (
             <ActionButton action="integration.confirm" label={tx('请两席交叉确认')} args={() => ({ integration_id: it.integration_id, round_id: current.round_id })} onDone={openIntegrationRevision} />
           ) : null}
-          {current && current.assessment?.status === 'needs_rework' && !it.rework ? (
-            <ActionButton action="integration.rework" primary label={tx('按阻塞意见返工（每条谱系一次）')} args={() => ({ integration_id: it.integration_id, round_id: current.round_id })}
-              onDone={(job) => { const id = (job.result?.child_id as string | undefined) ?? job.resources?.find((r) => r.kind === 'integration' && r.id !== it.integration_id)?.id; if (id) navigate(to('integrations', id)); }} />
-          ) : null}
           {it.rework?.child_id && it.rework.child_id !== it.integration_id ? <Link className="btn" href={to('integrations', it.rework.child_id)}>{tx('打开返工后的集成')}</Link> : null}
         </div>
+        {/* Who owns the blocking findings and whether the rework can run, read before it is offered. */}
+        <ReworkBlock it={it} enabled={!archive && !acceptance && reviews.length > 0} />
       </Section>
 
       <Section title={tx('接受')} note={tx('接受不影响后面阶段的解锁，只把审核通过的候选记为交付。')}>
@@ -109,20 +109,26 @@ function Body({ it, artifacts }: { it: IntegrationRecord; artifacts: ArtifactRef
             {acceptance.review_round_id ? <Link href={to('reviews', acceptance.review_round_id)}>{tx('接受依据')} <code>{shortId(acceptance.review_round_id)}</code></Link> : null}
           </p>
         ) : (
-          <ActionButton action="integration.accept" primary label={tx('接受')} disabled={!acceptRound} reason={tx('审核结论还不是当前测试的通过结论，不能接受。')}
-            confirm={tx('接受这个集成？')} args={() => acceptRound && ({ integration_id: it.integration_id, round_id: acceptRound.round_id })} />
+          <>
+            <ActionButton action="integration.accept" primary label={tx('接受')} disabled={!acceptRound} reason={tx('审核结论还不是当前测试的通过结论，不能接受。')}
+              confirm={tx('接受这个集成？')} args={() => acceptRound && ({ integration_id: it.integration_id, round_id: acceptRound.round_id })} />
+            {archive ? null : <p className="muted">{tx('交付摘要：待验收。接受后可以在这里预览和复制。')}</p>}
+          </>
         )}
+        {acceptance ? <DeliverySummary id={it.integration_id} /> : null}
       </Section>
     </>
   );
 }
 
-export function IntegrationPage({ id }: { id: string }) {
+/** `reworkJob` comes from the link a rework follows to the integration it produced (?rework_job=). */
+export function IntegrationPage({ id, reworkJob = null }: { id: string; reworkJob?: string | null }) {
   const read = useResource<IntegrationRecord>('integration', id);
   const resource = read.data?.id === id ? read.data : null;
   const data = resource?.data ? { integration: resource.data, artifacts: resource.artifacts } : null;
   return (
     <Page kicker={tx('集成 · {0}', shortId(id))} title={tx('集成')}>
+      {reworkJob ? <ReworkOutcome jobId={reworkJob} /> : null}
       <ReadFrame read={{ ...read, data }} what={tx('集成')}>
         {({ integration, artifacts }) => <Body key={id} it={integration} artifacts={artifacts} />}
       </ReadFrame>

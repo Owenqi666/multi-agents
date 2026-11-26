@@ -39,3 +39,5 @@ corepack pnpm run e2e
 ```
 
 The first command checks TypeScript, ESLint and the component tests. The last builds the production page and runs the Playwright suite. Workflow scenarios exercise the actual loopback service, Git worktrees and SQLite database with substitute model CLIs. The browser race tests control response timing to reproduce delayed requests. [Browser scenarios](e2e/)
+
+`e2e/workbench.spec.ts` walks the inbox on the home page, job activity and recovery after a hard stop, finding discussions, the setup check on the new-goal page, and the delivery summary. Each new panel is also checked in the dark theme and at 1024 and 768 pixels, and the same records are opened through a read-only archive and through the recorded demo. Screenshots are saved under `e2e/records/workbench-shots/`, and the measured text contrast in the run records next to them. To run it alone after a build: `corepack pnpm exec playwright test e2e/workbench.spec.ts`.

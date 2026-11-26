@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { api, isLockingKind } from '../api/client';
 import { useRead } from '../api/reads';
 import type { Query } from '../api/transport';
@@ -108,6 +108,17 @@ export function useResource<T>(kind: string, id: string | null | undefined, quer
     pollWhileJob: opts.pollWhileJob ?? !isLockingKind(kind),
     enabled: opts.enabled,
   });
+}
+
+/** For a row a link pointed at (a stage of a plan, a card of a stage): the returned ref
+ *  scrolls it into view once, when it first appears. */
+export function useLocate(target: string | null): (el: HTMLElement | null) => void {
+  const done = useRef<string | null>(null);
+  return (el) => {
+    if (!el || target === null || done.current === target) return;
+    done.current = target;
+    el.scrollIntoView?.({ block: 'center' });
+  };
 }
 
 /** Plain-text block for structured values the page does not lay out field by field. */

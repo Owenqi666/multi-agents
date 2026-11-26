@@ -41,6 +41,7 @@ export class JobCenter {
   private watched = new Map<string, Job>();
   private finished = new Map<string, Job>();
   private waiters = new Map<string, ((job: Job) => void)[]>();
+  private pollListeners = new Set<(job: Job) => void>();
   private timer: ReturnType<typeof setTimeout> | null = null;
 
   subscribe = (listener: () => void): (() => void) => {
@@ -49,6 +50,13 @@ export class JobCenter {
   };
 
   getState = (): JobCenterState => this.state;
+
+  /** Called with every answer of the one-second job poll, so a page can follow a running
+   *  job (its activity, for example) without a timer of its own. */
+  onPoll = (listener: (job: Job) => void): (() => void) => {
+    this.pollListeners.add(listener);
+    return () => this.pollListeners.delete(listener);
+  };
 
   /** Tests only: forget every job and timer. */
   reset(): void {
@@ -202,6 +210,7 @@ export class JobCenter {
       const before = this.watched.get(jobId);
       if (!before || before.state !== job.state) this.watch(job);
       else this.watched.set(jobId, job);
+      for (const listener of this.pollListeners) listener(job);
     } catch {
       /* keep polling; the bridge may be restarting */
     }

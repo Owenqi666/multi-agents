@@ -44,6 +44,9 @@ export interface Job {
   exit_code: number | null;
   result: Record<string, unknown> | null;
   error: ApiError | null;
+  /** What kind of error `error` is, as the service classifies it; null without an error.
+   *  Absent from an older service, and then the page makes no judgement of its own. */
+  error_kind?: 'refused' | 'failed' | 'cancelled' | 'interrupted' | string | null;
   resources?: { kind: string; id: Id }[];
   artifacts?: JobArtifact[] | null;
   args?: Record<string, unknown> | null;
@@ -104,6 +107,8 @@ export interface Workspace {
     stage_mode: 'direct' | 'delegate';
     sol: { model: string; effort: string };
     card_review: RoleRequest;
+    /** What single-card planning requests when the form names no model. */
+    task_plan?: { draft?: RoleRequest | null; plan_review?: RoleRequest | null } | null;
   };
   read_only: boolean;
   presets: { source: string; roles: Role[]; rules: Record<string, unknown> };
@@ -388,7 +393,20 @@ export interface TaskTest {
   candidate: string | null;
   phase: string;
   verification: string;
+  /** The test ran on the candidate that is still the task's current one. */
+  source_current?: boolean;
   commands: TestCommand[];
+  details?: {
+    is_current?: boolean;
+    /** The service would accept a retest of this test now: it is the current test of the
+     *  current candidate, has finished as failed, cancelled or awaiting evidence, and has
+     *  settled. Absent from an older service. */
+    retry_ready?: boolean;
+    finished?: boolean;
+    cancel_requested?: boolean;
+    /** Who declared the commands of this test ("PM" from the page); a retest repeats it. */
+    declaration_source?: string;
+  } | null;
 }
 
 export interface ReviewSeatAttempt {
@@ -575,4 +593,210 @@ export interface IntegrationRecord {
   rework: IntegrationRework | null;
   superseded_by: Id | null;
   source_errors?: string[];
+}
+
+// ---- Workbench reads added with the inbox, job activity, finding discussions, first-run
+// ---- check and delivery summary (read from the backend's web/ modules) ----------------
+
+/** One thing waiting for the user. `id` is the record's id and may repeat: one plan can
+ *  offer several stages, so rows are told apart by `href` as well. */
+export interface AttentionItem {
+  kind: string;
+  id: Id;
+  label: string;
+  reason: string;
+  detail: string;
+  href: string;
+}
+
+/** `complete: false` means a job holds the worktree: only items the database can confirm
+ *  by itself came back, the ones that need live evidence are deferred. */
+export interface Attention {
+  items: AttentionItem[];
+  complete: boolean;
+}
+
+export interface RecordRef {
+  kind: string;
+  id: Id;
+}
+
+export interface ActivityEvent {
+  /** Unique within one job; repeated polls return the same numbers. */
+  sequence: number;
+  at: string;
+  event: string;
+  state: string | null;
+  resource: RecordRef;
+  seat: string;
+  provider: string | null;
+  attempt: number;
+}
+
+export interface ActivityActor {
+  resource: RecordRef;
+  seat: string;
+  provider: string | null;
+  attempt: number;
+  /** `unconfirmed` when the job ended while the last observation still said running. */
+  state: string;
+  last_observed_state?: string | null;
+  observed_at?: string | null;
+  last_event?: string | null;
+}
+
+export interface RecoveryAction {
+  resource: RecordRef;
+  action: string;
+  args: Record<string, unknown>;
+}
+
+export interface ActivityReview {
+  round_id: Id;
+  snapshot_id: Id;
+  seats: { seat: string; provider: string; attempt: number | null; state: string; retryable: boolean }[];
+  retry: { action: string; args: Record<string, unknown> } | null;
+}
+
+export interface JobActivity {
+  job_id: Id;
+  state: JobState;
+  observed_at: string;
+  created_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  /** null when the job predates activity journals. */
+  controller_holds_journal: boolean | null;
+  history_truncated: boolean;
+  events: ActivityEvent[];
+  actors: ActivityActor[];
+  reviews: ActivityReview[];
+  resources: RecordRef[];
+  recovery: RecoveryAction[];
+}
+
+/** Identifies one finding of one seat's completed attempt. Two seats may use the same
+ *  finding id, so the anchor is always sent back exactly as the service returned it. */
+export interface FindingAnchor {
+  round_id: Id;
+  snapshot_id: Id;
+  seat: string;
+  attempt: number;
+  finding_id: string;
+}
+
+export type FindingDecision = 'confirmed' | 'disputed' | 'deferred';
+
+export interface FindingActivityEntry {
+  id: number;
+  kind: 'decision' | 'answer' | 'linked_plan' | string;
+  created_at: string;
+  decision?: FindingDecision | string;
+  reason?: string;
+  question?: string;
+  answer?: string;
+  evidence?: (Evidence & Record<string, unknown>) | null;
+  planning_run_id?: Id;
+}
+
+export interface FindingMember {
+  seat: string;
+  finding: Finding;
+  anchor: FindingAnchor;
+  activity: FindingActivityEntry[];
+}
+
+export interface FindingConfirmation {
+  seat: string;
+  target_seat: string;
+  finding_id: string;
+  decision: 'agree' | 'disagree' | 'uncertain' | string;
+  reason: string;
+}
+
+export interface FindingGroup {
+  location?: { side?: string; path?: string; line_start?: number; line_end?: number } | null;
+  blocking: boolean;
+  independent_reports?: Record<string, 'reported' | 'unconfirmed' | string> | null;
+  confirmations?: FindingConfirmation[] | null;
+  members: FindingMember[];
+}
+
+export interface ReviewFindings {
+  round_id: Id;
+  snapshot_id: Id;
+  status: Assessment['status'] | string;
+  reasons: string[];
+  source: {
+    kind: 'pasted_diff' | 'repository' | string;
+    baseline: string | null;
+    candidate: string | null;
+    /** The reviewed commit a correction must start from; null for a pasted diff. */
+    correction_baseline: string | null;
+  };
+  groups: FindingGroup[];
+}
+
+export interface ReworkOwner {
+  task_id: string;
+  task_run_id: Id;
+}
+
+export interface ReworkEligibility {
+  integration_id: Id;
+  round_id?: Id | null;
+  eligible: boolean;
+  reason?: string | null;
+  owner?: ReworkOwner | null;
+  findings?: { seat: string; finding_id: string; path: string; reference_status?: string | null; owners: ReworkOwner[] }[];
+  lock_busy?: boolean;
+}
+
+export interface OnboardingProvider {
+  status: 'unknown' | 'missing_cli' | 'checking' | 'check_failed' | 'login_required' | 'ready' | string;
+  cli_version: string | null;
+  observed_at: string | null;
+  check_job_id: Id | null;
+  error: { code?: string; message?: string } | null;
+}
+
+export interface Onboarding {
+  repository: string;
+  read_only: boolean;
+  branch: string | null;
+  head: string | null;
+  branches: { name: string; head: string }[];
+  /** The commit the check ran against; null when the repository has no commit. */
+  baseline: string | null;
+  rules: {
+    path: string;
+    status: 'no_commit' | 'missing' | 'invalid' | 'no_commands' | 'ready' | string;
+    detail: string | null;
+    commands: { name: string; argv: string[] }[];
+  };
+  rules_template: string;
+  providers: Record<string, OnboardingProvider>;
+  next_steps: { kind: string; provider?: string }[];
+}
+
+export interface DeliveryReceipt {
+  acceptance_id: Id;
+  integration_id: Id;
+  target_ref: string;
+  target_baseline: string;
+  candidate: CandidateRef;
+  test_attempt: number;
+  test_evidence_hash: string;
+  review_round_id: Id;
+  snapshot_id: Id;
+  review_checkpoint_hash: string;
+  accepted_at: string;
+}
+
+export interface Delivery {
+  receipt: DeliveryReceipt;
+  tasks: { id: string; goal: string }[];
+  tests: { name: string; exit_code: number | null }[];
+  links: { integration: string; diff: string; review: string };
+  markdown: string;
 }

@@ -1,6 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { setTransport } from '../api/client';
+import { jobs } from '../api/jobs';
+import { ApiError } from '../api/transport';
 import type { PlanningDecision, PlanningDependency, PlanningView, Workspace } from '../api/types';
 import { App } from '../app/App';
 import { fakeTransport } from './fake';
@@ -87,6 +89,54 @@ it('explains an exhausted frozen planning budget without offering retry', async 
   window.history.replaceState(null, '', '/task-plans/exhausted');
   render(<App />);
 
-  expect(await screen.findByText('冻结的规划预算已用完。')).toBeTruthy();
+  expect(await screen.findByText(/冻结的规划预算已用完。相同的输入不会重置预算/)).toBeTruthy();
   expect(screen.queryByRole('button', { name: '重试规划' })).toBeNull();
+});
+
+it('starts a linked correction that never began from its own page, and says so when the service refuses the retry', async () => {
+  const workspace: Workspace = {
+    repository: '/repo', target_branch: 'main', head: 'a'.repeat(40), read_only: false,
+    environments: { claude: null, codex: null },
+    presets: { source: 'test', rules: {}, roles: [] },
+  };
+  // Created and linked, then stopped before its first draft: the service offers the retry.
+  const pending: PlanningView = {
+    planning_run_id: 'unstarted', task_run_id: null, phase: 'pending', verification: 'unverified',
+    card: null, attempts: { draft: [], review: [] }, standalone: true, retry_configurable: true,
+    next_action: { kind: 'plan_retry', detail: "Start this linked correction's first draft using the existing planning run ID." },
+  };
+  let record = pending;
+  let reads = 0;
+  let answer: unknown = { job_id: 'job-retry', state: 'queued' };
+  const post = vi.fn(() => answer);
+  setTransport(fakeTransport({
+    '/workspace': workspace, '/jobs': { items: [] },
+    '/jobs/job-retry': { job_id: 'job-retry', action: 'plan.retry', state: 'finished', exit_code: 0, result: {}, error: null, error_kind: null, resources: [{ kind: 'plan', id: 'unstarted' }] },
+    '/resources/plan/unstarted': () => { reads += 1; return { kind: 'plan', id: 'unstarted', data: record, artifacts: [] }; },
+  }, { '/jobs': post }));
+  window.history.replaceState(null, '', '/task-plans/unstarted?reused=1');
+  const view = render(<App />);
+  expect(await screen.findByText(/这是之前那次提交已经建好的规划，这一次没有重复创建。它还没开始或没有完成时，可以在本页点「重试规划」继续/)).toBeTruthy();
+  expect(screen.getByText('等待规划')).toBeTruthy();
+  const retry = await screen.findByRole('button', { name: '重试规划' }) as HTMLButtonElement;
+  await waitFor(() => expect(retry.disabled).toBe(false));
+  fireEvent.click(retry);
+  await waitFor(() => expect(post).toHaveBeenCalledWith({ action: 'plan.retry', args: { planning_run_id: 'unstarted' } }));
+  await jobs.waitFor('job-retry');
+  view.unmount();
+
+  // The budget ran out since the page was read: the retry is refused with 409, the page says
+  // what the service said and reads the planning again.
+  jobs.reset();
+  await jobs.init();
+  answer = new ApiError(409, 'job_unavailable', 'The original planning budget is exhausted.');
+  render(<App />);
+  const again = await screen.findByRole('button', { name: '重试规划' }) as HTMLButtonElement;
+  await waitFor(() => expect(again.disabled).toBe(false));
+  record = { ...pending, phase: 'failed', retry_configurable: false, next_action: { kind: 'budget_exhausted', detail: 'The original planning budget is exhausted.' } };
+  const before = reads;
+  fireEvent.click(again);
+  expect((await screen.findByRole('alert')).textContent).toContain('The original planning budget is exhausted.');
+  await waitFor(() => expect(reads).toBeGreaterThan(before));
+  expect(await screen.findByText(/冻结的规划预算已用完。相同的输入不会重置预算/)).toBeTruthy();
 });

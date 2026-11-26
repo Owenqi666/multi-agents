@@ -24,7 +24,7 @@ import { belongsToStage } from '../stage/jobScope';
 import { Stage } from '../stage/Stage';
 import { TaskPanel } from './TaskPage';
 import { PlanningAttempts } from './PlanningAttempts';
-import { Evidence, Facts, NextNote, Page, Raw, Section, useResource } from './common';
+import { Evidence, Facts, NextNote, Page, Raw, Section, useLocate, useResource } from './common';
 import { tx, joinList } from '../i18n';
 
 function Gate({ ok, label }: { ok: boolean; label: string }) {
@@ -110,7 +110,7 @@ function upstreamChanged(leaf: Leaf, leaves: Leaf[]): boolean {
   });
 }
 
-function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Workspace | null }) {
+function LeafRow({ stage, leaf, ws, locate }: { stage: DelegateStage; leaf: Leaf; ws: Workspace | null; locate?: (el: HTMLElement | null) => void }) {
   const archive = useArchiveMode();
   const [exec, setExec] = useState<PickerChoice | null>(null);
   const [stop, setStop] = useState(true);
@@ -133,7 +133,7 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
   const canRetryReview = !leaf.task_run_id && !waiting && !leaf.review_ready && !impl?.attempts.length && planning?.next_action?.kind === 'plan_retry'
     && ['awaiting_review', 'failed', 'cancelled'].includes(planning.phase) && (budget?.remaining ?? 1) > 0;
   return (
-    <li className="leaf">
+    <li className={locate ? 'leaf located' : 'leaf'} ref={locate} aria-current={locate ? 'location' : undefined}>
       <div className="leaf-head">
         <code>{leaf.card_id}</code>
         {claimed ? <Badge tone={leaf.review_ready ? 'ok' : 'muted'}>{leaf.review_ready ? tx('复核通过') : tx('复核中或未通过')}</Badge> : <Badge tone="muted">{tx('未领取')}</Badge>}
@@ -182,14 +182,16 @@ function LeafRow({ stage, leaf, ws }: { stage: DelegateStage; leaf: Leaf; ws: Wo
   );
 }
 
-function DelegateBody({ stage, ws }: { stage: DelegateStage; ws: Workspace | null }) {
+function DelegateBody({ stage, ws, card }: { stage: DelegateStage; ws: Workspace | null; card: string | null }) {
+  const locate = useLocate(card);
   const ready = stage.leaves.filter((l) => nz(l.planning) && l.review_ready && !nz(l.implementation)?.attempts.length && !l.unmet_dependencies.length);
   const integration = stage.integration;
   return (
     <>
       <PlanningBlock stage={stage} />
       <Section title={tx('子卡')} note={tx('首次领取可以为子卡选复核模型。默认使用阶段设置。互不依赖的子卡可以并行实施。')}>
-        {stage.leaves.length ? <ul className="leaf-list">{stage.leaves.map((l) => <LeafRow key={l.card_id} stage={stage} leaf={l} ws={ws} />)}</ul> : <p className="muted">{tx('拆分核验通过后才会列出子卡。')}</p>}
+        {card !== null && stage.leaves.length && !stage.leaves.some((l) => l.card_id === card) ? <p className="stale-note">{tx('这个阶段里没有子卡 {0}。', card)}</p> : null}
+        {stage.leaves.length ? <ul className="leaf-list">{stage.leaves.map((l) => <LeafRow key={l.card_id} stage={stage} leaf={l} ws={ws} locate={l.card_id === card ? locate : undefined} />)}</ul> : <p className="muted">{tx('拆分核验通过后才会列出子卡。')}</p>}
         {ready.length >= 2 ? (
           <ActionButton action="task.run_batch" label={tx('并行实施 {0} 张子卡', ready.length)} args={() => ({ planning_run_ids: ready.map((l) => l.planning_run_id) })} />
         ) : null}
@@ -209,7 +211,8 @@ function DelegateBody({ stage, ws }: { stage: DelegateStage; ws: Workspace | nul
   );
 }
 
-export function StagePage({ id }: { id: string }) {
+/** `card` comes from a link that points at one delegated card (?card=), for example from the inbox. */
+export function StagePage({ id, card = null }: { id: string; card?: string | null }) {
   const read = useResource<StageData>('stage', id);
   const ws = useWorkspace();
   const { active } = useJobs();
@@ -239,7 +242,7 @@ export function StagePage({ id }: { id: string }) {
               </p>
               {s.dispatch_error ? <p className="action-why problem">{s.dispatch_error}</p> : null}
             </Section>
-            {s.mode === 'direct' ? <DirectBody stage={s} ws={ws.data} /> : <DelegateBody stage={s} ws={ws.data} />}
+            {s.mode === 'direct' ? <DirectBody stage={s} ws={ws.data} /> : <DelegateBody stage={s} ws={ws.data} card={card} />}
           </>
         )}
       </ReadFrame>
