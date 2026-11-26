@@ -106,13 +106,17 @@ def _validate_resource_identity(kind: str, identifier: str) -> None:
         raise ValueError("invalid resource kind or identifier")
 
 
-def _scope(workspace: Workspace, kind: str, identifier: str) -> tuple[Path, str]:
+def _scope(
+    workspace: Workspace, kind: str, identifier: str, *, common_dir: Path | None = None
+) -> tuple[Path, str]:
     _validate_resource_identity(kind, identifier)
     database = workspace.database
     if database.is_symlink():
         raise ValueError("workspace database must be a regular file")
     if not database.is_file():
         raise KeyError(identifier)
+    if common_dir is not None:
+        return database, str(common_dir)
     common = Path(
         _git(
             workspace.repository,
@@ -1065,7 +1069,9 @@ def _first_result_line(*values: object) -> str | None:
 
 def references(action: str, result: object) -> list[dict[str, str]]:
     """Collect explicit product IDs from normal and partially successful results."""
-    independent = action.startswith("review.")
+    independent = action.startswith("review.") and (
+        action != "review.followup" or _result_field(result, "report_only") is not None
+    )
     items: dict[tuple[str, str], dict[str, str]] = {}
     revised_integrations: dict[str, str] = {}
 

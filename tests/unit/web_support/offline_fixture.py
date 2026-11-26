@@ -32,7 +32,13 @@ EVIDENCE_PLANS = {
     "codex": ("T-0810", AMOUNT, "Implement the standalone amount.\n"),
     "claude": ("T-0811", STATUS, "Implement the standalone status.\n"),
 }
-CODEX_MODELS = ("gpt-6.2-astra", "gpt-6.2-sol", "gpt-6.1-terra", "gpt-6.2-luna")
+CODEX_MODELS = (
+    "gpt-6.2-astra",
+    "gpt-6.2-sol",
+    "gpt-6.1-terra",
+    "gpt-6.2-luna",
+    "gpt-6.1-sol",
+)
 CLAUDE_MODELS = (
     "claude-fable-5-2",
     "claude-opus-5-5",

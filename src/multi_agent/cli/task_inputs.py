@@ -34,6 +34,10 @@ _TASK_ID = re.compile(r"T-[0-9]{4}\Z")
 _COMMIT_ID = re.compile(r"[0-9a-f]{40}\Z")
 
 
+class MissingProjectRules(ValueError):
+    """The selected baseline has no committed rules file."""
+
+
 def _input_text(text: str) -> str:
     _string(text, "input", nonempty=True)
     if len(text.encode("utf-8")) > MAX_INPUT_BYTES:
@@ -301,7 +305,7 @@ def freeze_project_rules(repository: Path, baseline: str) -> FrozenProjectRules:
     commit = _resolve_commit(repository, baseline)
     record = _git(repository, "ls-tree", "--full-tree", "-z", commit, "--", RULES_PATH)
     if not record:
-        raise ValueError("baseline has no .multi-agent/rules.yaml")
+        raise MissingProjectRules("baseline has no .multi-agent/rules.yaml")
     metadata, path = record.removesuffix(b"\0").split(b"\t", 1)
     mode, kind, oid = metadata.decode("ascii").split()
     if (

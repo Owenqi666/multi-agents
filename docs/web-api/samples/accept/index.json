@@ -10,6 +10,15 @@
   },
   {
     "seq": 2,
+    "method": "GET",
+    "path": "/api/workspace/onboarding",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "056.json"
+  },
+  {
+    "seq": 3,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -23,7 +32,7 @@
     "response_file": "002.json"
   },
   {
-    "seq": 3,
+    "seq": 4,
     "method": "GET",
     "path": "/api/jobs/10000010000000000000000000000000",
     "query": null,
@@ -32,7 +41,7 @@
     "response_file": "003.json"
   },
   {
-    "seq": 4,
+    "seq": 5,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -46,7 +55,7 @@
     "response_file": "004.json"
   },
   {
-    "seq": 5,
+    "seq": 6,
     "method": "GET",
     "path": "/api/jobs/10000020000000000000000000000000",
     "query": null,
@@ -55,7 +64,7 @@
     "response_file": "005.json"
   },
   {
-    "seq": 6,
+    "seq": 7,
     "method": "GET",
     "path": "/api/workspace",
     "query": null,
@@ -64,7 +73,16 @@
     "response_file": "006.json"
   },
   {
-    "seq": 7,
+    "seq": 8,
+    "method": "GET",
+    "path": "/api/workspace/onboarding",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "057.json"
+  },
+  {
+    "seq": 9,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -86,7 +104,7 @@
     "response_file": "007.json"
   },
   {
-    "seq": 8,
+    "seq": 10,
     "method": "GET",
     "path": "/api/jobs/10000030000000000000000000000000",
     "query": null,
@@ -95,7 +113,7 @@
     "response_file": "008.json"
   },
   {
-    "seq": 9,
+    "seq": 11,
     "method": "GET",
     "path": "/api/resources/consultation/consultation-10000030000000000000000000000000",
     "query": null,
@@ -104,7 +122,7 @@
     "response_file": "009.json"
   },
   {
-    "seq": 10,
+    "seq": 12,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -122,7 +140,7 @@
     "response_file": "010.json"
   },
   {
-    "seq": 11,
+    "seq": 13,
     "method": "GET",
     "path": "/api/jobs/10000060000000000000000000000000",
     "query": null,
@@ -131,7 +149,7 @@
     "response_file": "011.json"
   },
   {
-    "seq": 12,
+    "seq": 14,
     "method": "GET",
     "path": "/api/resources/goal/goal-10000080000000000000000000000000",
     "query": null,
@@ -140,7 +158,7 @@
     "response_file": "012.json"
   },
   {
-    "seq": 13,
+    "seq": 15,
     "method": "GET",
     "path": "/api/resources/project/project-10000070000000000000000000000000",
     "query": null,
@@ -149,7 +167,7 @@
     "response_file": "013.json"
   },
   {
-    "seq": 14,
+    "seq": 16,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -168,7 +186,7 @@
     "response_file": "014.json"
   },
   {
-    "seq": 15,
+    "seq": 17,
     "method": "GET",
     "path": "/api/jobs/10000090000000000000000000000000",
     "query": null,
@@ -177,7 +195,7 @@
     "response_file": "015.json"
   },
   {
-    "seq": 16,
+    "seq": 18,
     "method": "GET",
     "path": "/api/resources/project-plan/plan-100000a0000000000000000000000000",
     "query": null,
@@ -186,7 +204,16 @@
     "response_file": "016.json"
   },
   {
-    "seq": 17,
+    "seq": 19,
+    "method": "GET",
+    "path": "/api/attention",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "058.json"
+  },
+  {
+    "seq": 20,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -211,7 +238,7 @@
     "response_file": "017.json"
   },
   {
-    "seq": 18,
+    "seq": 21,
     "method": "GET",
     "path": "/api/jobs/100000d0000000000000000000000000",
     "query": null,
@@ -220,7 +247,7 @@
     "response_file": "018.json"
   },
   {
-    "seq": 19,
+    "seq": 22,
     "method": "GET",
     "path": "/api/resources/task/10000100000000000000000000000000",
     "query": null,
@@ -229,7 +256,7 @@
     "response_file": "019.json"
   },
   {
-    "seq": 20,
+    "seq": 23,
     "method": "GET",
     "path": "/api/diffs/task/10000100000000000000000000000000",
     "query": null,
@@ -238,7 +265,7 @@
     "response_file": "020.json"
   },
   {
-    "seq": 21,
+    "seq": 24,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -258,7 +285,7 @@
     "response_file": "021.json"
   },
   {
-    "seq": 22,
+    "seq": 25,
     "method": "GET",
     "path": "/api/jobs/10000170000000000000000000000000",
     "query": null,
@@ -267,7 +294,7 @@
     "response_file": "022.json"
   },
   {
-    "seq": 23,
+    "seq": 26,
     "method": "GET",
     "path": "/api/resources/task-test/10000100000000000000000000000000",
     "query": "implementation_attempt=1&test_attempt=1",
@@ -276,7 +303,7 @@
     "response_file": "023.json"
   },
   {
-    "seq": 24,
+    "seq": 27,
     "method": "GET",
     "path": "/api/artifacts/art-WyJ0YXNrLXRlc3QiLCIxMDAwMDEwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMCIseyJpbXBsZW1lbnRhdGlvbl9hdHRlbXB0IjpbIjEiXSwidGVzdF9hdHRlbXB0IjpbIjEiXX0sInRlc3QtMS0xLTIiLCIzMDAwMDIyMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIl0",
     "query": "offset=0&limit=4096",
@@ -285,7 +312,7 @@
     "response_file": "024.json"
   },
   {
-    "seq": 25,
+    "seq": 28,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -309,7 +336,7 @@
     "response_file": "025.json"
   },
   {
-    "seq": 26,
+    "seq": 29,
     "method": "GET",
     "path": "/api/jobs/10000180000000000000000000000000",
     "query": null,
@@ -318,7 +345,7 @@
     "response_file": "026.json"
   },
   {
-    "seq": 27,
+    "seq": 30,
     "method": "GET",
     "path": "/api/resources/stage/stage-100000e0000000000000000000000000",
     "query": null,
@@ -327,7 +354,7 @@
     "response_file": "027.json"
   },
   {
-    "seq": 28,
+    "seq": 31,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -352,7 +379,7 @@
     "response_file": "028.json"
   },
   {
-    "seq": 29,
+    "seq": 32,
     "method": "GET",
     "path": "/api/jobs/100001a0000000000000000000000000",
     "query": null,
@@ -361,7 +388,7 @@
     "response_file": "029.json"
   },
   {
-    "seq": 30,
+    "seq": 33,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -375,7 +402,7 @@
     "response_file": "030.json"
   },
   {
-    "seq": 31,
+    "seq": 34,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -396,7 +423,7 @@
     "response_file": "031.json"
   },
   {
-    "seq": 32,
+    "seq": 35,
     "method": "GET",
     "path": "/api/jobs/10000200000000000000000000000000",
     "query": null,
@@ -405,7 +432,7 @@
     "response_file": "032.json"
   },
   {
-    "seq": 33,
+    "seq": 36,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -419,7 +446,7 @@
     "response_file": "033.json"
   },
   {
-    "seq": 34,
+    "seq": 37,
     "method": "GET",
     "path": "/api/jobs/10000250000000000000000000000000",
     "query": null,
@@ -428,7 +455,7 @@
     "response_file": "034.json"
   },
   {
-    "seq": 35,
+    "seq": 38,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -449,7 +476,7 @@
     "response_file": "035.json"
   },
   {
-    "seq": 36,
+    "seq": 39,
     "method": "GET",
     "path": "/api/jobs/10000290000000000000000000000000",
     "query": null,
@@ -458,7 +485,7 @@
     "response_file": "036.json"
   },
   {
-    "seq": 37,
+    "seq": 40,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -472,7 +499,7 @@
     "response_file": "037.json"
   },
   {
-    "seq": 38,
+    "seq": 41,
     "method": "GET",
     "path": "/api/jobs/100002e0000000000000000000000000",
     "query": null,
@@ -481,7 +508,7 @@
     "response_file": "038.json"
   },
   {
-    "seq": 39,
+    "seq": 42,
     "method": "GET",
     "path": "/api/resources/stage/stage-100001b0000000000000000000000000",
     "query": null,
@@ -490,7 +517,7 @@
     "response_file": "039.json"
   },
   {
-    "seq": 40,
+    "seq": 43,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -504,7 +531,7 @@
     "response_file": "040.json"
   },
   {
-    "seq": 41,
+    "seq": 44,
     "method": "GET",
     "path": "/api/jobs/10000320000000000000000000000000",
     "query": null,
@@ -513,7 +540,7 @@
     "response_file": "041.json"
   },
   {
-    "seq": 42,
+    "seq": 45,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -528,7 +555,7 @@
     "response_file": "042.json"
   },
   {
-    "seq": 43,
+    "seq": 46,
     "method": "GET",
     "path": "/api/jobs/10000340000000000000000000000000",
     "query": null,
@@ -537,7 +564,7 @@
     "response_file": "043.json"
   },
   {
-    "seq": 44,
+    "seq": 47,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -551,7 +578,7 @@
     "response_file": "044.json"
   },
   {
-    "seq": 45,
+    "seq": 48,
     "method": "GET",
     "path": "/api/jobs/10000350000000000000000000000000",
     "query": null,
@@ -560,7 +587,7 @@
     "response_file": "045.json"
   },
   {
-    "seq": 46,
+    "seq": 49,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -582,7 +609,7 @@
     "response_file": "046.json"
   },
   {
-    "seq": 47,
+    "seq": 50,
     "method": "GET",
     "path": "/api/jobs/10000360000000000000000000000000",
     "query": null,
@@ -591,7 +618,16 @@
     "response_file": "047.json"
   },
   {
-    "seq": 48,
+    "seq": 51,
+    "method": "GET",
+    "path": "/api/jobs/10000360000000000000000000000000/activity",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "059.json"
+  },
+  {
+    "seq": 52,
     "method": "GET",
     "path": "/api/resources/snapshot/3000051000000000000000000000000000000000000000000000000000000000",
     "query": null,
@@ -600,7 +636,7 @@
     "response_file": "048.json"
   },
   {
-    "seq": 49,
+    "seq": 53,
     "method": "GET",
     "path": "/api/diffs/snapshot/3000051000000000000000000000000000000000000000000000000000000000",
     "query": null,
@@ -609,7 +645,16 @@
     "response_file": "049.json"
   },
   {
-    "seq": 50,
+    "seq": 54,
+    "method": "GET",
+    "path": "/api/attention",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "060.json"
+  },
+  {
+    "seq": 55,
     "method": "POST",
     "path": "/api/jobs",
     "query": null,
@@ -624,7 +669,7 @@
     "response_file": "050.json"
   },
   {
-    "seq": 51,
+    "seq": 56,
     "method": "GET",
     "path": "/api/jobs/100003c0000000000000000000000000",
     "query": null,
@@ -633,7 +678,7 @@
     "response_file": "051.json"
   },
   {
-    "seq": 52,
+    "seq": 57,
     "method": "GET",
     "path": "/api/resources/integration/10000330000000000000000000000000",
     "query": null,
@@ -642,7 +687,43 @@
     "response_file": "052.json"
   },
   {
-    "seq": 53,
+    "seq": 58,
+    "method": "GET",
+    "path": "/api/jobs/100003c0000000000000000000000000/activity",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "061.json"
+  },
+  {
+    "seq": 59,
+    "method": "GET",
+    "path": "/api/integrations/10000330000000000000000000000000/delivery",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "062.json"
+  },
+  {
+    "seq": 60,
+    "method": "GET",
+    "path": "/api/integrations/10000330000000000000000000000000/rework-eligibility",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "063.json"
+  },
+  {
+    "seq": 61,
+    "method": "GET",
+    "path": "/api/attention",
+    "query": null,
+    "request_body": null,
+    "status": 200,
+    "response_file": "064.json"
+  },
+  {
+    "seq": 62,
     "method": "GET",
     "path": "/api/resources/stage/stage-100001b0000000000000000000000000",
     "query": null,
@@ -651,7 +732,7 @@
     "response_file": "053.json"
   },
   {
-    "seq": 54,
+    "seq": 63,
     "method": "GET",
     "path": "/api/resources/project-stages/plan-100000a0000000000000000000000000",
     "query": null,
@@ -660,7 +741,7 @@
     "response_file": "054.json"
   },
   {
-    "seq": 55,
+    "seq": 64,
     "method": "GET",
     "path": "/api/runs",
     "query": null,

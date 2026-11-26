@@ -94,6 +94,8 @@ def add_verification_parsers(operations: Any) -> None:
             parser.add_argument("--review", required=True, metavar="ROUND_ID")
         if name == "retry-review":
             parser.add_argument("--seat", action="append", metavar="SEAT_KEY")
+            parser.add_argument("--recover", action="store_true")
+            parser.add_argument("--expected-attempt", type=int, action="append")
 
 
 def _check_target(record: IntegrationRecord) -> None:
@@ -490,7 +492,11 @@ def _retry_review(
             )
             confirmation_id = args.review
         seats = runner.prepare_retry(
-            store, args.review, tuple(args.seat) if args.seat else None, recover=False
+            store,
+            args.review,
+            tuple(args.seat) if args.seat else None,
+            recover=getattr(args, "recover", False),
+            expected_attempts=getattr(args, "expected_attempt", None),
         )
         result, code = _dispatch_review(
             store,

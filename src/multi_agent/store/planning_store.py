@@ -37,18 +37,95 @@ from .planning_codec import (
     encode_planning_provenance,
     encode_planning_review,
 )
+from .review_annotations import FindingAnchor, append_activity
 from .task_store import TaskStore
 
 
 class PlanningStore(TaskStore):
     """One caller-owned connection; all state updates share their history transaction."""
 
+    def is_linked_correction(self, run_id: str) -> bool:
+        if self._connection.execute("PRAGMA user_version").fetchone()[0] < 14:
+            return False
+        row = self._connection.execute(
+            """SELECT 1 FROM review_finding_activity
+               WHERE kind = 'linked_plan' AND planning_run_id = ? LIMIT 1""",
+            (run_id,),
+        ).fetchone()
+        return row is not None
+
+    def linked_correction(self, anchor: FindingAnchor, input_hash: str) -> str | None:
+        """Look up the first recorded plan for this finding and frozen planning input."""
+        if self._connection.execute("PRAGMA user_version").fetchone()[0] < 14:
+            return None
+        row = self._connection.execute(
+            """SELECT a.planning_run_id
+               FROM review_finding_activity AS a JOIN planning_runs AS p
+                 ON p.run_id = a.planning_run_id
+               WHERE a.kind = 'linked_plan' AND a.round_id = ? AND a.snapshot_id = ?
+                 AND a.seat = ? AND a.attempt = ? AND a.finding_id = ? AND p.input_hash = ?
+               ORDER BY a.id LIMIT 1""",
+            (
+                anchor.round_id,
+                anchor.snapshot_id,
+                anchor.seat,
+                anchor.attempt,
+                anchor.finding_id,
+                input_hash,
+            ),
+        ).fetchone()
+        if row is None:
+            return None
+        self._check_finding(anchor)
+        return str(row["planning_run_id"])
+
     def create_planning(
-        self, run_id: str, planning_input: PlanningInput, created_at: str
-    ) -> None:
+        self,
+        run_id: str,
+        planning_input: PlanningInput,
+        created_at: str,
+        *,
+        review_anchor: FindingAnchor | None = None,
+    ) -> str | None:
+        """Create the requested plan, returning the prior ID if the same correction already exists."""
         with self._connection:
             self._connection.execute("BEGIN IMMEDIATE")
+            if review_anchor is not None:
+                prior = self.linked_correction(review_anchor, planning_input.input_hash)
+                if prior is not None:
+                    return prior
+                self._check_finding(review_anchor)
+                snapshot = self.load_snapshot(review_anchor.snapshot_id)
+                if not isinstance(snapshot, dict):
+                    raise ValueError("invalid review snapshot")
+                source = snapshot.get("source", snapshot)
+                if not isinstance(source, dict):
+                    raise ValueError("invalid review source")
+                rules = planning_input.frozen_rules
+                if (
+                    source.get("repository") or source.get("bound_repository")
+                ) != rules.repository:
+                    raise ValueError(
+                        "correction plan must belong to the reviewed repository"
+                    )
+                if (
+                    source.get("candidate") is not None
+                    and source["candidate"] != rules.baseline_commit
+                ):
+                    raise ValueError(
+                        "correction plan baseline must be the reviewed candidate"
+                    )
             self._insert_planning(run_id, planning_input, created_at)
+            if review_anchor is not None:
+                append_activity(
+                    self._connection,
+                    review_anchor,
+                    "linked_plan",
+                    {},
+                    planning_run_id=run_id,
+                    created_at=created_at,
+                )
+        return None
 
     def _insert_planning(
         self, run_id: str, planning_input: PlanningInput, created_at: str

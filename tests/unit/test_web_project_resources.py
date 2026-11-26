@@ -174,7 +174,7 @@ def test_workspace_upgrades_v11_goals_before_serving_http(bound, tmp_path, monke
     programs = {provider: fake(tmp_path, provider) for provider in ("codex", "claude")}
     with _serve(workspace.repository, workspace.data_dir, programs) as service:
         with closing(sqlite3.connect(database)) as connection:
-            assert connection.execute("PRAGMA user_version").fetchone() == (13,)
+            assert connection.execute("PRAGMA user_version").fetchone() == (14,)
         shown = _get(service, "resources/goal/goal-local")["data"]
         assert shown["project_id"] == "project-local"
         assert shown["original_goal"] == "Original wording.\r\n"

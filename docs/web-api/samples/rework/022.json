@@ -55,6 +55,7 @@
     ],
     "details": {
       "is_current": true,
+      "retry_ready": false,
       "finished": true,
       "cancel_requested": false,
       "declaration_source": "PM",
@@ -80,7 +81,7 @@
     {
       "artifact_id": "10000170000000000000000000000000.stdout",
       "stream": "stdout",
-      "byte_count": 2371,
+      "byte_count": 2397,
       "sha256": "3000020000000000000000000000000000000000000000000000000000000000"
     },
     {
@@ -89,5 +90,6 @@
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     }
-  ]
+  ],
+  "error_kind": null
 }

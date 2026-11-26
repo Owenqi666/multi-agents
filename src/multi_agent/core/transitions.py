@@ -1307,6 +1307,19 @@ def _task_test_stopped(attempt: TaskTestAttempt) -> bool:
     )
 
 
+def task_test_retry_ready(attempt: TaskTestAttempt) -> bool:
+    return (
+        attempt.finished
+        and task_test_phase(attempt)
+        in (
+            TaskTestPhase.FAILED,
+            TaskTestPhase.CANCELLED,
+            TaskTestPhase.AWAITING_EVIDENCE,
+        )
+        and _task_test_stopped(attempt)
+    )
+
+
 def _task_test_receipt_ready(receipt: TaskTestReconciled | None) -> bool:
     return (
         receipt is not None
@@ -1413,16 +1426,7 @@ def _task_test_start(
     if _task_test_semantics(event.input) != _task_test_semantics(state.reference_input):
         raise ValueError("test attempt changes the stage's frozen semantic input")
     current = state.current_attempt
-    if current is not None and (
-        not current.finished
-        or task_test_phase(current)
-        not in (
-            TaskTestPhase.FAILED,
-            TaskTestPhase.CANCELLED,
-            TaskTestPhase.AWAITING_EVIDENCE,
-        )
-        or not _task_test_stopped(current)
-    ):
+    if current is not None and not task_test_retry_ready(current):
         raise ValueError("test retry requires logical completion and actual settlement")
     attempt = TaskTestAttempt(envelope.test_attempt, event.input)
     return (

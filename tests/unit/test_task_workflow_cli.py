@@ -297,6 +297,7 @@ def test_phase_two_end_to_end(workflow):
     )
     tested = successful(*suite_arguments(workflow, task_run_id, 1, test_bin), code=1)
     assert tested["verification"] == "verified"
+    assert tested["details"]["retry_ready"]
     assert [item["exit_code"] for item in tested["commands"]] == [0, 7]
     reviewer = executable(workflow, "codex", "review", report=blocking_report())
     reviewed = successful(

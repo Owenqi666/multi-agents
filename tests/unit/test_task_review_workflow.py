@@ -467,6 +467,49 @@ def test_task_review_workflow_nonzero_complete_suite_is_reviewed(workflow):
     assert len(reviews(workflow)) == 2
 
 
+def test_same_implementation_retest_requires_a_new_review(workflow):
+    # Both attempts execute this frozen suite; only their owned run directories differ.
+    (workflow.repository / "checks/test.py").write_text(
+        "from pathlib import Path\n"
+        "raise SystemExit(7 if 'tests-1' in Path.cwd().parts else 0)\n"
+    )
+    helpers.git(
+        workflow.repository,
+        "commit",
+        "--quiet",
+        "-am",
+        "Fixture for a transient test failure",
+    )
+    workflow.baseline = helpers.git(workflow.repository, "rev-parse", "HEAD")
+    prepare(workflow)
+    task = workflow.first["task_run_id"]
+    first = workflow.tested
+    original = helpers.successful(
+        *helpers.review_arguments(
+            workflow, task, 1, first["test_attempt"], workflow.reviewers["codex"]
+        ),
+        code=1,
+    )
+    assert original["source_current"] and first["details"]["retry_ready"]
+    second = helpers.successful(
+        *helpers.suite_arguments(workflow, task, 1, workflow.test_bin, suffix="-retry")
+    )
+    assert [item["exit_code"] for item in second["commands"]] == [0, 0]
+    assert second["details"]["input_hash"] == first["details"]["input_hash"]
+    assert second["candidate"] == original["candidate"] == first["candidate"]
+    shown = helpers.successful(
+        "task", "show", "--task", task, "--database", workflow.database
+    )
+    assert (
+        shown["implementation_attempt"] == 1
+        and shown["next_action"]["kind"] == "task_review"
+    )
+    assert shown["next_action"]["test_attempt"] == second["test_attempt"] == 2
+    assert [(r["round_id"], r["test_attempt"]) for r in shown["reviews"]] == [
+        (original["round_id"], 1)
+    ]
+
+
 @pytest.mark.parametrize("stage", ["rework", "tests", "review"])
 def test_task_review_workflow_stops_on_execution_failure(workflow, stage):
     prepare(workflow)

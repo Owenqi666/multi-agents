@@ -1,0 +1,51 @@
+{
+  "args": {
+    "review_anchor": {
+      "round_id": "10000360000000000000000000000000",
+      "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
+      "seat": "seat-1",
+      "attempt": 1,
+      "finding_id": "status-blocker"
+    },
+    "baseline": "200000b000000000000000000000000000000000",
+    "requirements": {
+      "length": 33
+    }
+  },
+  "created_at": "2000-01-01T00:01:44.000000+00:00",
+  "started_at": "2000-01-01T00:01:45.000000+00:00",
+  "finished_at": "2000-01-01T00:01:26.000000+00:00",
+  "cancel_requested_at": null,
+  "stderr_tail": "",
+  "job_id": "10000460000000000000000000000000",
+  "action": "plan.create",
+  "state": "finished",
+  "exit_code": 0,
+  "result": {
+    "operation": "plan",
+    "planning_run_id": "10000400000000000000000000000000",
+    "reused": true
+  },
+  "error": null,
+  "resources": [
+    {
+      "kind": "plan",
+      "id": "10000400000000000000000000000000"
+    }
+  ],
+  "artifacts": [
+    {
+      "artifact_id": "10000460000000000000000000000000.stdout",
+      "stream": "stdout",
+      "byte_count": 93,
+      "sha256": "3000070000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "artifact_id": "10000460000000000000000000000000.stderr",
+      "stream": "stderr",
+      "byte_count": 0,
+      "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
+    }
+  ],
+  "error_kind": null
+}

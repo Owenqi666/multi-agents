@@ -62,6 +62,10 @@ class PlanningRequest:
     effort: str
 
 
+DEFAULT_TASK_DRAFT = PlanningRequest("claude", "claude-opus-5-5", "high")
+DEFAULT_TASK_PLAN_REVIEW = PlanningRequest("codex", "gpt-6.1-sol", "high")
+
+
 @dataclass(frozen=True, slots=True)
 class DependencyReceipt:
     task_id: str

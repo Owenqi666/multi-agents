@@ -1,0 +1,9 @@
+{
+  "integration_id": "10000390000000000000000000000000",
+  "round_id": "100003d0000000000000000000000000",
+  "lock_busy": false,
+  "eligible": false,
+  "reason": "The integration already has an acceptance receipt.",
+  "owner": null,
+  "findings": []
+}

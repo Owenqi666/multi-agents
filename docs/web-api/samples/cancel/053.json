@@ -24,6 +24,7 @@
           "gpt-6.2-sol",
           "gpt-6.1-terra",
           "gpt-6.2-luna",
+          "gpt-6.1-sol",
           "claude-fable-5-2",
           "claude-opus-5-5",
           "claude-sonnet-5-5",
@@ -43,6 +44,10 @@
             "high"
           ],
           "gpt-6.2-luna": [
+            "low",
+            "high"
+          ],
+          "gpt-6.1-sol": [
             "low",
             "high"
           ],
@@ -66,7 +71,8 @@
         "error": null
       },
       "error": null,
-      "resources": []
+      "resources": [],
+      "error_kind": null
     },
     {
       "args": {
@@ -86,7 +92,8 @@
         "code": "service_interrupted",
         "message": "The previous service stopped before observing a result."
       },
-      "resources": []
+      "resources": [],
+      "error_kind": "interrupted"
     },
     {
       "args": {
@@ -112,6 +119,7 @@
           "gpt-6.2-sol",
           "gpt-6.1-terra",
           "gpt-6.2-luna",
+          "gpt-6.1-sol",
           "claude-fable-5-2",
           "claude-opus-5-5",
           "claude-sonnet-5-5",
@@ -131,6 +139,10 @@
             "high"
           ],
           "gpt-6.2-luna": [
+            "low",
+            "high"
+          ],
+          "gpt-6.1-sol": [
             "low",
             "high"
           ],
@@ -154,7 +166,8 @@
         "error": null
       },
       "error": null,
-      "resources": []
+      "resources": [],
+      "error_kind": null
     },
     {
       "args": {
@@ -609,7 +622,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -993,7 +1007,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -1377,7 +1392,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -1694,6 +1710,10 @@
                           "low",
                           "high"
                         ],
+                        "gpt-6.1-sol": [
+                          "low",
+                          "high"
+                        ],
                         "gpt-6.1-terra": [
                           "low",
                           "high"
@@ -1716,6 +1736,7 @@
                         "gpt-6.2-sol",
                         "gpt-6.1-terra",
                         "gpt-6.2-luna",
+                        "gpt-6.1-sol",
                         "claude-fable-5-2",
                         "claude-opus-5-5",
                         "claude-sonnet-5-5",
@@ -1971,7 +1992,7 @@
         {
           "artifact_id": "100001a0000000000000000000000000.stdout",
           "stream": "stdout",
-          "byte_count": 24338,
+          "byte_count": 24481,
           "sha256": "300002e000000000000000000000000000000000000000000000000000000000"
         },
         {
@@ -1980,7 +2001,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -2196,7 +2218,7 @@
         {
           "artifact_id": "10000180000000000000000000000000.stdout",
           "stream": "stdout",
-          "byte_count": 5579,
+          "byte_count": 5578,
           "sha256": "3000027000000000000000000000000000000000000000000000000000000000"
         },
         {
@@ -2205,7 +2227,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -2264,6 +2287,7 @@
         ],
         "details": {
           "is_current": true,
+          "retry_ready": false,
           "finished": true,
           "cancel_requested": false,
           "declaration_source": "PM",
@@ -2289,7 +2313,7 @@
         {
           "artifact_id": "10000170000000000000000000000000.stdout",
           "stream": "stdout",
-          "byte_count": 2371,
+          "byte_count": 2397,
           "sha256": "3000020000000000000000000000000000000000000000000000000000000000"
         },
         {
@@ -2298,7 +2322,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -2607,6 +2632,10 @@
                           "low",
                           "high"
                         ],
+                        "gpt-6.1-sol": [
+                          "low",
+                          "high"
+                        ],
                         "gpt-6.1-terra": [
                           "low",
                           "high"
@@ -2629,6 +2658,7 @@
                         "gpt-6.2-sol",
                         "gpt-6.1-terra",
                         "gpt-6.2-luna",
+                        "gpt-6.1-sol",
                         "claude-fable-5-2",
                         "claude-opus-5-5",
                         "claude-sonnet-5-5",
@@ -3272,6 +3302,10 @@
                         "low",
                         "high"
                       ],
+                      "gpt-6.1-sol": [
+                        "low",
+                        "high"
+                      ],
                       "gpt-6.1-terra": [
                         "low",
                         "high"
@@ -3294,6 +3328,7 @@
                       "gpt-6.2-sol",
                       "gpt-6.1-terra",
                       "gpt-6.2-luna",
+                      "gpt-6.1-sol",
                       "claude-fable-5-2",
                       "claude-opus-5-5",
                       "claude-sonnet-5-5",
@@ -3388,7 +3423,7 @@
         {
           "artifact_id": "100000d0000000000000000000000000.stdout",
           "stream": "stdout",
-          "byte_count": 65532,
+          "byte_count": 65808,
           "sha256": "300001e000000000000000000000000000000000000000000000000000000000"
         },
         {
@@ -3397,7 +3432,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -3450,7 +3486,7 @@
           "exit_code": 0,
           "logs": [
             {
-              "byte_count": 1204,
+              "byte_count": 1203,
               "closed": true,
               "healthy": true,
               "identity": [
@@ -3464,7 +3500,7 @@
               "sha256": "3000009000000000000000000000000000000000000000000000000000000000"
             },
             {
-              "byte_count": 6800,
+              "byte_count": 6794,
               "closed": true,
               "healthy": true,
               "identity": [
@@ -3601,7 +3637,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -3672,7 +3709,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -3751,7 +3789,7 @@
               "exit_code": 0,
               "logs": [
                 {
-                  "byte_count": 1204,
+                  "byte_count": 1202,
                   "closed": true,
                   "healthy": true,
                   "identity": [
@@ -3765,7 +3803,7 @@
                   "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
                 },
                 {
-                  "byte_count": 3649,
+                  "byte_count": 3643,
                   "closed": true,
                   "healthy": true,
                   "identity": [
@@ -3827,7 +3865,8 @@
           "byte_count": 0,
           "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
         }
-      ]
+      ],
+      "error_kind": null
     },
     {
       "args": {
@@ -3853,7 +3892,8 @@
         "error": null
       },
       "error": null,
-      "resources": []
+      "resources": [],
+      "error_kind": null
     },
     {
       "args": {
@@ -3879,6 +3919,7 @@
           "gpt-6.2-sol",
           "gpt-6.1-terra",
           "gpt-6.2-luna",
+          "gpt-6.1-sol",
           "claude-fable-5-2",
           "claude-opus-5-5",
           "claude-sonnet-5-5",
@@ -3898,6 +3939,10 @@
             "high"
           ],
           "gpt-6.2-luna": [
+            "low",
+            "high"
+          ],
+          "gpt-6.1-sol": [
             "low",
             "high"
           ],
@@ -3921,7 +3966,8 @@
         "error": null
       },
       "error": null,
-      "resources": []
+      "resources": [],
+      "error_kind": null
     }
   ]
 }

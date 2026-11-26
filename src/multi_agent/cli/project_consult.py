@@ -22,6 +22,7 @@ from multi_agent.adapters.project_advisor import (
 )
 from multi_agent.core.planning import PlanningRequest
 from multi_agent.core.state import AttemptStatus
+from multi_agent.job_activity import observe, start_actor
 from multi_agent.store.project_store import ProjectStore
 
 from .errors import CLIRefusal
@@ -274,6 +275,9 @@ def consult(args: argparse.Namespace, data_path: Path) -> dict[str, Any]:
                 store.reserve_consultation_seat(
                     identifier, seat, ADVICE_PROMPT_VERSION, _now()
                 )
+                start_actor(
+                    "consultation", identifier, f"advisor-{seat}", request.provider, 1
+                )
                 advice, error, evidence = asyncio.run(
                     run_project_advisor(
                         request,
@@ -305,6 +309,7 @@ def consult(args: argparse.Namespace, data_path: Path) -> dict[str, Any]:
                     error=error,
                     evidence=evidence,
                 )
+                observe("attempt_settled", state="failed" if error else "succeeded")
                 if error is not None:
                     break
         return store.show_consultation(identifier)

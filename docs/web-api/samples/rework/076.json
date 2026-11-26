@@ -1,0 +1,22 @@
+{
+  "integration_id": "10000330000000000000000000000000",
+  "round_id": "10000360000000000000000000000000",
+  "lock_busy": false,
+  "eligible": false,
+  "reason": "This integration lineage has already reserved its rework.",
+  "owner": null,
+  "findings": [
+    {
+      "seat": "seat-1",
+      "finding_id": "status-blocker",
+      "path": "frontend/status.js",
+      "reference_status": "verified",
+      "owners": [
+        {
+          "task_run_id": "10000260000000000000000000000000",
+          "task_id": "T-0800"
+        }
+      ]
+    }
+  ]
+}

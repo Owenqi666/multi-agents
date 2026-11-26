@@ -11,6 +11,7 @@ from pathlib import Path
 from multi_agent.adapters.project_planner import parse_project_plan
 from multi_agent.cli.planning_inputs import _EFFORTS
 from multi_agent.cli.snapshot import _string
+from multi_agent.store.review_annotations import FindingAnchor
 
 from .resources import read_resource, require_owned
 from .workspace import _MODEL_PATTERNS, Workspace
@@ -187,6 +188,7 @@ class _Command:
             self.argv.extend(("--advisor" if advisors else "--seat", *choice))
 
     def retry_seats(self) -> None:
+        self.boolean("recover")
         if "seat_keys" in self.args:
             keys = [
                 _identifier(key, "seat_keys")
@@ -196,6 +198,19 @@ class _Command:
                 raise ValueError("seat_keys must contain distinct keys")
             for key in keys:
                 self.argv.extend(("--seat", key))
+        if "expected_attempts" in self.args:
+            expected = self.args["expected_attempts"]
+            if (
+                not isinstance(expected, dict)
+                or "seat_keys" not in self.args
+                or set(expected) != set(keys)
+            ):
+                raise ValueError("expected_attempts must match the selected seats")
+            for key in keys:
+                number = expected[key]
+                if type(number) is not int or number < 0:
+                    raise ValueError("expected attempts must be nonnegative integers")
+                self.argv.extend(("--expected-attempt", str(number)))
 
 
 def _project_goal(command: _Command, action: str) -> None:
@@ -322,13 +337,19 @@ def _planning(command: _Command, action: str) -> None:
             raise ActionConflict(
                 "the standalone plan cannot be retried in its current state"
             )
-        command.storage()
+        # An unstarted linked plan has no frozen runtime settings yet.
+        pending = plan.get("phase") == "pending"
+        command.storage(repository=pending, runtime_directory=pending)
+        if pending:
+            command.bins()
         command.argv.extend(("--retry", identifier))
         return
 
     command.storage(repository=True, runtime_directory=True)
     command.revision("baseline")
     command.text_file("requirements")
+    if "review_anchor" in command.args:
+        _review_anchor(command)
     for name, provider, families in (
         ("draft", "claude", _DRAFT),
         ("plan_review", "codex", _PLAN_REVIEW),
@@ -343,6 +364,19 @@ def _planning(command: _Command, action: str) -> None:
             ".json",
             _planning_declarations(command.args["declarations"]),
         )
+    command.bins()
+
+
+def _review_anchor(command: _Command) -> None:
+    value = command.args["review_anchor"]
+    anchor = FindingAnchor.from_dict(value)
+    require_owned(command.workspace, "review", anchor.round_id)
+    command.input_file("review_anchor", ".json", json.dumps(value, ensure_ascii=False))
+
+
+def _followup(command: _Command, _action: str) -> None:
+    _review_anchor(command)
+    command.text_file("question")
     command.bins()
 
 
@@ -515,7 +549,7 @@ _ACTIONS: dict[str, _Spec] = {
         "task plan",
         _planning,
         ("baseline", "requirements"),
-        ("draft", "plan_review", "declarations"),
+        ("draft", "plan_review", "declarations", "review_anchor"),
     ),
     "plan.retry": ("task plan", _planning, ("planning_run_id",), ()),
     "task.run": ("task run", _task_run, ("planning_run_id",), _STRATEGY),
@@ -537,7 +571,7 @@ _ACTIONS: dict[str, _Spec] = {
         "task-review retry",
         _task_evidence,
         ("round_id",),
-        ("seat_keys",),
+        ("seat_keys", "recover", "expected_attempts"),
     ),
     "task.confirm": ("task-review confirm", _task_evidence, ("round_id",), ()),
     "task.rework": ("task rework", _task_evidence, ("round_id",), ()),
@@ -548,11 +582,17 @@ _ACTIONS: dict[str, _Spec] = {
         ("baseline", "candidate", "diff", "tests"),
     ),
     "review.run": ("run", _independent_review, ("snapshot_id", "seats"), ()),
+    "review.followup": (
+        "finding-followup",
+        _followup,
+        ("review_anchor", "question"),
+        (),
+    ),
     "review.retry": (
         "retry",
         _independent_review,
         ("round_id",),
-        ("seat_keys",),
+        ("seat_keys", "recover", "expected_attempts"),
     ),
     "review.confirm": ("confirm", _independent_review, ("round_id",), ()),
     "integration.create": (
@@ -572,7 +612,7 @@ _ACTIONS: dict[str, _Spec] = {
         "integration retry-review",
         _integration,
         ("integration_id", "round_id"),
-        ("seat_keys",),
+        ("seat_keys", "recover", "expected_attempts"),
     ),
     "integration.confirm": (
         "integration confirm",

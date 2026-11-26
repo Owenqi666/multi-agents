@@ -23,6 +23,7 @@ from multi_agent.adapters.probe.process import ProcessCleanupIncomplete
 from multi_agent.adapters.runtime import RuntimeAdapter
 from multi_agent.adapters.runtime_decode import RuntimeFailure, strict_json_loads
 from multi_agent.cli.runner import _environment_value
+from multi_agent.job_activity import FD_ENV
 
 from .gate import ReadGate
 from .resources import references
@@ -66,11 +67,21 @@ def _private_file(path: str, flags: int) -> int:
     return os.open(path, flags | os.O_NOFOLLOW, 0o600)
 
 
+def _private_append(path: str, flags: int) -> int:
+    return _private_file(path, flags | os.O_APPEND)
+
+
 def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
     if args is None:
         return None
     stored = args.copy()
-    for field in ("original_goal", "confirmed_goal", "requirements", "diff"):
+    for field in (
+        "original_goal",
+        "confirmed_goal",
+        "requirements",
+        "diff",
+        "question",
+    ):
         if field in args:
             stored[field] = {"length": len(args[field])}
     if "declarations" in args:
@@ -87,9 +98,28 @@ def _record_args(args: dict[str, Any] | None) -> dict[str, Any] | None:
 
 def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     public = dict.fromkeys(_RECORD_FIELDS) | job
+    error = job.get("error")
+    public["error_kind"] = _job_error_kind(error["code"]) if error else None
     if job["state"] != "interrupted":
         public.pop("recovery_consultation_id", None)
     return public
+
+
+def _job_error_kind(code: str) -> str:
+    if code in {
+        "cli_refused",
+        "integration_accept_refused",
+        "repository_busy",
+        "consultation_owner_unknown",
+        "consultation_id_in_use",
+        "consultation_live",
+    }:
+        return "refused"
+    if code in {"service_interrupted", "job_interrupted"}:
+        return "interrupted"
+    if code in {"cli_cancelled", "cancelled"}:
+        return "cancelled"
+    return "failed"
 
 
 def _cli_result(
@@ -347,6 +377,28 @@ class EnvironmentJobs:
         with self.lock:
             return self.environments.copy()
 
+    def environment_checks(self) -> dict[str, Any]:
+        """Latest check per provider, including unsuccessful or unfinished checks."""
+        with self.lock:
+            checks = self.environments.copy()
+            pending = set(PROVIDERS)
+            for job in reversed(self.jobs.values()):
+                if job["action"] != ACTION or not job.get("args"):
+                    continue
+                provider = job["args"]["provider"]
+                if provider not in pending:
+                    continue
+                checks[provider] = {
+                    **(job.get("result") or {}),
+                    "job_id": job["job_id"],
+                    "state": job["state"],
+                    "error": job["error"],
+                }
+                pending.remove(provider)
+                if not pending:
+                    break
+            return checks
+
     def get(self, identifier: str) -> dict[str, Any] | None:
         with self.lock:
             job = self.jobs.get(identifier)
@@ -526,10 +578,17 @@ class EnvironmentJobs:
                 with (
                     open(directory / "stdout", "xb", opener=_private_file) as stdout,
                     open(directory / "stderr", "xb", opener=_private_file) as stderr,
+                    open(
+                        directory / "activity.jsonl", "xb", opener=_private_append
+                    ) as activity,
                 ):
+                    descriptor = activity.fileno()
+                    fcntl.flock(descriptor, fcntl.LOCK_EX)
                     controller = subprocess.Popen(
                         argv,
                         cwd=directory / "input",
+                        env=os.environ | {FD_ENV: str(descriptor)},
+                        pass_fds=(descriptor,),
                         stdin=subprocess.DEVNULL,
                         stdout=stdout,
                         stderr=stderr,

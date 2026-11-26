@@ -11,7 +11,7 @@ from importlib.resources import files
 from importlib.resources.abc import Traversable
 from pathlib import Path
 from types import TracebackType
-from typing import Self, cast
+from typing import Any, Self, cast
 
 from multi_agent import core
 from multi_agent.core import (
@@ -32,6 +32,7 @@ from .codec import (
     encode_result,
     encode_source,
 )
+from .review_annotations import FindingAnchor, append_activity
 
 
 def _migration_scripts() -> list[tuple[int, Traversable]]:
@@ -291,6 +292,49 @@ class ReviewStore:
         if row is None:
             raise KeyError(round_id)
         return decode_result(row["metadata"])
+
+    def _check_finding(self, anchor: FindingAnchor) -> None:
+        """Validate the exact immutable report while holding the writer lock."""
+        metadata = self.load_review(anchor.round_id)
+        if not isinstance(metadata, dict) or metadata.get("kind") != "review":
+            raise ValueError("finding annotations require an original review round")
+        anchor.find(self._read_round(anchor.round_id))
+
+    def record_finding_decision(
+        self, anchor: FindingAnchor, decision: str, reason: str
+    ) -> dict[str, Any]:
+        if decision not in ("confirmed", "disputed", "deferred"):
+            raise ValueError("invalid finding decision")
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("a finding decision requires a reason")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._check_finding(anchor)
+            return append_activity(
+                self._connection,
+                anchor,
+                "decision",
+                {"decision": decision, "reason": reason},
+            )
+
+    def record_finding_answer(
+        self,
+        anchor: FindingAnchor,
+        question: str,
+        answer: str,
+        evidence: dict[str, Any],
+    ) -> dict[str, Any]:
+        if not question.strip() or not answer.strip():
+            raise ValueError("a finding follow-up requires a question and an answer")
+        with self._connection:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._check_finding(anchor)
+            return append_activity(
+                self._connection,
+                anchor,
+                "answer",
+                {"question": question, "answer": answer, "evidence": evidence},
+            )
 
     def confirmation_for(self, parent_round_id: str) -> str | None:
         row = self._connection.execute(

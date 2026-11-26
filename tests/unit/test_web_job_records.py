@@ -113,7 +113,9 @@ sys.exit(130)
 
     state_path = data / "web-environment" / "state.json"
     persisted = json.loads(state_path.read_text())
-    assert persisted["jobs"][identifier] == finished
+    assert persisted["jobs"][identifier] == {
+        k: v for k, v in finished.items() if k != "error_kind"
+    }
     legacy = "a" * 32
     persisted["jobs"][legacy] = _legacy_job(legacy, "running")
     interrupted = "b" * 32
@@ -142,6 +144,7 @@ sys.exit(130)
             **persisted["jobs"][interrupted],
             "state": "interrupted",
             "error": restored["error"],
+            "error_kind": "interrupted",
         }
         assert _request(service, "GET", "/api/jobs") == (
             200,

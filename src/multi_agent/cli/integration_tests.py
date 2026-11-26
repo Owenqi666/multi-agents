@@ -20,6 +20,7 @@ from multi_agent.core.task_execution import task_execution_value
 from multi_agent.core.task_test_execution import TaskTestPolicy, TaskTestScratch
 from multi_agent.core.tasks import FrozenProjectRules, NamedCommand
 from multi_agent.core.workspaces import WorkspaceControl
+from multi_agent.job_activity import observe, start_actor
 
 from .task_context import (
     _Database,
@@ -325,6 +326,7 @@ async def execute_integration_tests(
     stop: asyncio.Event,
 ) -> IntegrationTestResult:
     """Run the frozen suite in order with one physical checkout and scratch."""
+    start_actor("integration", integration_id, "tests", None, attempt)
     prepared = None
     results: list[IntegrationTestCommand] = []
     status: IntegrationTestStatus = "succeeded"
@@ -355,6 +357,7 @@ async def execute_integration_tests(
                 )
                 error = None
                 try:
+                    observe("test_command_started")
                     runtime = await _run_adapter(adapter, command, sequence, stop)
                 except _COMMAND_FAILURES as failure:
                     error = str(failure)
@@ -380,6 +383,7 @@ async def execute_integration_tests(
                     break
     except _COMMAND_FAILURES as error:
         status, reason = "failed", str(error)
+    observe("suite_settled", state=status)
     return IntegrationTestResult(
         status=status,
         process_stopped=results[-1].process_stopped if results else True,

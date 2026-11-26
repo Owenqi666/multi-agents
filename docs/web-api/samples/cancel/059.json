@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "kind": "task",
+      "id": "100002c0000000000000000000000000",
+      "label": "Deliver frontend/status.js",
+      "reason": "implementation_attention",
+      "detail": "Implementation is cancelled. Inspect the attempt and available next action.",
+      "href": "/tasks/100002c0000000000000000000000000"
+    },
+    {
+      "kind": "stage",
+      "id": "stage-100000e0000000000000000000000000",
+      "label": "Deliver backend/amount.py",
+      "reason": "integrate_stage",
+      "detail": "Create an integration for this reviewed stage candidate.",
+      "href": "/stages/stage-100000e0000000000000000000000000"
+    }
+  ],
+  "complete": true
+}

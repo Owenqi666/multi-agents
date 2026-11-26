@@ -204,6 +204,14 @@ def _implement(root, scenario, prompt):
 def _response(root, scenario, provider, prompt):
     if prompt.startswith("Implementation template:"):
         return _implement(root, scenario, prompt)
+    if prompt.startswith("Answer the user's question about the quoted review finding"):
+        finding = json.loads(prompt.split("\n", 1)[1])["finding"]
+        quote, side = finding["quote"], finding["side"]
+        source = Path("source") / side / finding["path"]
+        if source.is_file():
+            assert source.read_text().splitlines()[finding["line_start"] - 1] == quote
+            return {"answer": f"The frozen {side} contains `{quote}`."}, "success"
+        return {"answer": "The frozen input has no complete source file."}, "success"
     if (path := Path("planning-input.json")).is_file():
         frozen = json.loads(path.read_text())
         if (

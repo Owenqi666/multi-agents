@@ -4,14 +4,19 @@ import argparse
 import os
 import re
 import stat
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from multi_agent.cli.project_stage import add_stage_parser
 from multi_agent.cli.snapshot import _git, _resolve_commit
-from multi_agent.cli.task_inputs import RULES_PATH, freeze_project_rules
+from multi_agent.cli.task_inputs import (
+    RULES_PATH,
+    MissingProjectRules,
+    freeze_project_rules,
+)
 from multi_agent.core.dispatch import resolve_dispatch
+from multi_agent.core.planning import DEFAULT_TASK_DRAFT, DEFAULT_TASK_PLAN_REVIEW
 from multi_agent.core.tasks import FrozenProjectRules, ImplementationConfig, TaskCard
 from multi_agent.store.database import ArchivedDatabase
 
@@ -63,6 +68,7 @@ class Workspace:
     repository: Path
     data_dir: Path
     archive: ArchivedDatabase | None = None
+    git_common_dir: Path | None = None
 
     @classmethod
     def open(
@@ -103,7 +109,7 @@ class Workspace:
         ):
             raise ValueError("archive viewing requires a separate data directory")
         private_directory(directory, parents=True)
-        return cls(repo, directory, archive)
+        return cls(repo, directory, archive, git_dir)
 
     @property
     def database(self) -> Path:
@@ -113,7 +119,7 @@ class Workspace:
             else self.data_dir / "reviews.sqlite3"
         )
 
-    def view(self, environments: dict[str, Any]) -> dict[str, Any]:
+    def branch_head(self) -> tuple[str | None, str | None]:
         branch = (
             _git(self.repository, "branch", "--show-current")
             .decode("utf-8")
@@ -131,9 +137,13 @@ class Workspace:
             if branch_ref.encode("utf-8") in refs.splitlines():
                 raise
             head = None
+        return branch or None, head
+
+    def view(self, environments: dict[str, Any]) -> dict[str, Any]:
+        branch, head = self.branch_head()
         return {
             "repository": str(self.repository),
-            "target_branch": branch or None,
+            "target_branch": branch,
             "head": head,
             "branches": _branches(self.repository),
             "defaults": _stage_defaults(),
@@ -183,6 +193,10 @@ def _stage_defaults() -> dict[str, Any]:
     return {
         "source": "cli_default",
         "stage_mode": args.mode,
+        "task_plan": {
+            "draft": asdict(DEFAULT_TASK_DRAFT),
+            "plan_review": asdict(DEFAULT_TASK_PLAN_REVIEW),
+        },
         "sol": {"model": model, "effort": effort},
         "card_review": {
             "provider": provider,
@@ -324,10 +338,10 @@ def _rules(repository: Path, head: str | None) -> dict[str, Any]:
         return result
     # Missing configuration is normal on repositories that haven't registered
     # commands yet. A present but invalid Git blob has a visible error instead.
-    if not _git(repository, "ls-tree", "--full-tree", "-z", head, "--", RULES_PATH):
-        return result
     try:
         frozen = freeze_project_rules(repository, head)
+    except MissingProjectRules:
+        return result
     except (TypeError, ValueError):
         return {
             **result,

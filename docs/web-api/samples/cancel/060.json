@@ -1,0 +1,117 @@
+{
+  "job_id": "100002a0000000000000000000000000",
+  "state": "finished",
+  "observed_at": "2000-01-01T00:01:20.000000+00:00",
+  "created_at": "2000-01-01T00:00:54.000000+00:00",
+  "started_at": "2000-01-01T00:00:55.000000+00:00",
+  "finished_at": "2000-01-01T00:01:00.000000+00:00",
+  "controller_holds_journal": false,
+  "history_truncated": false,
+  "events": [
+    {
+      "at": "2000-01-01T00:01:13.000000+00:00",
+      "event": "attempt_started",
+      "state": null,
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "sequence": 204
+    },
+    {
+      "at": "2000-01-01T00:01:14.000000+00:00",
+      "event": "session_started",
+      "state": null,
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "sequence": 408
+    },
+    {
+      "at": "2000-01-01T00:01:15.000000+00:00",
+      "event": "message",
+      "state": null,
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "sequence": 604
+    },
+    {
+      "at": "2000-01-01T00:01:21.000000+00:00",
+      "event": "error",
+      "state": null,
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "sequence": 798
+    },
+    {
+      "at": "2000-01-01T00:01:22.000000+00:00",
+      "event": "process_exited",
+      "state": null,
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "sequence": 1001
+    },
+    {
+      "at": "2000-01-01T00:01:23.000000+00:00",
+      "event": "attempt_settled",
+      "state": "failed",
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "sequence": 1209
+    }
+  ],
+  "actors": [
+    {
+      "resource": {
+        "kind": "task",
+        "id": "100002c0000000000000000000000000"
+      },
+      "seat": "implementation",
+      "provider": "claude",
+      "attempt": 1,
+      "state": "failed",
+      "observed_at": "2000-01-01T00:01:23.000000+00:00",
+      "last_event": "attempt_settled",
+      "last_observed_state": "failed"
+    }
+  ],
+  "reviews": [],
+  "resources": [
+    {
+      "kind": "task",
+      "id": "100002c0000000000000000000000000"
+    },
+    {
+      "kind": "plan",
+      "id": "10000210000000000000000000000000"
+    }
+  ],
+  "recovery": []
+}

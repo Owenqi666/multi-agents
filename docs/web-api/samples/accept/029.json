@@ -313,6 +313,10 @@
                       "low",
                       "high"
                     ],
+                    "gpt-6.1-sol": [
+                      "low",
+                      "high"
+                    ],
                     "gpt-6.1-terra": [
                       "low",
                       "high"
@@ -335,6 +339,7 @@
                     "gpt-6.2-sol",
                     "gpt-6.1-terra",
                     "gpt-6.2-luna",
+                    "gpt-6.1-sol",
                     "claude-fable-5-2",
                     "claude-opus-5-5",
                     "claude-sonnet-5-5",
@@ -590,7 +595,7 @@
     {
       "artifact_id": "100001a0000000000000000000000000.stdout",
       "stream": "stdout",
-      "byte_count": 24338,
+      "byte_count": 24481,
       "sha256": "300002e000000000000000000000000000000000000000000000000000000000"
     },
     {
@@ -599,5 +604,6 @@
       "byte_count": 0,
       "sha256": "3000006000000000000000000000000000000000000000000000000000000000"
     }
-  ]
+  ],
+  "error_kind": null
 }

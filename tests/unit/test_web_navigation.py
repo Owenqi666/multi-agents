@@ -32,6 +32,18 @@ def test_web_navigation_workspace_branches_and_defaults(tmp_path):
         assert value["defaults"] == {
             "source": "cli_default",
             "stage_mode": "direct",
+            "task_plan": {
+                "draft": {
+                    "provider": "claude",
+                    "model": "claude-opus-5-5",
+                    "effort": "high",
+                },
+                "plan_review": {
+                    "provider": "codex",
+                    "model": "gpt-6.1-sol",
+                    "effort": "high",
+                },
+            },
             "sol": {"model": "gpt-6.2-sol", "effort": "high"},
             "card_review": {
                 "provider": "claude",

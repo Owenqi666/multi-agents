@@ -143,23 +143,39 @@ sys.exit(130 if Path({str(signalled)!r}).exists() else 3)
 
 
 @pytest.mark.parametrize(
-    ("stdout", "exit_code", "result", "error"),
+    ("stdout", "exit_code", "result", "error", "kind"),
     [
-        ('{\n  "value": true\n}\n', 1, {"value": True}, None),
-        ('{"value": true, "value": false}\n', 1, None, "invalid_cli_output"),
-        ('{"value": true}\nextra\n', 0, None, "invalid_cli_output"),
-        ("", 130, None, "cli_cancelled"),
-        ("", 2, None, "cli_failed"),
+        ('{\n  "value": true\n}\n', 1, {"value": True}, None, None),
+        ('{"phase":"cancelled"}', 130, {"phase": "cancelled"}, None, None),
+        ('{"value": true, "value": false}\n', 1, None, "invalid_cli_output", "failed"),
+        ('{"value": true}\nextra\n', 0, None, "invalid_cli_output", "failed"),
+        ("", 130, None, "cli_cancelled", "cancelled"),
+        ("", 2, None, "cli_failed", "failed"),
+        (
+            '{"kind":"cli_error","error":{"code":"cli_refused","message":"stale"}}',
+            2,
+            None,
+            "cli_refused",
+            "refused",
+        ),
+        (
+            '{"kind":"cli_error","error":{"code":"followup_failed","message":"no answer"}}',
+            2,
+            None,
+            "followup_failed",
+            "failed",
+        ),
         (
             '{"kind":"cli_error","error":{"code":"runtime_error","message":"failure"}}',
             0,
             None,
             "invalid_cli_output",
+            "failed",
         ),
     ],
 )
 def test_cli_job_uses_entire_stdout_and_observed_exit(
-    tmp_path, repository, monkeypatch, stdout, exit_code, result, error
+    tmp_path, repository, monkeypatch, stdout, exit_code, result, error, kind
 ):
     def prepare(_action, _args, **_kwargs):
         return [
@@ -172,6 +188,7 @@ def test_cli_job_uses_entire_stdout_and_observed_exit(
     with _serve(repository, tmp_path / "data", {}) as service:
         identifier = _submit(service)
         settled = _wait_for(lambda: _finished(service, identifier))
+        assert settled["error_kind"] == kind
         assert settled["exit_code"] == exit_code
         assert settled["result"] == result
         if error is None:

@@ -56,6 +56,7 @@ from multi_agent.core.task_execution import (
     task_execution_value,
 )
 from multi_agent.core.task_state import TaskPhase, TaskState
+from multi_agent.job_activity import observe, start_actor
 from multi_agent.store.planning_store import PlanningStore
 
 from .task_context import (
@@ -874,10 +875,24 @@ async def _execute(
                 unavailable=unavailable,
             )
         with context as launch:
+            start_actor(
+                "task",
+                task_run_id,
+                "implementation",
+                launch.prepared.policy.provider,
+                launch.attempt,
+            )
             execution = _Execution(launch, task_run_id, intent, stop)
             await execution.run()
             try:
                 state = launch.store.load_task(task_run_id)
+                if (
+                    state.current_attempt
+                    and state.current_attempt.number == launch.attempt
+                ):
+                    observe(
+                        "attempt_settled", state=state.current_attempt.runtime.status
+                    )
             except Exception as error:
                 execution.failure(error)
                 execution.revoke()

@@ -9,6 +9,7 @@ from typing import Any, cast
 
 from multi_agent.core import SeatConfig
 from multi_agent.core.snapshot import FrozenSnapshot, TestEvidence
+from multi_agent.job_activity import capture_activity
 from multi_agent.store import ReviewStore
 
 from .errors import report_refusal, report_unexpected_error, structured_errors
@@ -148,10 +149,18 @@ def parser() -> argparse.ArgumentParser:
     retry.add_argument("round_id")
     retry.add_argument("--seat", action="append")
     retry.add_argument("--recover", action="store_true")
+    retry.add_argument("--expected-attempt", type=int, action="append")
     confirm = commands.add_parser(
         "confirm", help="one cross-confirmation round for blocking findings"
     )
     confirm.add_argument("round_id")
+    followup = commands.add_parser(
+        "finding-followup", help="ask the reviewer about a frozen finding"
+    )
+    followup.add_argument("--review-anchor", required=True, type=Path)
+    followup.add_argument("--question", required=True, type=Path)
+    followup.add_argument("--codex-bin", default="codex")
+    followup.add_argument("--claude-bin", default="claude")
     benchmark = commands.add_parser(
         "benchmark", help="prepare fixed samples or score imported human judgments"
     )
@@ -210,6 +219,10 @@ def freeze_input(args: argparse.Namespace, store: ReviewStore) -> dict[str, Any]
 
 
 def dispatch(args: argparse.Namespace) -> dict[str, Any]:
+    if args.command == "finding-followup":
+        from .finding_followup import answer_question
+
+        return answer_question(args)
     if args.command == "project":
         from .project_cli import dispatch_project
 
@@ -281,6 +294,7 @@ def dispatch(args: argparse.Namespace) -> dict[str, Any]:
                         identifier,
                         tuple(args.seat) if args.seat else None,
                         recover=args.recover,
+                        expected_attempts=getattr(args, "expected_attempt", None),
                     )
             asyncio.run(
                 runner.execute_round(store, identifier, directory, seat_keys=seat_keys)
@@ -294,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     from .provider_limits import provider_budget
 
     args = parser().parse_args(argv)
-    with structured_errors(args.structured_errors):
+    with capture_activity(), structured_errors(args.structured_errors):
         try:
             scope = budget_for_provider.set(provider_budget(args.data_dir))
             try:

@@ -21,6 +21,7 @@ from multi_agent.adapters.project_planner import (
 from multi_agent.adapters.runtime_decode import strict_json_loads
 from multi_agent.core.planning import PlanningRequest
 from multi_agent.core.project_plan import ConfirmedGoal
+from multi_agent.job_activity import observe, start_actor
 from multi_agent.store.project_store import ProjectStore
 
 from .main import data_directory
@@ -228,6 +229,7 @@ def _plan(
         store.start_plan(
             plan_id, goal.goal_id, request, snapshot_id, PROMPT_VERSION, _now()
         )
+        start_actor("project-plan", plan_id, "planner", request.provider, 1)
         document, error, evidence = asyncio.run(
             run_project_planner(
                 request,
@@ -250,6 +252,7 @@ def _plan(
         store.finish_plan(
             plan_id, _now(), document=document, error=error, evidence=evidence
         )
+        observe("attempt_settled", state="failed" if error else "succeeded")
     return store.show_plan(plan_id)
 
 

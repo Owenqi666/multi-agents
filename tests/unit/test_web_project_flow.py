@@ -1,6 +1,8 @@
 """Run the project lifecycle through real loopback HTTP, Git and SQLite."""
 
+import fcntl
 import json
+import re
 import sqlite3
 import time
 from http.client import HTTPConnection
@@ -131,13 +133,26 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
     }
     with _serve(repo, data, programs) as service:
         helpers.configure(claude, role="review", report=advice)
-        consulted = _job(
+        consultation_job = _job(
             service,
             "project.consult",
             baseline=baseline,
             original_goal=original,
             advisors=[FABLE],
-        )["result"]
+        )
+        consulted = consultation_job["result"]
+        progress = _get(service, f"jobs/{consultation_job['job_id']}/activity")
+        [advisor] = progress["actors"]
+        assert (advisor["seat"], advisor["provider"], advisor["state"]) == (
+            "advisor-1",
+            "claude",
+            "succeeded",
+        )
+        assert advisor["resource"] == {
+            "kind": "consultation",
+            "id": consulted["consultation_id"],
+        }
+
         goal = _job(
             service,
             "project.confirm",
@@ -183,6 +198,10 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
             if item["kind"] == "implementation"
         ] == [("codex", "implementation")]
         task_id = direct["task_run_id"]
+        assert not any(
+            item["reason"] == "choose_stage"
+            for item in _get(service, "attention")["items"]
+        )
         helpers.configure(codex, role="test-service")
         tested = _job(
             service,
@@ -210,6 +229,11 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
         assert _get(service, f"resources/stage/{direct['stage_run_id']}")["data"][
             "review_satisfied"
         ]
+        assert [
+            item["href"]
+            for item in _get(service, "attention")["items"]
+            if item["reason"] == "choose_stage"
+        ] == [f"/plans/{plan_id}?stage=summary"]
 
         split_capture = data / "split-http-wire.jsonl"
         helpers.configure(
@@ -234,6 +258,10 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
             card_review=OPUS,
         )["result"]
         stage_id = delegated["stage_run_id"]
+        assert not any(
+            item["reason"] == "choose_stage"
+            for item in _get(service, "attention")["items"]
+        )
         branch_ref = f"refs/heads/multi-agent/stages/{stage_id}"
         assert delegated["execution_baseline"] == direct["candidate"]
         assert not delegated["can_integrate"] and not delegated["review_satisfied"]
@@ -396,6 +424,38 @@ def test_http_and_cli_share_stage_delivery_and_restart(workflow):
         runs = _get(restarted, "runs?kind=stage")["items"]
         assert {item["id"] for item in runs} == {stage_id, direct["stage_run_id"]}
     assert helpers.git(repo, "status", "--porcelain") == ""
+
+
+def test_refused_plan_create_retains_its_frozen_input_after_restart(workflow):
+    programs = {name: str(path) for name, path in workflow.executables.items()}
+    data = workflow.base / "data"
+    requirements = "Keep the draft that waits for the other planning controller."
+    with _serve(workflow.repository, data, programs) as service:
+        with (data / ".planning-controller.lock").open("a+b") as other_controller:
+            fcntl.flock(other_controller, fcntl.LOCK_EX)
+            job = _job(
+                service,
+                "plan.create",
+                baseline=workflow.baseline,
+                requirements=requirements,
+                exit_code=2,
+            )
+        assert job["error"] == {
+            "code": "cli_refused",
+            "message": "another planning controller holds this data parent",
+        }
+        assert job["error_kind"] == "refused" and job["result"] is None
+        retained = re.search(
+            r"Planning run retained: ([a-f0-9]{32});", job["stderr_tail"]
+        )
+        assert retained
+    with _serve(workflow.repository, data, programs) as service:
+        plan = _get(service, f"resources/plan/{retained[1]}")["data"]
+        assert (
+            plan["phase"] == "pending"
+            and plan["details"]["input"]["requirements"] == requirements
+        )
+        assert plan["attempts"] == {"draft": [], "review": []}
 
 
 def test_http_plan_retry_rejects_known_id_in_foreign_workspace(workflow):

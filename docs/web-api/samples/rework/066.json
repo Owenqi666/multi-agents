@@ -1,0 +1,66 @@
+{
+  "round_id": "10000360000000000000000000000000",
+  "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
+  "status": "needs_rework",
+  "reasons": [
+    "blocking_findings_present"
+  ],
+  "source": {
+    "kind": "repository",
+    "baseline": "2000002000000000000000000000000000000000",
+    "candidate": "200000b000000000000000000000000000000000",
+    "correction_baseline": "200000b000000000000000000000000000000000"
+  },
+  "groups": [
+    {
+      "location": {
+        "side": "candidate",
+        "path": "frontend/status.js",
+        "line_start": 1,
+        "line_end": 1,
+        "category": "correctness"
+      },
+      "members": [
+        {
+          "seat": "seat-1",
+          "finding": {
+            "id": "status-blocker",
+            "severity": "P1",
+            "category": "correctness",
+            "side": "candidate",
+            "path": "frontend/status.js",
+            "line_start": 1,
+            "line_end": 1,
+            "quote": "export const status = \"draft\";",
+            "title": "Status is still draft",
+            "impact": "The summary does not display the ready state.",
+            "rationale": "The candidate still returns the draft value.",
+            "reference_status": "verified",
+            "reference_reason": "complete_lines_match"
+          },
+          "anchor": {
+            "round_id": "10000360000000000000000000000000",
+            "snapshot_id": "300004f000000000000000000000000000000000000000000000000000000000",
+            "seat": "seat-1",
+            "attempt": 1,
+            "finding_id": "status-blocker"
+          },
+          "activity": [
+            {
+              "id": 1,
+              "kind": "decision",
+              "created_at": "2000-01-01T00:01:35.000000+00:00",
+              "decision": "confirmed",
+              "reason": "The candidate still shows draft."
+            }
+          ]
+        }
+      ],
+      "confirmations": [],
+      "blocking": true,
+      "independent_reports": {
+        "seat-1": "reported"
+      }
+    }
+  ]
+}

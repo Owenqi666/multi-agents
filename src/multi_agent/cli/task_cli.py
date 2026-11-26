@@ -21,6 +21,8 @@ from multi_agent.core.dispatch import ImplementationChoice, resolve_dispatch
 from multi_agent.core.events import FailureCategory, thaw_json
 from multi_agent.core.path_patterns import patterns_intersect
 from multi_agent.core.planning import (
+    DEFAULT_TASK_DRAFT,
+    DEFAULT_TASK_PLAN_REVIEW,
     DependencyReceipt,
     PlanningInput,
     PlanningPhase,
@@ -42,9 +44,10 @@ from multi_agent.core.task_execution import (
 from multi_agent.core.task_state import TaskPhase, TaskState
 from multi_agent.core.tasks import TaskCard
 from multi_agent.store.project_store import ProjectStore
+from multi_agent.store.review_annotations import FindingAnchor
 from multi_agent.store.task_review_store import TaskReviewStore
 
-from .errors import report_refusal
+from .errors import CLIRefusal, report_refusal
 from .planning_context import capture_planning_policy
 from .planning_evidence import (
     bind_planning_task,
@@ -88,14 +91,18 @@ _STRATEGY = (
     "codex_bin",
     "claude_bin",
 )
-_PLAN_INPUTS = (
-    "repository",
+_PLAN_DEFINITION = (
     "baseline",
     "requirements",
-    "directory",
     "declarations",
+    "review_anchor",
     "draft",
     "plan_review",
+)
+_PLAN_INPUTS = (
+    *_PLAN_DEFINITION,
+    "repository",
+    "directory",
     "max_attempts",
     "timeout",
     "grace",
@@ -137,6 +144,9 @@ def add_parser(commands: Any) -> None:
     plan.add_argument("--requirements", type=Path)
     plan.add_argument("--directory", type=Path)
     plan.add_argument("--declarations", type=Path)
+    plan.add_argument(
+        "--review-anchor", type=Path, help="finding that prompted this repair"
+    )
     plan.add_argument("--draft", nargs=2, metavar=("MODEL", "EFFORT"))
     plan.add_argument("--plan-review", nargs=2, metavar=("MODEL", "EFFORT"))
     plan.add_argument("--retry", metavar="PLAN_RUN_ID")
@@ -236,6 +246,17 @@ def _planning_budget_exhausted(
     return len(state.attempts(stage)) >= policy.for_provider(provider).max_attempts
 
 
+def _unstarted_correction(
+    store: TaskReviewStore, identifier: str, state: PlanningState
+) -> bool:
+    return (
+        state.phase == PlanningPhase.PENDING
+        and not state.attempts("draft")
+        and not state.attempts("review")
+        and store.is_linked_correction(identifier)
+    )
+
+
 def _plan_view(
     store: TaskReviewStore,
     identifier: str,
@@ -308,6 +329,11 @@ def _plan_view(
         )
         if not qualified:
             next_kind = "user_decision"
+    elif _unstarted_correction(store, identifier, state):
+        next_kind, detail = (
+            "plan_retry",
+            "Start this linked correction's first draft using the existing planning run ID.",
+        )
     elif state.phase in (
         PlanningPhase.AWAITING_REVIEW,
         PlanningPhase.REVISION_REQUIRED,
@@ -316,10 +342,10 @@ def _plan_view(
     ):
         retry_stage = _planning_retry_stage(state)
         if (
-            report_retry_budget
-            and retry_stage is not None
+            retry_stage is not None
             and records
             and _planning_budget_exhausted(state, retry_stage, records[0].policy)
+            and (report_retry_budget or store.is_linked_correction(identifier))
         ):
             next_kind, detail = (
                 "budget_exhausted",
@@ -447,14 +473,17 @@ def _task_view(
             )
     elif verified:
         assert current is not None
+        current_tests = [
+            item for item in tests if item["implementation_attempt"] == current.number
+        ]
         current_reviews = [
             item
             for item in reviews
             if item["implementation_attempt"] == current.number
             and item["metadata"]["kind"] == "review"
-        ]
-        current_tests = [
-            item for item in tests if item["implementation_attempt"] == current.number
+            and current_tests
+            and item["test_attempt"] == current_tests[-1]["test_attempt"]
+            and item["candidate"] == current_tests[-1]["candidate"]
         ]
         if current_reviews:
             action = _next(
@@ -610,56 +639,110 @@ async def _interruptible[T](
         signal.signal(signal.SIGINT, previous)
 
 
+def _reused_correction(identifier: str) -> tuple[dict[str, Any], int]:
+    return {"operation": "plan", "planning_run_id": identifier, "reused": True}, 0
+
+
+def _initial_planning_policy(args: argparse.Namespace) -> PlanningExecutionPolicy:
+    limit = 2 if args.max_attempts is None else args.max_attempts
+    return capture_planning_policy(
+        {
+            provider: _program(getattr(args, provider + "_bin"), provider)
+            for provider in ("claude", "codex")
+        },
+        {"claude": limit, "codex": limit},
+        180 if args.timeout is None else args.timeout,
+        2 if args.grace is None else args.grace,
+    )
+
+
 def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
-    first = args.retry is None
     policy = None
-    if first:
+    if args.retry is None:
         _required(args, ("repository", "baseline", "requirements", "directory"))
         dependencies, decisions = _declarations(args.declarations)
         value = PlanningInput(
             args.requirements.read_bytes().decode("utf-8"),
             freeze_project_rules(args.repository, args.baseline),
-            PlanningRequest("claude", *(args.draft or ("claude-opus-5-5", "high"))),
-            PlanningRequest("codex", *(args.plan_review or ("gpt-6.1-sol", "high"))),
+            PlanningRequest(DEFAULT_TASK_DRAFT.provider, *args.draft)
+            if args.draft
+            else DEFAULT_TASK_DRAFT,
+            PlanningRequest(DEFAULT_TASK_PLAN_REVIEW.provider, *args.plan_review)
+            if args.plan_review
+            else DEFAULT_TASK_PLAN_REVIEW,
             dependencies,
             decisions,
         )
         validate_planning_input(value)
-        limit = 2 if args.max_attempts is None else args.max_attempts
-        policy = capture_planning_policy(
-            {
-                provider: _program(getattr(args, provider + "_bin"), provider)
-                for provider in ("claude", "codex")
-            },
-            {"claude": limit, "codex": limit},
-            180 if args.timeout is None else args.timeout,
-            2 if args.grace is None else args.grace,
+        anchor = (
+            FindingAnchor.from_dict(
+                json.loads(args.review_anchor.read_text(encoding="utf-8"))
+            )
+            if args.review_anchor
+            else None
         )
+        if anchor is None:
+            policy = _initial_planning_policy(args)
         database = _canonical(args.database, existing=False)
         _directory(database.parent)
-        with executor_lock(args.repository) as lease:
-            _outside(database, lease)
-            with TaskReviewStore(database) as store:
-                _new_root(args.directory, _database(database), lease)
-                identifier = uuid4().hex
-                store.create_planning(identifier, value, datetime.now(UTC).isoformat())
+        identifier = uuid4().hex
+        try:
+            with executor_lock(args.repository) as lease:
+                _outside(database, lease)
+                with TaskReviewStore(database) as store:
+                    if anchor is not None:
+                        prior = store.linked_correction(anchor, value.input_hash)
+                        if prior is not None:
+                            return _reused_correction(prior)
+                        policy = _initial_planning_policy(args)
+                    _new_root(args.directory, _database(database), lease)
+                    existing_id = store.create_planning(
+                        identifier,
+                        value,
+                        datetime.now(UTC).isoformat(),
+                        review_anchor=anchor,
+                    )
+        except CLIRefusal as error:
+            # A surviving first process can hold the repository lease while running its plan.
+            if (
+                anchor is None
+                or error.code != "repository_busy"
+                or not database.is_file()
+            ):
+                raise
+            with TaskReviewStore.open_readonly(database) as store:
+                prior = store.linked_correction(anchor, value.input_hash)
+            if prior is None:
+                raise
+            return _reused_correction(prior)
+        if existing_id is not None:
+            return _reused_correction(existing_id)
         stage = "draft"
     else:
-        _unchanged(args, _PLAN_INPUTS)
         database = _database(args.database).path
         identifier = args.retry
         with TaskReviewStore.open_readonly(database) as store:
             state = store.load_planning(identifier)
             records = prepared_attempts(state)
+            pending = _unstarted_correction(store, identifier, state)
+        if pending:
+            _unchanged(args, _PLAN_DEFINITION)
+            _required(args, ("repository", "directory"))
+            with executor_lock(args.repository) as lease:
+                _outside(database, lease)
+                _new_root(args.directory, _database(database), lease)
+            policy = _initial_planning_policy(args)
+        else:
+            _unchanged(args, _PLAN_INPUTS)
         if state.phase in (PlanningPhase.READY, PlanningPhase.BOUND):
             result = view_task(database, planning_run_id=identifier)
             result["operation"] = "plan"
             return result, 0 if result["verification"] == "verified" else 1
-        if not records:
+        if not records and not pending:
             raise ValueError(
                 "first planning preparation is incomplete; create a new planning run"
             )
-        retry_stage = _planning_retry_stage(state)
+        retry_stage = "draft" if pending else _planning_retry_stage(state)
         if retry_stage is None:
             if state.phase == PlanningPhase.REVISION_REQUIRED:
                 raise ValueError(
@@ -669,7 +752,7 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "planning execution is incomplete; stopping facts must be reconciled"
             )
         stage = retry_stage
-        if _planning_budget_exhausted(state, stage, records[0].policy):
+        if records and _planning_budget_exhausted(state, stage, records[0].policy):
             result = view_task(database, planning_run_id=identifier)
             result.update(
                 operation="plan",
@@ -686,8 +769,8 @@ def _plan(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             database,
             identifier,
             stage,
-            repository=args.repository if first else None,
-            directory=args.directory if first else None,
+            repository=args.repository,
+            directory=args.directory,
             policy=policy,
             stop=stop,
         )

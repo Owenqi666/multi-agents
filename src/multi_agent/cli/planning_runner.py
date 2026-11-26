@@ -59,6 +59,7 @@ from multi_agent.core.planning_events import (
     PlanningValidationRejected,
 )
 from multi_agent.core.planning_execution import PlanningExecutionPolicy, prepared_for
+from multi_agent.job_activity import observe, start_actor
 from multi_agent.store.planning_store import PlanningStore
 
 from .planning_context import inspect_planning_context, prepare_planning_attempt
@@ -727,12 +728,18 @@ async def _execute(
             attempt = store.load_planning(run_id).current(stage)
             if attempt is None or prepared_for(attempt) != prepared:
                 raise ValueError("planning reservation is no longer current")
+            start_actor(
+                "plan", run_id, stage, attempt.request.request.provider, attempt.number
+            )
             execution = _AttemptExecution(
                 store, run_id, stage, attempt, prepared, lease, intent, stop
             )
             await execution.run()
             lease.check()
             result = store.load_planning(run_id)
+            current = result.current(stage)
+            if current and current.number == attempt.number:
+                observe("attempt_settled", state=current.runtime.status)
     except _BOUNDARY_ERRORS as error:
         return _Outcome(
             result,

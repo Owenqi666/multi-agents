@@ -1,0 +1,13 @@
+{
+  "items": [
+    {
+      "kind": "project-plan",
+      "id": "plan-100000a0000000000000000000000000",
+      "label": "Stage amount",
+      "reason": "choose_stage",
+      "detail": "Implement backend/amount.py",
+      "href": "/plans/plan-100000a0000000000000000000000000?stage=amount"
+    }
+  ],
+  "complete": true
+}

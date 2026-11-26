@@ -28,6 +28,7 @@ from multi_agent.core.transitions import (
     apply_task_test,
     task_test_phase,
     task_test_ready,
+    task_test_retry_ready,
 )
 
 
@@ -364,13 +365,16 @@ def test_task_test_retry_requires_finished_and_actual_settlement(outcome):
         state.reference_input, task_history_length=99, task_history_hash="9" * 64
     )
     state = advance(state, impl, receipt(None))
+    assert not task_test_retry_ready(state.current_attempt)
     with pytest.raises(ValueError):
         observe(state, impl, TaskTestAttemptStarted(newer), attempt=2)
     state = advance(state, impl, receipt(None, stopped=None))
     state = advance(state, impl, TaskTestAttemptFinished())
+    assert not task_test_retry_ready(state.current_attempt)
     with pytest.raises(ValueError):
         observe(state, impl, TaskTestAttemptStarted(newer), attempt=2)
     state = advance(state, impl, receipt(None))
+    assert task_test_retry_ready(state.current_attempt)
     prior = state.current_attempt
     state = advance(state, impl, TaskTestAttemptStarted(newer), attempt=2)
     assert state.attempts[0] == prior

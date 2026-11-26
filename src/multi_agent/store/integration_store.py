@@ -257,6 +257,18 @@ class IntegrationStore(TaskReviewStore):
     ) -> IntegrationTestAttempt | None:
         return self._current_integration_test(integration_id)
 
+    def load_integration_test_result(
+        self, integration_id: str, attempt: int
+    ) -> IntegrationTestResult:
+        row = self._connection.execute(
+            """SELECT result_payload FROM integration_test_attempts
+               WHERE integration_id = ? AND attempt = ?""",
+            (integration_id, attempt),
+        ).fetchone()
+        if row is None or row["result_payload"] is None:
+            raise KeyError((integration_id, attempt))
+        return decode_integration_test_result(json.loads(row["result_payload"]))
+
     def integration_test_history(
         self, integration_id: str
     ) -> tuple[tuple[IntegrationTestAttempt, tuple[IntegrationTestResult, ...]], ...]:

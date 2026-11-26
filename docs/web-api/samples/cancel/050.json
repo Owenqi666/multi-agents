@@ -16,5 +16,6 @@
     "code": "service_interrupted",
     "message": "The previous service stopped before observing a result."
   },
-  "resources": []
+  "resources": [],
+  "error_kind": "interrupted"
 }

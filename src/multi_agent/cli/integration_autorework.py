@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import sqlite3
 from dataclasses import replace
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -65,6 +66,18 @@ def _stop_result(status: str, detail: str) -> tuple[dict[str, Any], int]:
     return {"rework": {"status": status, "reason": detail}}, 1
 
 
+def rework_directories(
+    link: IntegrationReviewLink, database: _Database, lease: ExecutorLease
+) -> tuple[Path, Path, Path, Path]:
+    """Check the original review directory and the three fresh execution paths."""
+    directory = _review_directory(link)
+    runtime, test, review = (
+        _new_root(directory.with_name(directory.name + suffix), database, lease)
+        for suffix in ("-rework", "-retest", "-rereview")
+    )
+    return directory, runtime, test, review
+
+
 def _run_integration_rework(
     store: IntegrationStore,
     lease: ExecutorLease,
@@ -83,11 +96,8 @@ def _run_integration_rework(
         _check_target(record)
         check_confirmation_decisions(store, record)
         link = _current_review(store, record, round_id)
-        directory = _review_directory(link)
-        suffixes = ("-rework", "-retest", "-rereview")
-        runtime_dir, test_dir, review_dir = (
-            _new_root(directory.with_name(directory.name + suffix), database, lease)
-            for suffix in suffixes
+        directory, runtime_dir, test_dir, review_dir = rework_directories(
+            link, database, lease
         )
         attempt = _current_test(store, record, link.test_attempt)
         source = _review_input(record, attempt, lease, database)

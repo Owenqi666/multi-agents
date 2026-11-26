@@ -17,7 +17,7 @@ from multi_agent.core.task_execution import prepared_for_task, task_execution_ha
 from multi_agent.core.task_test_events import TaskTestCommandReported
 from multi_agent.core.task_test_execution import prepared_for_test
 from multi_agent.core.task_test_state import TaskTestPhase
-from multi_agent.core.transitions import task_test_phase
+from multi_agent.core.transitions import task_test_phase, task_test_retry_ready
 from multi_agent.store.task_test_store import TaskTestStore
 
 from .errors import report_refusal
@@ -222,6 +222,9 @@ def view_task_test(
             "commands": commands,
             "details": {
                 "is_current": selected == state.current_attempt,
+                "retry_ready": selected == state.current_attempt
+                and source_current
+                and task_test_retry_ready(selected),
                 "finished": selected.finished,
                 "cancel_requested": selected.cancel_requested,
                 "declaration_source": value.declaration_source,

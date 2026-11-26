@@ -27,6 +27,7 @@ from multi_agent.core.task_test_events import (
 from multi_agent.core.task_test_execution import TaskTestPolicy
 from multi_agent.core.task_test_state import TaskTestState
 from multi_agent.core.tasks import NamedCommand
+from multi_agent.job_activity import observe, start_actor
 
 from .task_test_context import TaskTestLaunch, prepare_task_test_launch
 from .task_test_evidence import command_process_stopped, seal_task_test_command
@@ -271,6 +272,7 @@ class _Suite:
                     on_cancel_accepted=self.accept_cancel,
                 )
             )
+            observe("test_command_started")
             running_adapter = adapter
             operation = _boundary_call(
                 lambda: _task(running_adapter.run(command, sequence=sequence))
@@ -519,7 +521,16 @@ async def execute_task_tests(
             declaration_source=declaration_source,
             policy=policy,
         ) as launch:
-            return await _Suite(launch, intent, stop).run()
+            start_actor(
+                "task",
+                task_run_id,
+                f"test-{implementation_attempt}",
+                None,
+                launch.test_attempt,
+            )
+            state = await _Suite(launch, intent, stop).run()
+            observe("suite_settled", state=state.phase)
+            return state
 
     worker = _task(execute())
     cancelled: asyncio.CancelledError | None = None

@@ -805,7 +805,7 @@
             "isolations": [],
             "logs": [
               {
-                "byte_count": 1200,
+                "byte_count": 1204,
                 "closed": true,
                 "healthy": true,
                 "identity": [
@@ -819,7 +819,7 @@
                 "sha256": "3000054000000000000000000000000000000000000000000000000000000000"
               },
               {
-                "byte_count": 14843,
+                "byte_count": 14839,
                 "closed": true,
                 "healthy": true,
                 "identity": [
@@ -891,7 +891,7 @@
           "raw_logs": [
             {
               "metadata": {
-                "byte_count": 1200,
+                "byte_count": 1204,
                 "identity": [
                   1,
                   38
@@ -906,7 +906,7 @@
             },
             {
               "metadata": {
-                "byte_count": 14843,
+                "byte_count": 14839,
                 "identity": [
                   1,
                   39
@@ -951,7 +951,7 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8620,
+      "byte_count": 8617,
       "sha256": "300005f000000000000000000000000000000000000000000000000000000000"
     },
     {
@@ -987,7 +987,7 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8922,
+      "byte_count": 8916,
       "sha256": "3000060000000000000000000000000000000000000000000000000000000000"
     },
     {

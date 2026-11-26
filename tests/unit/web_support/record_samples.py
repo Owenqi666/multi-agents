@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from http.client import HTTPConnection
 from pathlib import Path
@@ -29,6 +30,8 @@ class Exchange:
     request_body: dict | None
     status: int
     response: dict
+    supplemental: bool = False
+    file_number: int | None = None
 
 
 class Recorder:
@@ -37,6 +40,7 @@ class Recorder:
         self.process = process
         self.target = urlsplit(origin)
         self.exchanges = []
+        self._supplemental = False
         self.normalizer = SampleNormalizer()
         self.normalizer.bind(origin=origin)
 
@@ -56,14 +60,27 @@ class Recorder:
 
     def keep(self, entry, status):
         assert entry.status == status, (entry.method, entry.target, entry.response)
+        entry.supplemental = self._supplemental
         self.exchanges.append(entry)
         return entry.response
+
+    @contextmanager
+    def supplement(self):
+        """Add exchanges without renumbering existing files used by the UI tests."""
+        previous = self._supplemental
+        self._supplemental = True
+        try:
+            yield
+        finally:
+            self._supplemental = previous
 
     def request(self, method, target, body=None, *, status=200):
         return self.keep(self.send(method, target, body), status)
 
-    def get(self, suffix):
-        return self.request("GET", f"/api/{suffix}")
+    def get(self, suffix, *, file_number=None):
+        entry = self.send("GET", f"/api/{suffix}")
+        entry.file_number = file_number
+        return self.keep(entry, 200)
 
     def start(self, action, **args):
         queued = self.request(
@@ -104,9 +121,21 @@ class Recorder:
         normalize = self.normalizer.normalize
         index = []
         files = {}
-        for seq, entry in enumerate(self.exchanges, start=1):
+        # Allocate legacy filenames and canonical IDs first. The index still
+        # records the real HTTP order, including reads between two mutations.
+        ordered = sorted(
+            enumerate(self.exchanges, 1), key=lambda pair: pair[1].supplemental
+        )
+        # Pin filenames when a read moves to a different point in the replay.
+        # Normalize in file order so existing responses keep their canonical IDs.
+        reserved = {entry.file_number for _, entry in ordered if entry.file_number}
+        available = iter(n for n in range(1, len(ordered) + 1) if n not in reserved)
+        numbered = [
+            (entry.file_number or next(available), seq, entry) for seq, entry in ordered
+        ]
+        for number, seq, entry in sorted(numbered):
             target = urlsplit(entry.target)
-            name = f"{seq:03}.json"
+            name = f"{number:03}.json"
             index.append(
                 {
                     "seq": seq,
@@ -119,7 +148,7 @@ class Recorder:
                 }
             )
             files[name] = normalize(entry.response)
-        files["index.json"] = index
+        files["index.json"] = sorted(index, key=lambda entry: entry["seq"])
         directory.mkdir(parents=True, exist_ok=True)
         for name, value in files.items():
             (directory / name).write_text(

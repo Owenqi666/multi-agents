@@ -11,8 +11,8 @@
       "timeout": 180,
       "grace": 2,
       "executables": {
-        "codex": "/sample/scenario/bin/codex",
-        "claude": "/sample/scenario/bin/claude"
+        "claude": "/sample/scenario/bin/claude",
+        "codex": "/sample/scenario/bin/codex"
       },
       "parent_round_id": null
     },
@@ -111,6 +111,10 @@
                 "low",
                 "high"
               ],
+              "gpt-6.1-sol": [
+                "low",
+                "high"
+              ],
               "gpt-6.1-terra": [
                 "low",
                 "high"
@@ -133,6 +137,7 @@
               "gpt-6.2-sol",
               "gpt-6.1-terra",
               "gpt-6.2-luna",
+              "gpt-6.1-sol",
               "claude-fable-5-2",
               "claude-opus-5-5",
               "claude-sonnet-5-5",

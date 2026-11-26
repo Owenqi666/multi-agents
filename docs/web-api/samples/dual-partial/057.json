@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "kind": "stage",
+      "id": "stage-100000e0000000000000000000000000",
+      "label": "Deliver backend/amount.py",
+      "reason": "integrate_stage",
+      "detail": "Create an integration for this reviewed stage candidate.",
+      "href": "/stages/stage-100000e0000000000000000000000000"
+    },
+    {
+      "kind": "integration",
+      "id": "10000330000000000000000000000000",
+      "label": "Deliver frontend/status.js · Deliver frontend/banner.js",
+      "reason": "review_incomplete",
+      "detail": "Inspect the incomplete review and its retry options.",
+      "href": "/integrations/10000330000000000000000000000000"
+    }
+  ],
+  "complete": true
+}

@@ -1,0 +1,56 @@
+{
+  "repository": "/sample/scenario/repository",
+  "read_only": false,
+  "branch": "main",
+  "head": "2000001000000000000000000000000000000000",
+  "branches": [
+    {
+      "name": "main",
+      "head": "2000001000000000000000000000000000000000"
+    }
+  ],
+  "baseline": "2000001000000000000000000000000000000000",
+  "rules": {
+    "path": ".multi-agent/rules.yaml",
+    "commands": [
+      {
+        "name": "build",
+        "argv": [
+          "/sample/python/bin/python3.12",
+          "checks/build.py"
+        ]
+      },
+      {
+        "name": "test",
+        "argv": [
+          "/sample/python/bin/python3.12",
+          "checks/test.py"
+        ]
+      }
+    ],
+    "detail": null,
+    "status": "ready"
+  },
+  "rules_template": "# Python unittest example. Replace the command and model for your project.\nversion: 1\ncommands:\n  unit:\n    executable: python3\n    args: [\"-m\", \"unittest\", \"discover\", \"-s\", \"tests\"]\nprotected_paths: [\".multi-agent/**\", \"tests/**\"]\nimplementation: []\ndefault_implementation:\n  provider: codex\n  default_model: gpt-6.2-sol\n  default_effort: medium\n",
+  "providers": {
+    "codex": {
+      "status": "ready",
+      "cli_version": "codex-cli 0.169.0",
+      "observed_at": "2000-01-01T00:00:04.000000+00:00",
+      "check_job_id": "10000010000000000000000000000000",
+      "error": null
+    },
+    "claude": {
+      "status": "ready",
+      "cli_version": "2.1.325 (Claude Code)",
+      "observed_at": "2000-01-01T00:00:08.000000+00:00",
+      "check_job_id": "10000020000000000000000000000000",
+      "error": null
+    }
+  },
+  "next_steps": [
+    {
+      "kind": "create_goal"
+    }
+  ]
+}

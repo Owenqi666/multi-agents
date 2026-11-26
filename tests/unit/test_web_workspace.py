@@ -439,7 +439,7 @@ def test_web_workspace_restart_recovery(tmp_path, repository, executables):
     saved = json.loads(saved_path.read_text())
     shadow = "a" * 32
     saved["jobs"][shadow] = {
-        **finished,
+        **saved["jobs"][job_id],
         "job_id": shadow,
         "state": "running",
         "result": None,
@@ -455,7 +455,10 @@ def test_web_workspace_restart_recovery(tmp_path, repository, executables):
         assert _workspace(service)["environments"]["claude"] == finished["result"]
         assert _request(service, "GET", f"/api/jobs/{shadow}") == (200, interrupted)
         assert capture.read_bytes() == calls
-    assert json.loads(saved_path.read_text())["jobs"][shadow] == interrupted
+    assert interrupted["error_kind"] == "interrupted"
+    assert json.loads(saved_path.read_text())["jobs"][shadow] == {
+        k: v for k, v in interrupted.items() if k != "error_kind"
+    }
 
     different = tmp_path / "different"
     _git(tmp_path, "init", "-qb", "main", str(different))

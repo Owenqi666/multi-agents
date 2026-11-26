@@ -55,7 +55,7 @@
           "exit_code": 0,
           "logs": [
             {
-              "byte_count": 1204,
+              "byte_count": 1200,
               "closed": true,
               "healthy": true,
               "identity": [
@@ -116,7 +116,7 @@
         "log_index": 1
       },
       "stream": "claude-environment-10000040000000000000000000000000",
-      "byte_count": 1204,
+      "byte_count": 1200,
       "sha256": "3000003000000000000000000000000000000000000000000000000000000000"
     },
     {

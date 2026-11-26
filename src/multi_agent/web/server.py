@@ -12,7 +12,11 @@ from multi_agent.store.database import ArchiveChanged, archive_reads
 from multi_agent.store.project_store import ProjectStore
 
 from .actions import ActionConflict, UnknownAction, prepare_action
+from .activity import read_activity
+from .attention import read_attention
+from .delivery import delivery_summary
 from .jobs import ACTION, PROVIDERS, BusyCLI, BusyEnvironment, BusyJob, EnvironmentJobs
+from .onboarding import onboarding
 from .resources import (
     LOCKED_DIFF_KINDS,
     LOCKED_RESOURCE_KINDS,
@@ -25,6 +29,7 @@ from .resources import (
     read_resource,
     read_snapshot_file,
 )
+from .review_findings import findings, record_decision, rework_eligibility
 from .static import FrontendResponse, read_frontend
 from .workspace import Workspace
 
@@ -219,12 +224,31 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         self, server: WorkspaceServer, parts: list[str], query: dict[str, list[str]]
     ) -> dict[str, Any]:
         match parts:
+            case ["api", "attention"]:
+                _no_query(query)
+                return read_attention(
+                    server.workspace, server.jobs.read_gate, server.jobs
+                )
             case ["api", "workspace"]:
                 _no_query(query)
                 return server.workspace.view(server.jobs.view())
+            case ["api", "workspace", "onboarding"]:
+                if query and (
+                    query.keys() != {"baseline"} or len(query["baseline"]) != 1
+                ):
+                    raise ValueError("Expected one optional baseline revision.")
+                return onboarding(
+                    server.workspace,
+                    query["baseline"][0] if query else None,
+                    server.jobs.environment_checks(),
+                    server.executables,
+                )
             case ["api", "jobs"]:
                 _no_query(query)
                 return server.jobs.list_jobs()
+            case ["api", "jobs", identifier, "activity"]:
+                _no_query(query)
+                return read_activity(server.workspace, server.jobs, identifier)
             case ["api", "jobs", identifier]:
                 _no_query(query)
                 job = server.jobs.get(identifier)
@@ -237,6 +261,22 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
                 if kinds is not None and (len(kinds) != 1 or not kinds[0]):
                     raise ValueError("Expected a single kind filter.")
                 return server.jobs.runs(kinds[0] if kinds else None)
+            case ["api", "reviews", identifier, "findings"]:
+                _no_query(query)
+                return findings(server.workspace, identifier)
+            case ["api", "integrations", identifier, "rework-eligibility"]:
+                _no_query(query)
+                with server.jobs.read_gate.read() as allowed:
+                    if not allowed:
+                        return {
+                            "integration_id": identifier,
+                            "eligible": False,
+                            "lock_busy": True,
+                        }
+                    return rework_eligibility(server.workspace, identifier)
+            case ["api", "integrations", identifier, "delivery"]:
+                _no_query(query)
+                return delivery_summary(server.workspace, identifier, server.origin)
             case ["api", "resources", kind, identifier]:
                 with server.jobs.read_gate.read(
                     guarded=kind in LOCKED_RESOURCE_KINDS
@@ -304,6 +344,8 @@ class WorkspaceHandler(BaseHTTPRequestHandler):
         match parts:
             case ["api", "jobs"]:
                 return 202, self._start(server)
+            case ["api", "reviews", identifier, "decisions"]:
+                return 201, record_decision(server.workspace, identifier, self._body())
             case ["api", "jobs", identifier, "cancel"]:
                 if self._body() != {}:
                     raise ValueError("Job cancellation requires an empty JSON object.")

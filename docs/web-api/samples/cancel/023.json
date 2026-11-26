@@ -39,6 +39,7 @@
     ],
     "details": {
       "is_current": true,
+      "retry_ready": false,
       "finished": true,
       "cancel_requested": false,
       "declaration_source": "PM",
@@ -99,7 +100,7 @@
         "log_index": 1
       },
       "stream": "wire",
-      "byte_count": 8834,
+      "byte_count": 8831,
       "sha256": "3000023000000000000000000000000000000000000000000000000000000000"
     },
     {

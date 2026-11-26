@@ -8,6 +8,7 @@ from pathlib import Path
 import test_task_workflow_cli as helpers
 from test_integration_cli import create_args, show
 from test_task_batch import batch_arguments, plan
+from test_web_workspace import _request, _serve
 
 from multi_agent.core.task_execution import task_execution_hash
 
@@ -110,9 +111,61 @@ def _advance_target(workflow, original):
     return advanced
 
 
-def test_integration_cli_tests_reviews_retries_and_accepts_current_target(workflow):
+def _check_delivery(service, integration, receipt, test):
+    identifier = integration["integration_id"]
+    status, delivery = _request(
+        service, "GET", f"/api/integrations/{identifier}/delivery"
+    )
+    assert status == 200
+    assert delivery["receipt"] == receipt
+    cards = [member["task_input"]["card"] for member in integration["members"]]
+    assert delivery["tasks"] == [
+        {"id": card["id"], "goal": card["goal"]} for card in cards
+    ]
+    assert delivery["tests"] == [
+        {"name": item["command"]["name"], "exit_code": item["exit_code"]}
+        for item in test["result"]["commands"]
+    ]
+    assert delivery["links"] == {
+        "integration": f"/integrations/{identifier}",
+        "diff": f"/diffs/snapshot/{receipt['snapshot_id']}",
+        "review": f"/reviews/{receipt['review_round_id']}",
+    }
+    markdown = delivery["markdown"]
+    for value in (
+        receipt["candidate"]["commit"],
+        receipt["candidate"]["ref"],
+        receipt["target_ref"],
+        receipt["target_baseline"],
+        receipt["acceptance_id"],
+        receipt["accepted_at"],
+        f"测试第 {test['attempt']} 次通过",
+        test["evidence_hash"],
+        receipt["review_checkpoint_hash"],
+    ):
+        assert value in markdown
+    for card in cards:
+        assert card["id"] in markdown and card["goal"] in markdown
+    for command in delivery["tests"]:
+        assert any(
+            command["name"] in line and f"退出码 {command['exit_code']}" in line
+            for line in markdown.splitlines()
+        )
+    for path in delivery["links"].values():
+        assert f"]({service.origin}{path})" in markdown
+    return delivery["links"]
+
+
+def test_integration_cli_tests_reviews_retries_and_accepts_current_target(
+    workflow, monkeypatch
+):
     repo = workflow.repository
+    data = workflow.base
+    workflow.database = data / "reviews.sqlite3"
     integration = _integration(workflow)
+    endpoint = f"/api/integrations/{integration['integration_id']}/delivery"
+    with _serve(repo, data, {}) as service:
+        assert _request(service, "GET", endpoint)[0] == 409
     candidate = integration["candidate"]["commit"]
     test_bin = workflow.base / "bin" / "codex-integration-test"
     test_bin.write_text(
@@ -273,6 +326,23 @@ def test_integration_cli_tests_reviews_retries_and_accepts_current_target(workfl
     assert not historical["target_is_current"] and historical["acceptance"] == accepted
     assert historical["reviews"][-1]["source_current"] is False
     assert show(workflow, rebased)["acceptance"] == receipt
+    with _serve(repo, data, {}) as service:
+        with monkeypatch.context() as environment:
+            # The open workbench can export either receipt without invoking Git.
+            environment.setenv("PATH", str(data / "empty-path"))
+            links = _check_delivery(service, integration, accepted, tested)
+            _check_delivery(service, rebased, receipt, retested)
+
+        status, diff = _request(service, "GET", f"/api{links['diff']}")
+        assert status == 200 and diff["candidate"] == candidate
+        assert diff["baseline"] == accepted["target_baseline"]
+        status, review = _request(
+            service,
+            "GET",
+            f"/api/resources/review/{accepted['review_round_id']}?session_logs=1",
+        )
+        assert status == 200 and review["data"]["snapshot_id"] == diff["snapshot_id"]
+        assert review["data"]["seats"] == ready["seats"]
     assert helpers.git(repo, "rev-parse", "HEAD") == advanced
     assert (repo / ".git/index").read_bytes() == index
     assert (repo / "AGENTS.md").read_text() == "unstaged user state\n"

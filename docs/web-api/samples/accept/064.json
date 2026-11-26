@@ -1,0 +1,21 @@
+{
+  "items": [
+    {
+      "kind": "project-plan",
+      "id": "plan-100000a0000000000000000000000000",
+      "label": "Stage report",
+      "reason": "choose_stage",
+      "detail": "Outline the monthly report",
+      "href": "/plans/plan-100000a0000000000000000000000000?stage=report"
+    },
+    {
+      "kind": "stage",
+      "id": "stage-100000e0000000000000000000000000",
+      "label": "Deliver backend/amount.py",
+      "reason": "integrate_stage",
+      "detail": "Create an integration for this reviewed stage candidate.",
+      "href": "/stages/stage-100000e0000000000000000000000000"
+    }
+  ],
+  "complete": true
+}

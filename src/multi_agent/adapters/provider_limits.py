@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from multi_agent.core.events import Error, FailureCategory
+from multi_agent.job_activity import observe
 from multi_agent.store.provider_limits import (
     ProviderExhausted,
     ProviderLedger,
@@ -132,6 +133,7 @@ async def admit_turn(
 ) -> ProviderTurn:
     ledger, limits = budget
     clock = asyncio.get_running_loop().time
+    waiting = False
     while True:
         if cancelled():
             raise limit_failure(
@@ -154,6 +156,8 @@ async def admit_turn(
             process_group,
         )
         if isinstance(decision, ProviderReservation):
+            if waiting:
+                observe("provider_admitted")
             return ProviderTurn(provider, ledger, decision, now)
         if isinstance(decision, ProviderExhausted):
             raise limit_failure(
@@ -161,6 +165,9 @@ async def admit_turn(
                 FailureCategory.RATE_LIMITED,
             )
         assert isinstance(decision, ProviderWait)
+        if not waiting:
+            observe("provider_wait")
+            waiting = True
         await asyncio.sleep(min(_WAIT_SECONDS, remaining))
 
 

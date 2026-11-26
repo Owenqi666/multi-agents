@@ -13,5 +13,6 @@
   "exit_code": null,
   "result": null,
   "error": null,
-  "resources": []
+  "resources": [],
+  "error_kind": null
 }

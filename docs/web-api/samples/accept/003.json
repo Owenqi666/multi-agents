@@ -22,6 +22,7 @@
       "gpt-6.2-sol",
       "gpt-6.1-terra",
       "gpt-6.2-luna",
+      "gpt-6.1-sol",
       "claude-fable-5-2",
       "claude-opus-5-5",
       "claude-sonnet-5-5",
@@ -41,6 +42,10 @@
         "high"
       ],
       "gpt-6.2-luna": [
+        "low",
+        "high"
+      ],
+      "gpt-6.1-sol": [
         "low",
         "high"
       ],
@@ -64,5 +69,6 @@
     "error": null
   },
   "error": null,
-  "resources": []
+  "resources": [],
+  "error_kind": null
 }

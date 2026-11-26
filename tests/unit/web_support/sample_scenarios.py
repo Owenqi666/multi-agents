@@ -13,22 +13,35 @@ SONNET = {"provider": "claude-code", "model": "claude-sonnet-5-5", "effort": "lo
 COMMANDS = ["build", "test"]
 
 
+def _attention(api):
+    inbox = api.get("attention")
+    assert inbox["complete"] and isinstance(inbox["items"], list), inbox
+    return inbox["items"]
+
+
 def _begin(api):
     workspace = api.get("workspace")
     api.normalizer.bind(repository=workspace["repository"])
     baseline = workspace["head"]
+    with api.supplement():
+        first = api.get("workspace/onboarding")
+        assert first["baseline"] == baseline and first["rules"]["status"] == "ready"
+        assert {p["status"] for p in first["providers"].values()} == {"unknown"}
     assert workspace["branches"] == [{"name": "main", "head": baseline}], workspace
     defaults = workspace["defaults"]
     assert defaults["source"] == "cli_default" and defaults["stage_mode"] == "direct", (
         defaults
     )
+    assert defaults["task_plan"]["plan_review"]["model"] == "gpt-6.1-sol", defaults
     for provider in ("codex", "claude"):
         observation = api.job("environment.refresh", provider=provider, exit_code=None)
         assert observation["error"] is None, observation
     refreshed = api.get("workspace")
+    with api.supplement():
+        ready = api.get("workspace/onboarding")
+        assert {p["status"] for p in ready["providers"].values()} == {"ready"}
     catalog = refreshed["environments"]["codex"]["models"]
-    assert {"gpt-6.2-luna", "claude-haiku-5-5"} <= set(catalog)
-    assert len(catalog) == 8
+    assert {"gpt-6.2-luna", "gpt-6.1-sol", "claude-haiku-5-5"} <= set(catalog)
     consultation = api.job(
         "project.consult", baseline=baseline, original_goal=ORIGINAL, advisors=[FABLE]
     )
@@ -54,7 +67,9 @@ def _begin(api):
     planner_log = api.get(f"resources/project-plan/{plan_id}")["artifacts"][0]
     assert planner_log["key"] == "planner-1", planner_log
     assert planner_log["coordinates"] == {"log_index": 1}, planner_log
-    return plan_id
+    with api.supplement():
+        assert _attention(api)
+    return plan_id, defaults["task_plan"]
 
 
 def _direct(api, plan_id):
@@ -162,28 +177,48 @@ def _integration_review(api, integration, seats, exit_code=0):
     identifier = integration["integration_id"]
     suite = api.job("integration.test", integration_id=identifier)["test"]
     assert suite["status"] == "succeeded", suite
-    return api.job(
+    job_id = api.start(
         "integration.review",
         integration_id=identifier,
         seats=seats,
         auto_rework=False,
-        exit_code=exit_code,
-    )["review"]
+    )
+    review = api.finish(job_id, exit_code)["result"]["review"]
+    with api.supplement():
+        activity = api.get(f"jobs/{job_id}/activity")
+        assert activity["reviews"][0]["round_id"] == review["round_id"], activity
+        if review["assessment"]["status"] == "incomplete":
+            seats = activity["reviews"][0]["seats"]
+            assert {s["state"] for s in seats} == {"failed", "succeeded"}, seats
+            assert activity["recovery"], activity
+        if review["assessment"]["status"] != "ready":
+            _attention(api)
+    return job_id, review
 
 
 def _accept(api, integration, review):
     identifier = integration["integration_id"]
     assert review["assessment"]["status"] == "ready", review
-    acceptance = api.job(
+    with api.supplement():
+        assert any(item["id"] == identifier for item in _attention(api))
+    job_id = api.start(
         "integration.accept", integration_id=identifier, round_id=review["round_id"]
-    )["acceptance"]
+    )
+    acceptance = api.finish(job_id)["result"]["acceptance"]
     assert acceptance["candidate"]["commit"] == integration["candidate"]["commit"]
     assert acceptance["accepted_at"], acceptance
     api.get(f"resources/integration/{identifier}")
+    with api.supplement():
+        api.get(f"jobs/{job_id}/activity")
+        delivery = api.get(f"integrations/{identifier}/delivery")
+        assert delivery["receipt"]["acceptance_id"] == acceptance["acceptance_id"]
+        assert [test["name"] for test in delivery["tests"]] == COMMANDS
+        assert not api.get(f"integrations/{identifier}/rework-eligibility")["eligible"]
+        assert all(item["id"] != identifier for item in _attention(api))
 
 
 def accept(api):
-    plan_id = _begin(api)
+    plan_id, _ = _begin(api)
     _, direct_review, _ = _direct(api, plan_id)
     stage = _delegate(api, plan_id)
     integration = _integrate(api, stage)
@@ -197,7 +232,7 @@ def accept(api):
         exit_code=2,
     )
     assert refused["result"] is None and refused["error"] is not None, refused
-    review = _integration_review(api, integration, [OPUS])
+    _, review = _integration_review(api, integration, [OPUS])
     snapshot_id = review["snapshot_id"]
     snapshot = api.get(f"resources/snapshot/{snapshot_id}")
     frozen = snapshot["artifacts"][0]
@@ -219,11 +254,11 @@ def accept(api):
 
 
 def rework(api):
-    plan_id = _begin(api)
+    plan_id, defaults = _begin(api)
     _direct(api, plan_id)
     integration = _integrate(api, _delegate(api, plan_id))
     identifier = integration["integration_id"]
-    review = _integration_review(api, integration, [OPUS], exit_code=1)
+    _, review = _integration_review(api, integration, [OPUS], exit_code=1)
     assert review["assessment"]["status"] == "needs_rework", review
     findings = review["seats"][0]["attempts"][-1]["result"]["findings"]
     (finding,) = findings
@@ -239,6 +274,60 @@ def rework(api):
         file
     )
     api.get(f"diffs/integration/{identifier}")
+    with api.supplement():
+        parent = api.get(f"resources/integration/{identifier}")["data"]
+        assert parent["superseded_by"] is None and parent["rework"] is None
+        eligibility_path = f"integrations/{identifier}/rework-eligibility"
+        before = api.get(eligibility_path)
+        assert before["eligible"] and before["owner"], before
+        findings_path = f"reviews/{round_id}/findings"
+        original = api.get(findings_path)
+        member = original["groups"][0]["members"][0]
+        anchor = member["anchor"]
+        assert not member["activity"] and anchor["finding_id"] == finding["id"]
+        decision = api.request(
+            "POST",
+            f"/api/reviews/{round_id}/decisions",
+            {
+                "anchor": anchor,
+                "decision": "confirmed",
+                "reason": "The candidate still shows draft.",
+            },
+            status=201,
+        )
+        assert decision["kind"] == "decision"
+        decided = api.get(findings_path)["groups"][0]["members"][0]
+        assert decided["activity"] == [decision]
+        answer = api.job(
+            "review.followup",
+            review_anchor=anchor,
+            question="Which status does the frozen candidate expose?",
+        )["entry"]
+        assert "draft" in answer["answer"]
+        answered = api.get(findings_path)["groups"][0]["members"][0]
+        assert answered["activity"] == [decision, answer]
+        args = {
+            "review_anchor": anchor,
+            "baseline": original["source"]["correction_baseline"],
+            "requirements": "Implement the standalone status.\n",
+        }
+        correction = api.job("plan.create", **args)
+        frozen = correction["details"]["input"]
+        assert frozen["draft_request"] == defaults["draft"]
+        assert frozen["review_request"] == defaults["plan_review"]
+        correction_id = correction["planning_run_id"]
+        repeated = api.job("plan.create", **args)
+        assert repeated["reused"] and repeated["planning_run_id"] == correction_id
+        api.get(f"resources/plan/{correction_id}")
+        updated = api.get(findings_path)
+        entries = updated["groups"][0]["members"][0]["activity"]
+        assert [entry["kind"] for entry in entries] == [
+            "decision",
+            "answer",
+            "linked_plan",
+        ]
+        assert entries[-1]["planning_run_id"] == correction_id
+        assert updated["status"] == original["status"]
     repaired = api.job(
         "integration.rework", integration_id=identifier, round_id=round_id
     )
@@ -250,7 +339,17 @@ def rework(api):
     repaired_diff = api.get(f"diffs/integration/{child_id}")
     assert repaired_diff["candidate"] == child["candidate"]["commit"], repaired_diff
     assert "frontend/status.js" in repaired_diff["diff"], repaired_diff
-    incremental = api.get(f"diffs/integration/{child_id}?against=parent")
+    parent = api.get(f"resources/integration/{identifier}", file_number=82)["data"]
+    assert parent["superseded_by"] == child_id
+    assert parent["rework"]["child_id"] == child_id
+    with api.supplement():
+        after = api.get(eligibility_path)
+        assert not after["eligible"] and after["reason"], after
+    _accept(api, child, repaired["rereview"]["review"])
+    # This diff is between two immutable candidates and is also available after acceptance.
+    incremental = api.get(
+        f"diffs/integration/{child_id}?against=parent", file_number=52
+    )
     assert incremental["parent_candidate"] == integration["candidate"]["commit"], (
         incremental
     )
@@ -260,18 +359,19 @@ def rework(api):
         for line in incremental["diff"].splitlines()
         if line.startswith("diff --git ")
     ] == ["diff --git a/frontend/status.js b/frontend/status.js"], incremental
-    _accept(api, child, repaired["rereview"]["review"])
     runs = {run["id"]: run for run in api.get("runs")["items"]}
     assert runs[child_id]["parent_id"] == identifier, runs[child_id]
     assert runs[child_id]["label"] != child_id, runs[child_id]
 
 
 def dual_partial(api):
-    plan_id = _begin(api)
+    plan_id, _ = _begin(api)
     _direct(api, plan_id)
     integration = _integrate(api, _delegate(api, plan_id))
     identifier = integration["integration_id"]
-    review = _integration_review(api, integration, [OPUS, ASTRA], exit_code=1)
+    original_job, review = _integration_review(
+        api, integration, [OPUS, ASTRA], exit_code=1
+    )
     round_id = review["round_id"]
     data = api.get(f"resources/review/{round_id}?history=1")["data"]
     claude, codex = data["seats"]
@@ -290,6 +390,19 @@ def dual_partial(api):
         and retried["snapshot_id"] == review["snapshot_id"]
     )
     assert [len(seat["attempts"]) for seat in retried["seats"]] == [2, 1], retried
+    refreshed = api.get(f"jobs/{original_job}/activity", file_number=63)
+    assert {a["seat"]: a["state"] for a in refreshed["actors"]} == {
+        claude["key"]: "failed",
+        codex["key"]: "succeeded",
+    }
+    original_round = refreshed["reviews"][0]
+    assert original_round["round_id"] == round_id
+    assert [(s["attempt"], s["state"]) for s in original_round["seats"]] == [
+        (2, "succeeded"),
+        (1, "succeeded"),
+    ]
+    assert not refreshed["recovery"] and original_round["retry"] is None
+    assert not any(seat["retryable"] for seat in original_round["seats"])
     api.get(f"resources/review/{round_id}?history=1")
     _accept(api, integration, retried)
 
@@ -336,7 +449,7 @@ def _assert_waiting_implementation(task, identifier, planning_id):
 
 
 def cancel(api):
-    plan_id = _begin(api)
+    plan_id, _ = _begin(api)
     direct, _, artifact = _direct(api, plan_id)
     stage = _delegate(api, plan_id)
     stage_id = stage["stage_run_id"]
@@ -345,6 +458,9 @@ def cancel(api):
     ]
     running = api.start("task.run", planning_run_id=first)
     first_check = _wait_for_implementation(api, running, first)
+    with api.supplement():
+        active = api.get(f"jobs/{running}/activity")
+        assert active["state"] == "running" and active["actors"], active
     busy = api.request(
         "POST",
         "/api/jobs",
@@ -370,7 +486,12 @@ def cancel(api):
     assert settled["cancel_requested_at"], settled
     assert settled["result"]["phase"] == "cancelled", settled
     _assert_waiting_implementation(settled["result"], running, first)
-    api.get(f"resources/plan/{first}")
+    cancelled_activity = api.get(f"jobs/{running}/activity", file_number=60)
+    assert cancelled_activity["state"] == "finished"
+    assert cancelled_activity["finished_at"] == settled["finished_at"]
+    (actor,) = cancelled_activity["actors"]
+    assert actor["last_event"] == "attempt_settled" and actor["state"] == "failed"
+    assert not cancelled_activity["recovery"]
 
     next_job = api.start("task.run", planning_run_id=second)
     second_check = _wait_for_implementation(api, next_job, second)
@@ -378,6 +499,11 @@ def cancel(api):
     interrupted = api.wait(next_job, {"interrupted"})
     assert interrupted["result"] is None, interrupted
     assert interrupted["error"]["code"] == "service_interrupted", interrupted
+    with api.supplement():
+        activity = api.get(f"jobs/{next_job}/activity")
+        assert activity["state"] == "interrupted" and activity["resources"], activity
+        _attention(api)
+    api.get(f"resources/plan/{first}", file_number=45)
     plan = api.get(f"resources/plan/{second}")["data"]
     task = api.get(f"resources/task/{plan['task_run_id']}")["data"]
     _assert_waiting_implementation(task, next_job, second)

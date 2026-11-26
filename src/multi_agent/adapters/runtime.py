@@ -46,6 +46,7 @@ from multi_agent.core.events import (
     SessionStarted,
     thaw_json,
 )
+from multi_agent.job_activity import observe
 
 from .base import (
     Adapter,
@@ -1187,6 +1188,7 @@ class RuntimeAdapter(Adapter):
             raise RuntimeError("this turn already has an event reader")
         state.reader_started = True
         while (event := await state.queue.get()) is not None:
+            observe(event.kind)
             yield event
         if state.task is not None:
             await state.task

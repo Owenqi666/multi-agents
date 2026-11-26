@@ -62,6 +62,7 @@ def add_parser(commands: Any) -> None:
         elif name == "retry":
             operation.add_argument("--seat", action="append")
             operation.add_argument("--recover", action="store_true")
+            operation.add_argument("--expected-attempt", type=int, action="append")
         elif name == "run":
             operation.add_argument("--implementation-attempt", type=int, required=True)
             operation.add_argument("--test-attempt", type=int, required=True)
@@ -359,6 +360,7 @@ def _continue(args: argparse.Namespace) -> tuple[dict[str, Any], bool]:
                             identifier,
                             tuple(args.seat) if args.seat else None,
                             recover=args.recover,
+                            expected_attempts=getattr(args, "expected_attempt", None),
                         )
                     interrupted = asyncio.run(
                         _execute(store, identifier, directory, seat_keys)

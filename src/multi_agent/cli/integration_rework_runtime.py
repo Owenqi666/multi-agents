@@ -41,6 +41,7 @@ from multi_agent.core.task_execution import (
     task_execution_value,
 )
 from multi_agent.core.workspaces import WorkspaceRecord
+from multi_agent.job_activity import observe, start_actor
 from multi_agent.store.task_review_store import TaskReviewStore
 
 from .task_context import (
@@ -565,6 +566,13 @@ async def execute_integration_rework(
     stop: asyncio.Event,
 ) -> IntegrationReworkOutcome:
     """Settle one owned reporter before returning its unpublished repair."""
+    start_actor(
+        "integration",
+        record.integration_id,
+        f"rework-{rework_id}",
+        actor.policy.provider,
+        1,
+    )
     intent = asyncio.Event()
     worker = _task(
         _execute(
@@ -593,4 +601,5 @@ async def execute_integration_rework(
             intent.set()
     if interrupted is not None:
         raise interrupted
+    observe("attempt_settled", state=outcome.status)
     return outcome

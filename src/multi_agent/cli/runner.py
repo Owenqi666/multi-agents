@@ -50,6 +50,7 @@ from multi_agent.core.review_input import (
     ReviewInput,
     review_source,
 )
+from multi_agent.job_activity import observe, start_actor
 from multi_agent.store import ReviewStore
 from multi_agent.store.codec import encode_envelope
 
@@ -244,6 +245,7 @@ def prepare_retry(
     seat_keys: tuple[str, ...] | None,
     *,
     recover: bool,
+    expected_attempts: list[int] | None = None,
 ) -> tuple[str, ...]:
     state = store.load_round(identifier)
     keys = {seat.config.key for seat in state.seats}
@@ -251,6 +253,15 @@ def prepare_retry(
         len(set(seat_keys)) != len(seat_keys) or not set(seat_keys) <= keys
     ):
         raise ValueError("retry seat keys must be unique existing seats")
+    if expected_attempts is not None:
+        current = {seat.config.key: seat.current_attempt or 0 for seat in state.seats}
+        if (
+            seat_keys is None
+            or [current[key] for key in seat_keys] != expected_attempts
+        ):
+            raise ValueError(
+                "review attempts have changed; refresh recovery before retrying"
+            )
     selected = [
         seat
         for seat in state.seats
@@ -436,6 +447,7 @@ async def execute_round(
 
     async def run_seat(seat: SeatState) -> None:
         key, number = seat.config.key, attempts[seat.config.key]
+        start_actor("review", round_id, key, seat.config.provider, number)
         log_dir = directory / "logs" / round_id / key / str(number)
         evidence: dict[str, Any] = {
             "started_at": now(),
@@ -649,6 +661,7 @@ async def execute_round(
         finally:
             evidence.update(finished_at=now(), elapsed_seconds=loop.time() - started)
             store.set_execution(round_id, key, number, evidence)
+            observe("attempt_settled")
 
     tasks = [asyncio.create_task(run_seat(seat)) for seat in selected]
     try:
