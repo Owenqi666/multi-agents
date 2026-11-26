@@ -1,45 +1,38 @@
 # Multi-agents
 
-Multi-agents is a local macOS workbench that coordinates Codex and Claude Code through their existing CLI logins. You can plan a project with both models, assign implementation to separate Git worktrees, and inspect each candidate commit alongside its tests and independent code reviews. One service instance manages one repository for one user. The web interface is available in Chinese and English, with a language switch in the top corner.
+Multi-agents is a local macOS workbench for building and reviewing software with Codex and Claude Code. Each reviewer sees a frozen copy of the change, its requirements, and any available test evidence. You can trace a finding back to the code the reviewer saw.
 
-[Explore the offline demo](#explore-the-recorded-demo) · [Trace a browser action through the code](#how-a-browser-action-reaches-a-model) · [Run the test suite](#verification)
+You can plan a multi-stage project, start with a single task, or review existing work by choosing two Git commits or pasting a patch. Each instance serves one user and one repository. The interface is available in English and Chinese.
+
+[Try the offline demo](#explore-the-recorded-demo) · [Explore the architecture](#how-a-browser-action-reaches-a-model) · [Run on your own repository](#run-against-your-own-repository)
 
 ## Follow a change from request to acceptance
 
-**Example.** A reporting feature needs a backend amount and a frontend summary. The summary must show `ready` when the amount is available. The offline demo includes a candidate that passes the registered tests while still displaying `draft`.
+In the recorded demo, a report should display `ready` once its backend value is available. The candidate still displays `draft`. Its tests pass because they accept either value.
 
-1. **Plan and assign.** You confirm the goal after consultation. The planner makes the summary stage depend on the amount stage. A stage can have one implementer or be split into smaller tasks. In this example, the repository rules assign the backend file to Codex and the frontend files to Claude Code.
-2. **Freeze and test.** The workbench combines the completed tasks into a Git candidate and runs the project's registered `build` and `test` commands in a separate checkout. It freezes the diff, requirements, and test evidence together. The example test checks that the output can be built and read. It accepts both `draft` and `ready`, so a green run still leaves a requirement for review.
-3. **Review the exact change.** Select one reviewer or two independent reviewers. In a dual review, both models see the same frozen input and their findings are combined after both reports arrive. In the example, the reviewer quotes the `draft` value at `frontend/status.js:1`. Opening the finding takes you to that line in the reviewed commit.
-4. **Repair and accept.** With automatic rework enabled, a verified blocker attributable to one task can trigger one repair cycle. The revised candidate runs the original full test suite again. Once it passes, the original reviewers receive a new snapshot. When you explicitly accept, the workbench rechecks the candidate and target refs and records the commit, test evidence, and review round in a receipt. Merging into the target branch is a separate Git operation.
+1. **Plan and implement.** Repository rules assign the backend to Codex and the frontend to Claude Code. The planner schedules the frontend after the backend. Independent tasks can run in separate Git worktrees. The home inbox links to stages, tasks, and reviews that need your attention.
+2. **Test and review.** One or two independent reviewers inspect the tested candidate. In the demo, a reviewer flags `draft` and links to `frontend/status.js:1`. You can record your judgment, ask that reviewer a question about the frozen snapshot, or start a repair task linked to the finding.
+3. **Repair and deliver.** A verified blocker traced to one task can trigger one repair cycle, followed by a full retest and a fresh review. When you accept the revised candidate, you get a receipt and can copy a Chinese Markdown summary with the commit, tests, and review. Merging is a separate Git operation. [Browser regression](frontend/e2e/rework.spec.ts)
 
-The recorded rework scenario lets you initiate that repair yourself. Its Chromium regression checks the frozen line, the change between the two candidates, and the final receipt after a page reload. [Recorded scenarios](docs/web-api/samples/README.md) · [Browser regression](frontend/e2e/rework.spec.ts)
+<a href="docs/images/workbench.png"><img src="docs/images/workbench.png" alt="Two reviewers link findings to lines in the same frozen patch" width="640"></a>
+
+*Two independent reviews of a frozen patch, captured in Chromium with scripted model responses.*
 
 ## How a browser action reaches a model
 
-| Layer | What happens |
+| Layer | Design |
 | --- | --- |
-| React and TypeScript | The browser sends an action and its arguments to `POST /api/jobs`, receives a job ID, and polls for completion. It loads the resulting diff, frozen file, or log by resource ID. [Typed client](frontend/src/api/client.ts) |
-| Local HTTP service and Python CLI | The service listens on `127.0.0.1` and serves the UI and API from the same origin. It validates workflow actions and builds an argument list for the same Python CLI available in the terminal. The job controller owns the subprocess and records its exit status. [Action translation](src/multi_agent/web/actions.py) · [Job controller](src/multi_agent/web/jobs.py) |
-| Provider adapters | Codex uses its local App Server over JSON-RPC. Claude Code runs as a headless subprocess with streaming JSON output. Adapters translate provider events into workbench events. The UI distinguishes the requested model and reasoning level from the runtime's report. Missing evidence is marked unconfirmed. [Runtime adapter](src/multi_agent/adapters/runtime.py) |
-| Git and SQLite | Git fixes the source tree for each candidate. SQLite associates each attempt, snapshot, and review round with its evidence. A late response is retained in history while the current attempt controls progress. If the target branch moves, a new candidate must pass testing and review before acceptance. [State transitions](src/multi_agent/core/transitions.py) · [Acceptance checks](src/multi_agent/cli/integration_verification.py) |
+| React and TypeScript | Implementation and reviewer follow-ups use `POST /api/jobs`. The service returns HTTP 202 and the browser polls by job ID. A human decision on a finding goes to `POST /api/reviews/{id}/decisions`, which returns HTTP 201 with the saved decision. [Typed client](frontend/src/api/client.ts) |
+| Python service and CLI | One loopback service serves the UI and API. It translates jobs into Python CLI invocations, owns the subprocess, and records its exit status. Codex communicates through its local App Server over JSON-RPC. Claude Code streams JSON from a headless subprocess. [Job controller](src/multi_agent/web/jobs.py) · [Provider adapters](src/multi_agent/adapters/runtime.py) |
+| Git and SQLite | The workbench checks each candidate diff against the task's allowed paths before integration. SQLite records review attempts transactionally, so a late reply stays attached to its original attempt. At acceptance the service rechecks the candidate and target refs. [Candidate checks](src/multi_agent/cli/task_candidates.py) · [State transitions](src/multi_agent/core/transitions.py) · [Acceptance checks](src/multi_agent/cli/integration_verification.py) |
 
-Two implementation details matter when several models work on the same repository.
-
-- **Parallel writes.** Dispatch reads the rules from the baseline commit, intersects the task's declared paths with the allowed model and provider choices, and rejects protected paths. Independent tasks can run in separate worktrees. Before integration, the host checks each actual candidate diff against the task's write scope. [Dispatch rules](src/multi_agent/core/dispatch.py) · [Candidate checks](src/multi_agent/cli/task_candidates.py)
-- **Retries and late results.** A review seat has numbered attempts. The store reads the current state and applies an event in one SQLite transaction. A response from an earlier attempt remains available as history and cannot complete its replacement. A failed seat can be retried against the same snapshot while the other seat's completed report stays in place. [Review store](src/multi_agent/store/database.py) · [State transitions](src/multi_agent/core/transitions.py)
-
-### What a reviewer sees
-
-This screenshot comes from a Chromium run against the local service with simulated model responses. Two independent reviewers annotate different lines of the same frozen patch. Each finding links to the baseline or candidate line it refers to.
-
-<a href="docs/images/workbench.png"><img src="docs/images/workbench.png" alt="Two independent review seats with findings linked to the old and new lines of a frozen patch" width="640"></a>
+The job page shows each reviewer's progress. After an interruption, you can retry just the missing reviewers on the same snapshot once recovery is available. An eligible task test can run again on the same candidate under the original conditions. Earlier reviews stay attached to the test run they examined. You can reopen historical runs in a read-only archive. [Archive guide](docs/workbench.md#open-a-read-only-archive)
 
 ## Quick start
 
 ### Explore the recorded demo
 
-Use Node.js 24.15 or later in the 24.x series with Corepack. The frontend pins pnpm 10.34.9. This demo replays saved HTTP responses and needs no provider login or model calls.
+Use Node.js 24.15 or later in the 24.x series with Corepack. The frontend pins pnpm 10.34.9.
 
 ```sh
 git clone https://github.com/Owenqi666/multi-agents.git
@@ -47,11 +40,13 @@ cd multi-agents
 (cd frontend && corepack pnpm install --frozen-lockfile && corepack pnpm mock)
 ```
 
-Open the local URL printed by Vite. The default scenario runs through acceptance. Add `?mock=rework` to explore the review finding and revised candidate. Other recordings cover partial dual review and cancellation.
+Open the URL printed by Vite. The default scenario ends in acceptance. Append `?mock=rework` to inspect the missed requirement and its repair. Form submissions replay recorded outcomes. The demo runs entirely in the browser without a Python service or provider login. [All four scenarios](docs/web-api/samples/README.md)
 
 ### Run against your own repository
 
-Install Git, Python 3.12 or later, and uv. Sign in to each provider CLI you want to use. From the workbench source directory, install the dependencies and build the web interface.
+Install Git, Python 3.12 or later, uv, and the Node.js toolchain above. Single-task planning requires both the `codex` and `claude` executables. Sign in to the providers you use. The project test runner requires **Codex CLI 0.169.0** even when Claude implements the change. The Claude implementation adapter requires **Claude Code 2.1.325**.
+
+From the workbench source checkout, point the service at a Git repository with at least one commit and a private data directory outside that repository and its worktrees.
 
 ```sh
 uv sync --frozen
@@ -62,11 +57,9 @@ DATA="$HOME/.local/share/multi-agents/my-project"
 uv run python -m multi_agent.web --repository "$REPO" --data-dir "$DATA" --port 0
 ```
 
-Open the loopback address printed by the Python service. Choose a target repository with at least one commit and a private data directory outside the target and its worktrees. Before planning or implementing a change, commit the project's path rules and named tests to `.multi-agent/rules.yaml` on the baseline you intend to use. [Workbench guide](docs/workbench.md)
+Open the printed URL. On **New goal**, check provider login status, inspect the rules and registered test commands for your chosen baseline, or copy a rules template. Commit your rules to `.multi-agent/rules.yaml` on that baseline. The setup check lists the commands. The first test run checks whether they execute in the test environment. [Project setup guide](docs/workbench.md#set-the-project-rules)
 
 ## Verification
-
-From the workbench source directory, run the Python checks, frontend checks, and Chromium suite separately.
 
 ```sh
 scripts/verify.sh
@@ -74,4 +67,4 @@ scripts/verify.sh
 (cd frontend && corepack pnpm exec playwright install chromium && corepack pnpm run e2e)
 ```
 
-The Python gate covers Ruff, formatting, mypy, unit tests, and event replay. Frontend checks cover TypeScript, ESLint, and component tests. The Chromium suite exercises the real local service, CLI, Git, and SQLite with scripted provider responses. It tests orchestration behavior independently of model quality. [Python gate](scripts/verify.sh) · [Integration test for acceptance and retries](tests/unit/test_integration_verification_cli.py)
+The Python checks cover linting, formatting, types, unit tests, and event replay. The frontend checks cover types, linting, and component tests. Chromium exercises the local service, CLI, Git, and SQLite with scripted providers, including recovery after a hard stop and reopening an accepted change. [Python checks](scripts/verify.sh) · [Workbench browser tests](frontend/e2e/workbench.spec.ts)
